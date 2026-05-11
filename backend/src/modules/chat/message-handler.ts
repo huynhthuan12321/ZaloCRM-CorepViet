@@ -7,6 +7,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { randomUUID } from 'node:crypto';
 import { emitWebhook } from '../api/webhook-service.js';
 import { runAutomationRules } from '../automation/automation-service.js';
+import { applyContactAggregateFromMessage, applyContactInteraction, applyFriendAggregate } from '../contacts/contact-aggregate.js';
 
 export interface IncomingMessage {
   accountId: string;
@@ -20,6 +21,8 @@ export interface IncomingMessage {
   threadId: string;         // For user: contact UID. For group: group ID
   threadType: 'user' | 'group'; // user or group conversation
   groupName?: string;       // group name if group message
+  groupAvatarUrl?: string;  // group avatar URL from Zalo (via getGroupInfo.avt)
+  groupMembersCount?: number; // total members in group
   attachments?: any[];
   quote?: unknown;
   albumKey?: string | null;
@@ -132,6 +135,21 @@ export async function handleIncomingMessage(
     }
 
     await updateConversationAfterMessage(conversation.id, sentAt, msg.isSelf);
+
+    // Update Contact aggregate fields (last*, total*) — fire-and-forget,
+    // best-effort. Skipped for group threads inside the helper.
+    const aggregateInput = {
+      conversationId: conversation.id,
+      message: {
+        id: message.id,
+        content: message.content,
+        contentType: message.contentType,
+        sentAt: message.sentAt,
+        senderType: (msg.isSelf ? 'self' : 'contact') as 'self' | 'contact',
+      },
+    };
+    void applyContactAggregateFromMessage(aggregateInput);
+    void applyFriendAggregate(aggregateInput);
 
     // Track first outbound contact date — set once when agent sends first message
     if (msg.isSelf && contactId) {
@@ -281,10 +299,24 @@ async function findOrCreateConversation(
 
   const existing = await prisma.conversation.findFirst({
     where: { zaloAccountId: msg.accountId, externalThreadId },
-    select: { id: true },
+    select: { id: true, groupName: true, groupAvatarUrl: true, groupMembersCount: true },
   });
 
-  if (existing) return existing;
+  if (existing) {
+    // Update group metadata if changed (sync mới hơn so với DB)
+    if (msg.threadType === 'group') {
+      const updates: { groupName?: string; groupAvatarUrl?: string; groupMembersCount?: number } = {};
+      if (msg.groupName && msg.groupName !== existing.groupName) updates.groupName = msg.groupName;
+      if (msg.groupAvatarUrl && msg.groupAvatarUrl !== existing.groupAvatarUrl) updates.groupAvatarUrl = msg.groupAvatarUrl;
+      if (msg.groupMembersCount != null && msg.groupMembersCount !== existing.groupMembersCount) {
+        updates.groupMembersCount = msg.groupMembersCount;
+      }
+      if (Object.keys(updates).length) {
+        await prisma.conversation.update({ where: { id: existing.id }, data: updates });
+      }
+    }
+    return { id: existing.id };
+  }
 
   return prisma.conversation.create({
     data: {
@@ -294,6 +326,9 @@ async function findOrCreateConversation(
       contactId: msg.threadType === 'user' ? contactId : contactId,
       threadType: msg.threadType,
       externalThreadId,
+      groupName: msg.threadType === 'group' ? msg.groupName : null,
+      groupAvatarUrl: msg.threadType === 'group' ? msg.groupAvatarUrl : null,
+      groupMembersCount: msg.threadType === 'group' ? msg.groupMembersCount : null,
       lastMessageAt: new Date(msg.timestamp),
       unreadCount: msg.isSelf ? 0 : 1,
       isReplied: msg.isSelf,
@@ -322,10 +357,26 @@ async function updateConversationAfterMessage(
 // Soft-delete a message by its Zalo message ID
 export async function handleMessageUndo(accountId: string, zaloMsgId: string): Promise<void> {
   try {
+    const recalledAt = new Date();
     await prisma.message.updateMany({
       where: { zaloMsgId: String(zaloMsgId) },
-      data: { isDeleted: true, deletedAt: new Date() },
+      data: { isDeleted: true, deletedAt: recalledAt },
     });
+
+    // Update lastInteraction* on the affected contact(s)
+    const affected = await prisma.message.findMany({
+      where: { zaloMsgId: String(zaloMsgId) },
+      select: { id: true, conversationId: true },
+    });
+    for (const m of affected) {
+      void applyContactInteraction({
+        conversationId: m.conversationId,
+        type: 'message_recalled',
+        occurredAt: recalledAt,
+        payload: { messageId: m.id, zaloMsgId: String(zaloMsgId) },
+      });
+    }
+
     logger.info(`[message-handler] Undo message ${zaloMsgId} for account ${accountId}`);
   } catch (err) {
     logger.error('[message-handler] handleMessageUndo error:', err);
