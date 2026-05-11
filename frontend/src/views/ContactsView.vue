@@ -90,9 +90,13 @@
                 </button>
               </td>
               <td>
-                <div class="avatar avatar-customer" :class="{ 'is-female': contact.gender === 'female' }">
-                  {{ initials(contact) }}
-                </div>
+                <Avatar
+                  :src="contact.avatarUrl"
+                  :name="contact.crmName || contact.fullName || '?'"
+                  :size="32"
+                  :gender="contact.gender"
+                  :gradient-seed="contact.id"
+                />
               </td>
               <td>
                 <div class="name-text">{{ contact.crmName || contact.fullName || '—' }}</div>
@@ -210,7 +214,7 @@
                       <tr v-for="(row, idx) in childRows(contact)" :key="row.id" :class="{ winner: idx === 0 }">
                         <td>
                           <div class="nick-cell">
-                            <div class="avatar-nick">{{ row.nickShort }}</div>
+                            <Avatar :name="row.nickName" :size="26" :gradient-seed="row.id" platform="zalo" />
                             <div class="two-line">
                               <span class="line1">
                                 {{ row.nickName }}
@@ -314,6 +318,7 @@ import ContactDetailDialog from '@/components/contacts/ContactDetailDialog.vue';
 import DuplicateReviewDialog from '@/components/contacts/DuplicateReviewDialog.vue';
 import CareStatusBadge from '@/components/ui/CareStatusBadge.vue';
 import type { CareStatusValue } from '@/constants/care-status';
+import Avatar from '@/components/ui/Avatar.vue';
 import { useToast } from '@/composables/use-toast';
 import {
   useContacts, useContactIntelligence,
@@ -357,11 +362,6 @@ function toggleExpand(id: string) {
   expandedId.value = expandedId.value === id ? null : id;
 }
 
-function initials(c: Contact): string {
-  const name = c.crmName || c.fullName || '?';
-  const parts = name.trim().split(/\s+/);
-  return (parts[parts.length - 1]?.[0] || '').toUpperCase();
-}
 function genderLabel(value: string) {
   return GENDER_OPTIONS.find(o => o.value === value)?.text ?? value;
 }

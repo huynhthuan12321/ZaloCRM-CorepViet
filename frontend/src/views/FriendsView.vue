@@ -22,7 +22,13 @@
 
         <button class="nick-single" @click="cycleNick" :disabled="!accounts.length" title="Click để đổi nick">
           <span class="ns-label">NICK</span>
-          <span class="ns-avatar">{{ nickAvatar }}</span>
+          <Avatar
+            :src="activeAccount?.avatarUrl"
+            :name="activeAccount?.displayName || 'Nick'"
+            :size="24"
+            :gradient-seed="activeAccount?.id"
+            platform="zalo"
+          />
           <span class="ns-name">{{ activeAccount?.displayName || 'Chọn nick' }}</span>
           <span v-if="friendsDbTotal" class="ns-count">{{ friendsDbTotal }} bạn</span>
           <span class="ns-arrow">▾</span>
@@ -125,9 +131,13 @@
             <!-- KH cell -->
             <td>
               <div class="kh-cell">
-                <div class="avatar avatar-customer" :class="{ 'is-female': f.contact?.gender === 'female' }">
-                  {{ initials(f.contact) }}
-                </div>
+                <Avatar
+                  :src="f.contact?.avatarUrl"
+                  :name="f.contact?.crmName || f.contact?.fullName || '?'"
+                  :size="32"
+                  :gender="f.contact?.gender"
+                  :gradient-seed="f.contact?.id"
+                />
                 <div class="three-line">
                   <span class="line1">{{ f.contact?.crmName || f.contact?.fullName || '—' }}</span>
                   <span class="line2">
@@ -155,7 +165,12 @@
             <!-- Nick cell -->
             <td>
               <div class="nick-cell">
-                <div class="avatar avatar-nick">{{ nickShort(f.zaloAccount?.displayName) }}</div>
+                <Avatar
+                  :name="f.zaloAccount?.displayName || 'Nick'"
+                  :size="28"
+                  :gradient-seed="f.zaloAccount?.id"
+                  platform="zalo"
+                />
                 <div class="two-line">
                   <span class="line1">{{ f.zaloAccount?.displayName || '—' }}</span>
                   <span class="line2">{{ f.zaloAccount?.phone || '—' }}</span>
@@ -299,6 +314,7 @@ import {
 } from '@/composables/use-contacts';
 import CareStatusBadge from '@/components/ui/CareStatusBadge.vue';
 import type { CareStatusValue } from '@/constants/care-status';
+import Avatar from '@/components/ui/Avatar.vue';
 import { useToast } from '@/composables/use-toast';
 
 const router = useRouter();
@@ -339,10 +355,6 @@ const CRM_LABEL_CHIPS = [
 const activeAccount = computed(() =>
   accounts.value.find(a => a.id === selectedAccountId.value) || null,
 );
-const nickAvatar = computed(() => {
-  const i = accounts.value.findIndex(a => a.id === selectedAccountId.value);
-  return i >= 0 ? `N${i + 1}` : '?';
-});
 const totalPages = computed(() => Math.max(1, Math.ceil(friendsDbTotal.value / pagination.limit)));
 
 function kindCount(kind: string): number {
@@ -437,14 +449,6 @@ function onShowNickLog(f: DbFriend) {
 function autoLabelOf(_f: DbFriend): string | null { return null; }
 
 // Formatters
-function initials(c?: { fullName: string | null; crmName: string | null } | null) {
-  const name = c?.crmName || c?.fullName || '?';
-  return (name.trim().split(/\s+/).pop()?.[0] || '?').toUpperCase();
-}
-function nickShort(name: string | null | undefined) {
-  if (!name) return 'N';
-  return name.split(/\s+/).slice(0, 2).map(x => x[0]).join('').toUpperCase();
-}
 function genderLabel(value: string) {
   return GENDER_OPTIONS.find(o => o.value === value)?.text ?? value;
 }

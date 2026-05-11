@@ -10,6 +10,7 @@ import { io, Socket } from 'socket.io-client';
 export interface ZaloAccount {
   id: string;
   displayName: string | null;
+  avatarUrl?: string | null;
   zaloUid: string | null;
   status: string;
   liveStatus?: string;

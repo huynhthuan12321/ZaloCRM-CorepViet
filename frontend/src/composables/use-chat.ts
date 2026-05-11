@@ -6,6 +6,7 @@ import type { Contact } from '@/composables/use-contacts';
 interface ZaloAccount {
   id: string;
   displayName: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface AiSentiment {
@@ -52,6 +53,12 @@ export interface Conversation {
   threadType: 'user' | 'group';
   contact: Contact | null;
   zaloAccount: ZaloAccount | null;
+  /** Tên nhóm Zalo (chỉ có khi threadType=group) — backend resolve qua getGroupInfo */
+  groupName?: string | null;
+  /** Avatar nhóm Zalo URL (chỉ có khi threadType=group) */
+  groupAvatarUrl?: string | null;
+  /** External thread ID (group id từ Zalo, hoặc UID per-nick cho user thread) */
+  externalThreadId?: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
   isReplied: boolean;

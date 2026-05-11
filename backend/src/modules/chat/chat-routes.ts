@@ -11,6 +11,7 @@ import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { logger } from '../../shared/utils/logger.js';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
+import { applyContactAggregateFromMessage, applyFriendAggregate } from '../contacts/contact-aggregate.js';
 
 type QueryParams = Record<string, string>;
 
@@ -168,7 +169,7 @@ export async function chatRoutes(app: FastifyInstance) {
         where,
         include: {
           contact: { select: { id: true, fullName: true, crmName: true, phone: true, avatarUrl: true, zaloUid: true } },
-          zaloAccount: { select: { id: true, displayName: true, zaloUid: true } },
+          zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true } },
           pins: { select: { id: true } },
           messages: {
             take: 1,
@@ -200,7 +201,7 @@ export async function chatRoutes(app: FastifyInstance) {
       where: { id, orgId: user.orgId },
       include: {
         contact: true,
-        zaloAccount: { select: { id: true, displayName: true, zaloUid: true, status: true } },
+        zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, status: true } },
         pins: { select: { id: true } },
       },
     });
@@ -315,6 +316,20 @@ export async function chatRoutes(app: FastifyInstance) {
         where: { id },
         data: { lastMessageAt: new Date(), isReplied: true, unreadCount: 0 },
       });
+
+      const aggInput = {
+        conversationId: id,
+        message: {
+          id: message.id,
+          content: message.content,
+          contentType: message.contentType,
+          sentAt: message.sentAt,
+          senderType: 'self' as const,
+        },
+        outboundUserId: user.id,
+      };
+      void applyContactAggregateFromMessage(aggInput);
+      void applyFriendAggregate(aggInput);
 
       const io = (app as any).io as Server;
       io?.emit('chat:message', { accountId: conversation.zaloAccountId, message, conversationId: id });

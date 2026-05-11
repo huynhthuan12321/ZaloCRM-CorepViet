@@ -1,0 +1,247 @@
+<template>
+  <div
+    class="smax-av"
+    :class="{ 'is-group': isGroup }"
+    :style="containerStyle"
+    :title="title || name || ''"
+  >
+    <!-- Image with fallback to initials on error -->
+    <img
+      v-if="src && !imgError"
+      :src="src"
+      :alt="name || 'avatar'"
+      class="av-img"
+      @error="imgError = true"
+    />
+    <span v-else class="av-initials" :style="initialsStyle">{{ initials }}</span>
+
+    <!-- Group sticker (góc phải trên) — nhiều user nhỏ để biết là nhóm -->
+    <svg
+      v-if="isGroup"
+      class="av-group-sticker"
+      :style="stickerStyle"
+      viewBox="0 0 24 24"
+      fill="white"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <!-- 3 stylized people heads — clean, simple -->
+      <circle cx="8" cy="9" r="3.2" />
+      <circle cx="16" cy="9" r="3.2" />
+      <circle cx="12" cy="7.5" r="3.5" />
+      <path d="M2 20 Q12 14, 22 20 L22 24 L2 24 Z" />
+    </svg>
+
+    <!-- Group member count badge (optional) -->
+    <span v-if="isGroup && groupMembersCount" class="av-members" :style="membersBadgeStyle">
+      {{ groupMembersCount > 99 ? '99+' : groupMembersCount }}
+    </span>
+
+    <!-- Gender badge (chỉ cho user thread, không group) -->
+    <span
+      v-if="!isGroup && gender && (gender === 'male' || gender === 'female')"
+      class="av-gender"
+      :class="gender === 'female' ? 'gender-female' : 'gender-male'"
+      :style="genderBadgeStyle"
+    >
+      {{ gender === 'female' ? '♀' : '♂' }}
+    </span>
+
+    <!-- Platform mark (Z badge cho Zalo) -->
+    <span
+      v-if="!isGroup && platform === 'zalo'"
+      class="av-platform"
+      :style="platformBadgeStyle"
+    >Z</span>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue';
+
+const props = withDefaults(defineProps<{
+  src?: string | null;
+  name?: string;
+  size?: number;
+  isGroup?: boolean;
+  groupMembersCount?: number | null;
+  gender?: string | null;
+  platform?: 'zalo' | null;
+  /** String dùng để hash ra gradient màu khi không có src (mặc định = name) */
+  gradientSeed?: string;
+  /** Title HTML tooltip */
+  title?: string;
+}>(), {
+  size: 36,
+  isGroup: false,
+  groupMembersCount: null,
+  gender: null,
+  platform: null,
+  gradientSeed: '',
+  title: '',
+});
+
+const imgError = ref(false);
+
+// Reset imgError khi src đổi
+watch(() => props.src, () => { imgError.value = false; });
+
+const initials = computed(() => {
+  const name = (props.name || '?').trim();
+  if (props.isGroup) {
+    const first = name.split(/\s+/)[0] || 'G';
+    return first.slice(0, 2).toUpperCase();
+  }
+  const parts = name.split(/\s+/);
+  return ((parts[parts.length - 1]?.[0] || '?').toUpperCase()
+    + (parts.length > 1 ? (parts[parts.length - 2]?.[0] || '').toUpperCase() : ''));
+});
+
+// 6 gradient palettes — pick by hash of seed
+const GRADIENTS = [
+  'linear-gradient(135deg,#90caf9,#1976d2)',
+  'linear-gradient(135deg,#ff7043,#bf360c)',
+  'linear-gradient(135deg,#ce93d8,#7b1fa2)',
+  'linear-gradient(135deg,#80cbc4,#00695c)',
+  'linear-gradient(135deg,#fbc02d,#f57c00)',
+  'linear-gradient(135deg,#f48fb1,#c2185b)',
+];
+const GROUP_GRADIENT = 'linear-gradient(135deg,#ff7043,#d84315)';
+
+const gradient = computed(() => {
+  if (props.isGroup) return GROUP_GRADIENT;
+  const seed = props.gradientSeed || props.name || '';
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  return GRADIENTS[Math.abs(hash) % GRADIENTS.length];
+});
+
+const containerStyle = computed(() => {
+  const s = `${props.size}px`;
+  return { width: s, height: s };
+});
+const initialsStyle = computed(() => ({
+  background: gradient.value,
+  fontSize: `${Math.round(props.size * 0.4)}px`,
+}));
+
+const stickerStyle = computed(() => {
+  const sz = Math.round(props.size * 0.42);
+  return { width: `${sz}px`, height: `${sz}px` };
+});
+const membersBadgeStyle = computed(() => ({
+  fontSize: `${Math.max(8, Math.round(props.size * 0.25))}px`,
+  minWidth: `${Math.round(props.size * 0.46)}px`,
+  height: `${Math.round(props.size * 0.46)}px`,
+  lineHeight: `${Math.round(props.size * 0.46)}px`,
+}));
+const genderBadgeStyle = computed(() => {
+  const sz = Math.max(14, Math.round(props.size * 0.4));
+  return {
+    width: `${sz}px`,
+    height: `${sz}px`,
+    fontSize: `${Math.round(sz * 0.55)}px`,
+  };
+});
+const platformBadgeStyle = computed(() => {
+  const sz = Math.max(13, Math.round(props.size * 0.35));
+  return {
+    width: `${sz}px`,
+    height: `${sz}px`,
+    fontSize: `${Math.round(sz * 0.6)}px`,
+  };
+});
+</script>
+
+<style scoped>
+.smax-av {
+  position: relative;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: visible;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.av-img {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.av-initials {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 600;
+  letter-spacing: 0.3px;
+  background: linear-gradient(135deg, #90caf9, #1976d2);
+}
+
+/* ════════ Group treatment ════════ */
+.smax-av.is-group .av-img,
+.smax-av.is-group .av-initials {
+  /* Viền đen rõ ràng — đặc trưng cho group */
+  outline: 2px solid #1a1a1a;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px var(--smax-bg, white);
+}
+
+/* Group sticker (góc phải trên) — nhiều user mini */
+.av-group-sticker {
+  position: absolute;
+  top: -3px; right: -3px;
+  background: #1a1a1a;
+  border-radius: 50%;
+  padding: 2px;
+  border: 2px solid var(--smax-bg, white);
+  box-sizing: content-box;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Member count badge (dưới sticker) */
+.av-members {
+  position: absolute;
+  bottom: -3px; right: -3px;
+  background: var(--smax-primary, #2962ff);
+  color: white;
+  border-radius: 999px;
+  font-weight: 700;
+  text-align: center;
+  border: 2px solid var(--smax-bg, white);
+  padding: 0 4px;
+  box-sizing: content-box;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Gender badge (chỉ user thread) */
+.av-gender {
+  position: absolute;
+  bottom: -2px; right: -3px;
+  border-radius: 50%;
+  border: 2.5px solid var(--smax-bg, white);
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 700;
+  z-index: 2;
+}
+.gender-female { background: var(--smax-female, #e91e63); }
+.gender-male   { background: var(--smax-male, #1e88e5); }
+
+/* Platform mark Z (Zalo) — chỉ user thread khi không có gender */
+.av-platform {
+  position: absolute;
+  bottom: -2px; right: -2px;
+  background: #0068ff;
+  color: white;
+  border-radius: 50%;
+  border: 2px solid var(--smax-bg, white);
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1;
+}
+
+/* Khi có cả gender + platform: ẩn platform (gender ưu tiên) */
+.smax-av:has(.av-gender) .av-platform { display: none; }
+</style>

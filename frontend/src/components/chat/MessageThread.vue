@@ -9,14 +9,14 @@
     <template v-else>
       <!-- ════════ Chat header (Smax-style) ════════ -->
       <header class="chat-header">
-        <div class="ch-avatar-wrap">
-          <div class="ch-avatar" :style="avatarStyle">
-            {{ avatarInitials }}
-          </div>
-          <div v-if="contactGender" class="gender-badge" :class="genderClass">
-            {{ contactGender === 'female' ? '♀' : '♂' }}
-          </div>
-        </div>
+        <Avatar
+          :src="headerAvatarSrc"
+          :name="headerName"
+          :size="44"
+          :gender="contactGender"
+          :is-group="conversation.threadType === 'group'"
+          :gradient-seed="conversation.id"
+        />
 
         <div class="ch-info">
           <div class="ch-name-row">
@@ -215,6 +215,7 @@ import type { Conversation, Message } from '@/composables/use-chat';
 import { api } from '@/api/index';
 import AISuggestBar from '@/components/chat/AISuggestBar.vue';
 import CareStatusBadge from '@/components/ui/CareStatusBadge.vue';
+import Avatar from '@/components/ui/Avatar.vue';
 import QuickTemplatePopup from '@/components/chat/quick-template-popup.vue';
 import MessageBubble from '@/components/chat/message-bubble.vue';
 import MessageContextMenu from '@/components/chat/message-context-menu.vue';
@@ -274,31 +275,23 @@ const showForwardDialog = ref(false);
 const editorRef = ref<InstanceType<typeof RichTextEditor> | null>(null);
 const currentTypers = computed(() => props.typingUsers || []);
 
-// ── Header derived data ─────────────────────────────────────────────────────
+// ── Header derived data (Avatar handles initials/gradient/gender) ──────────
 const headerName = computed(() => {
+  if (props.conversation?.threadType === 'group') {
+    return (props.conversation as { groupName?: string }).groupName
+      || props.conversation?.contact?.fullName
+      || 'Nhóm Zalo';
+  }
   const c = props.conversation?.contact;
   return c?.crmName || c?.fullName || 'Unknown';
 });
-const avatarInitials = computed(() => {
-  const parts = headerName.value.trim().split(/\s+/);
-  return (parts[parts.length - 1]?.[0] || '?').toUpperCase()
-    + (parts.length > 1 ? (parts[parts.length - 2]?.[0] || '').toUpperCase() : '');
+const headerAvatarSrc = computed(() => {
+  if (props.conversation?.threadType === 'group') {
+    return (props.conversation as { groupAvatarUrl?: string }).groupAvatarUrl || null;
+  }
+  return props.conversation?.contact?.avatarUrl || null;
 });
-const avatarStyle = computed(() => {
-  const n = (headerName.value.charCodeAt(0) || 0) % 5;
-  const palettes = [
-    'linear-gradient(135deg,#90caf9,#1976d2)',
-    'linear-gradient(135deg,#ff7043,#bf360c)',
-    'linear-gradient(135deg,#ce93d8,#7b1fa2)',
-    'linear-gradient(135deg,#80cbc4,#00695c)',
-    'linear-gradient(135deg,#fbc02d,#f57c00)',
-  ];
-  return { background: palettes[n] };
-});
-const contactGender = computed(() => props.conversation?.contact?.gender);
-const genderClass = computed(() =>
-  contactGender.value === 'female' ? 'gender-female' : 'gender-male',
-);
+const contactGender = computed(() => props.conversation?.contact?.gender || null);
 const friendshipChip = computed(() => {
   // Heuristic: if zaloUid set + thread is user, treat as friend.
   if (props.conversation?.threadType !== 'user') return null;

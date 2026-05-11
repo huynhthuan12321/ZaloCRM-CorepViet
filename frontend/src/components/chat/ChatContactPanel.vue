@@ -3,12 +3,14 @@
     <!-- ════════ HEADER pinned (avatar + ID + care-status) ════════ -->
     <header class="ip-header">
       <button class="ip-close" title="Đóng" @click="$emit('close')">×</button>
-      <div class="ip-avatar-big">
-        {{ initials }}
-        <div v-if="props.contact?.gender" class="gender-badge-big" :class="genderClass">
-          {{ genderSymbol }}
-        </div>
-      </div>
+      <Avatar
+        :src="props.contact?.avatarUrl"
+        :name="headerFullName"
+        :size="64"
+        :gender="form.gender"
+        :gradient-seed="props.contact?.id || headerFullName"
+        class="ip-avatar-big"
+      />
       <div class="ip-name-line" :title="headerFullName">{{ headerFullName }}</div>
       <div v-if="props.contact?.zaloUid" class="ip-id">UID: {{ props.contact.zaloUid }}</div>
       <div class="ip-care-row">
@@ -242,7 +244,7 @@
           </div>
           <div class="nick-rows">
             <div v-for="n in otherNicks" :key="n.id" class="nick-row">
-              <div class="ni-avatar">{{ n.short }}</div>
+              <Avatar :name="n.name" :size="26" :gradient-seed="n.id" platform="zalo" />
               <div class="ni-name">{{ n.name }}</div>
               <span :class="['status-pill', n.pillClass]">{{ n.pillLabel }}</span>
             </div>
@@ -334,6 +336,7 @@ import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList, { type AutomationCard } from './AutomationCardList.vue';
 import TagChipList from '@/components/ui/TagChipList.vue';
+import Avatar from '@/components/ui/Avatar.vue';
 import { useToast } from '@/composables/use-toast';
 
 const props = defineProps<{
@@ -386,21 +389,9 @@ function onCycleCareStatus() {
   saveContact();
 }
 
-// ════════ Avatar + gender ════════
+// ════════ Header name (Avatar component handle initials + gender + gradient) ════════
 const headerFullName = computed(() =>
   props.contact?.crmName || props.contact?.fullName || 'Khách hàng',
-);
-const initials = computed(() => {
-  const name = headerFullName.value;
-  const parts = name.trim().split(/\s+/);
-  return (parts[parts.length - 1]?.[0] || '').toUpperCase()
-    + (parts.length > 1 ? (parts[parts.length - 2]?.[0] || '').toUpperCase() : '');
-});
-const genderSymbol = computed(() =>
-  form.gender === 'female' ? '♀' : form.gender === 'male' ? '♂' : '',
-);
-const genderClass = computed(() =>
-  form.gender === 'female' ? 'smax-gender-female' : 'smax-gender-male',
 );
 
 // ════════ Phones extras ════════
@@ -541,24 +532,9 @@ function relativeTime(dateStr: string) {
 .ip-close:hover { background: var(--smax-grey-100); }
 
 .ip-avatar-big {
-  width: 56px; height: 56px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ff7043, #bf360c);
-  display: flex; align-items: center; justify-content: center;
-  color: white; font-weight: 700; font-size: 20px;
+  display: block;
   margin: 0 auto;
-  position: relative;
 }
-.gender-badge-big {
-  position: absolute; bottom: 0; right: -4px;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  border: 3px solid var(--smax-bg);
-  display: flex; align-items: center; justify-content: center;
-  color: white; font-weight: 700; font-size: 11px;
-}
-.smax-gender-female { background: var(--smax-female); }
-.smax-gender-male   { background: var(--smax-male); }
 
 .ip-name-line {
   margin-top: 7px;
@@ -833,13 +809,6 @@ function relativeTime(dateStr: string) {
 .nick-row {
   display: flex; align-items: center; gap: 7px;
   padding: 5px 0;
-}
-.ni-avatar {
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ffb74d, #f57c00);
-  color: white; font-weight: 600; font-size: 10px;
-  display: flex; align-items: center; justify-content: center;
 }
 .ni-name { flex: 1; font-size: 12px; color: var(--smax-text); }
 

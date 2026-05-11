@@ -59,10 +59,15 @@
         @click="$emit('select', conv.id)"
         @contextmenu.prevent="openContextMenu($event, conv)"
       >
-        <div class="ci-avatar" :class="{ 'is-group': conv.threadType === 'group' }" :style="avatarStyle(conv)">
-          {{ avatarInitials(conv) }}
-          <div v-if="conv.threadType === 'user'" class="platform-mark">Z</div>
-        </div>
+        <Avatar
+          :src="avatarSrcOf(conv)"
+          :name="displayName(conv)"
+          :size="41"
+          :is-group="conv.threadType === 'group'"
+          :platform="conv.threadType === 'user' ? 'zalo' : null"
+          :gradient-seed="conv.id"
+        />
+
 
         <div class="ci-body">
           <div class="ci-name-row">
@@ -125,6 +130,7 @@ import { ref, reactive, watch, onMounted } from 'vue';
 import type { Conversation, AiSentiment } from '@/composables/use-chat';
 import { api } from '@/api/index';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
+import Avatar from '@/components/ui/Avatar.vue';
 
 const props = defineProps<{
   conversations: Conversation[];
@@ -202,30 +208,18 @@ function tagBgColor(tag: string): string {
 
 // ── Conversation display ───────────────────────────────────────────────────
 function displayName(conv: Conversation): string {
-  if (conv.threadType === 'group') return conv.contact?.fullName || 'Nhóm';
+  if (conv.threadType === 'group') {
+    return (conv as Conversation & { groupName?: string }).groupName
+      || conv.contact?.fullName
+      || 'Nhóm Zalo';
+  }
   return conv.contact?.crmName || conv.contact?.fullName || 'Unknown';
 }
-function avatarInitials(conv: Conversation): string {
-  const name = displayName(conv);
-  const parts = name.trim().split(/\s+/);
+function avatarSrcOf(conv: Conversation): string | null {
   if (conv.threadType === 'group') {
-    return parts[0]?.slice(0, 2).toUpperCase() || 'G';
+    return (conv as Conversation & { groupAvatarUrl?: string }).groupAvatarUrl || null;
   }
-  return (parts[parts.length - 1]?.[0] || '?').toUpperCase()
-    + (parts.length > 1 ? (parts[parts.length - 2]?.[0] || '').toUpperCase() : '');
-}
-function avatarStyle(conv: Conversation): Record<string, string> {
-  // Pick gradient based on threadType + first char hash for variety
-  if (conv.threadType === 'group') return {};
-  const n = (displayName(conv).charCodeAt(0) || 0) % 5;
-  const palettes = [
-    'linear-gradient(135deg,#90caf9,#1976d2)',
-    'linear-gradient(135deg,#ff7043,#bf360c)',
-    'linear-gradient(135deg,#ce93d8,#7b1fa2)',
-    'linear-gradient(135deg,#80cbc4,#00695c)',
-    'linear-gradient(135deg,#fbc02d,#f57c00)',
-  ];
-  return { background: palettes[n] };
+  return conv.contact?.avatarUrl || null;
 }
 
 function friendshipStatus(conv: Conversation): string | null {
