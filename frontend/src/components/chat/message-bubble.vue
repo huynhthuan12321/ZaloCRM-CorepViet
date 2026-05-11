@@ -36,7 +36,7 @@
             <div class="reply-text">{{ replyPreviewText }}</div>
           </div>
 
-          <!-- Image -->
+          <!-- Image (có thể kèm caption phía dưới) -->
           <div v-if="getImageUrl(message)">
             <img
               :src="getImageUrl(message)!"
@@ -44,61 +44,77 @@
               class="chat-image"
               @click="emit('preview-image', getImageUrl(message)!)"
             />
+            <div v-if="formattedCaption" class="media-caption" v-html="formattedCaption" />
           </div>
 
           <!-- File/PDF -->
-          <div v-else-if="getFileInfo(message)" class="file-card">
-            <v-icon size="20" class="mr-2" color="info">mdi-file-document-outline</v-icon>
-            <div class="flex-grow-1">
-              <div class="text-body-2 font-weight-medium">{{ getFileInfo(message)!.name }}</div>
-              <div class="text-caption" style="opacity: 0.6;">{{ getFileInfo(message)!.size }}</div>
+          <div v-else-if="getFileInfo(message)">
+            <div class="file-card">
+              <v-icon size="20" class="mr-2" color="info">mdi-file-document-outline</v-icon>
+              <div class="flex-grow-1">
+                <div class="text-body-2 font-weight-medium">{{ getFileInfo(message)!.name }}</div>
+                <div class="text-caption" style="opacity: 0.6;">{{ getFileInfo(message)!.size }}</div>
+              </div>
+              <v-btn
+                v-if="getFileInfo(message)!.href"
+                icon
+                size="x-small"
+                variant="text"
+                @click="openFile(getFileInfo(message)!.href)"
+              >
+                <v-icon size="16">mdi-download</v-icon>
+              </v-btn>
             </div>
-            <v-btn
-              v-if="getFileInfo(message)!.href"
-              icon
-              size="x-small"
-              variant="text"
-              @click="openFile(getFileInfo(message)!.href)"
-            >
-              <v-icon size="16">mdi-download</v-icon>
-            </v-btn>
+            <div v-if="formattedCaption" class="media-caption" v-html="formattedCaption" />
           </div>
 
-          <!-- Sticker -->
-          <div v-else-if="message.contentType === 'sticker'" class="sticker-msg">
-            <img v-if="stickerUrl" :src="stickerUrl" alt="sticker" class="sticker-img" />
-            <span v-else>🎴 Sticker</span>
+          <!-- Sticker (sticker hiếm khi có caption nhưng render nếu có) -->
+          <div v-else-if="message.contentType === 'sticker'">
+            <div class="sticker-msg">
+              <img v-if="stickerUrl" :src="stickerUrl" alt="sticker" class="sticker-img" />
+              <span v-else>🎴 Sticker</span>
+            </div>
+            <div v-if="formattedCaption" class="media-caption" v-html="formattedCaption" />
           </div>
 
-          <!-- Video — thumbnail with play overlay -->
-          <div v-else-if="message.contentType === 'video'" class="video-msg">
-            <div v-if="videoThumb" class="video-thumb-wrap" @click="openVideo">
-              <img :src="videoThumb" alt="video thumbnail" class="video-thumb" />
-              <div class="video-play-overlay">
-                <v-icon size="36" color="white">mdi-play-circle</v-icon>
+          <!-- Video — thumbnail with play overlay + caption -->
+          <div v-else-if="message.contentType === 'video'">
+            <div class="video-msg">
+              <div v-if="videoThumb" class="video-thumb-wrap" @click="openVideo">
+                <img :src="videoThumb" alt="video thumbnail" class="video-thumb" />
+                <div class="video-play-overlay">
+                  <v-icon size="36" color="white">mdi-play-circle</v-icon>
+                </div>
+                <div v-if="videoDuration" class="video-duration">{{ videoDuration }}</div>
               </div>
-              <div v-if="videoDuration" class="video-duration">{{ videoDuration }}</div>
-            </div>
-            <div v-else class="video-card" @click="openVideo">
-              <v-icon size="20" color="info" class="mr-2">mdi-video-outline</v-icon>
-              <div>
-                <div class="text-body-2 font-weight-medium">{{ videoTitle || 'Video' }}</div>
-                <div v-if="videoSize" class="text-caption">{{ videoSize }}</div>
+              <div v-else class="video-card" @click="openVideo">
+                <v-icon size="20" color="info" class="mr-2">mdi-video-outline</v-icon>
+                <div>
+                  <div class="text-body-2 font-weight-medium">{{ videoTitle || 'Video' }}</div>
+                  <div v-if="videoSize" class="text-caption">{{ videoSize }}</div>
+                </div>
               </div>
             </div>
+            <div v-if="formattedCaption" class="media-caption" v-html="formattedCaption" />
           </div>
 
           <!-- Voice -->
-          <div v-else-if="message.contentType === 'voice'" class="voice-msg">
-            <v-icon size="18">mdi-microphone</v-icon>
-            <span class="ml-1">Tin nhắn thoại</span>
-            <a v-if="voiceUrl" :href="voiceUrl" target="_blank" class="ml-2 voice-link">▶ Nghe</a>
+          <div v-else-if="message.contentType === 'voice'">
+            <div class="voice-msg">
+              <v-icon size="18">mdi-microphone</v-icon>
+              <span class="ml-1">Tin nhắn thoại</span>
+              <a v-if="voiceUrl" :href="voiceUrl" target="_blank" class="ml-2 voice-link">▶ Nghe</a>
+            </div>
+            <div v-if="formattedCaption" class="media-caption" v-html="formattedCaption" />
           </div>
 
           <!-- GIF -->
-          <div v-else-if="message.contentType === 'gif'" class="gif-msg">
-            <img v-if="gifUrl" :src="gifUrl" alt="gif" class="gif-img" />
-            <span v-else>🎞 GIF</span>
+          <div v-else-if="message.contentType === 'gif'">
+            <div class="gif-msg">
+              <img v-if="gifUrl" :src="gifUrl" alt="gif" class="gif-img" />
+              <span v-else>🎞 GIF</span>
+            </div>
+            <div v-if="formattedCaption" class="media-caption" v-html="formattedCaption" />
           </div>
 
           <!-- Reminder -->
@@ -263,18 +279,47 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-const formattedText = computed(() => {
-  const raw = parseDisplayContent(props.message.content);
+function highlightText(raw: string): string {
   if (!raw) return '';
   let s = escapeHtml(raw);
-  // @mention — Vietnamese-aware names
   s = s.replace(/@([\p{L}][\p{L}0-9._-]+(?:\s[\p{L}][\p{L}0-9._-]+){0,2})/gu, '<span class="mention">@$1</span>');
-  // URLs → clickable
   s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" class="link">$1</a>');
-  // Linebreaks
   s = s.replace(/\r?\n/g, '<br>');
   return s;
+}
+
+const formattedText = computed(() => {
+  const raw = parseDisplayContent(props.message.content);
+  return highlightText(raw);
 });
+
+/**
+ * Caption text khi message vừa có media (image/video/sticker/gif/file) vừa có text.
+ * Zalo gửi message kèm caption thường lưu trong content.title hoặc content.description.
+ * Đặc biệt: bỏ qua nếu title trông giống URL/filename/path (vd ".jpg", "/photos/...").
+ */
+const messageCaption = computed<string>(() => {
+  const ct = props.message.contentType;
+  if (!['image', 'video', 'sticker', 'gif', 'file'].includes(ct)) return '';
+  const p = safeParse(props.message.content);
+  if (!p) return '';
+  const candidates = [p.title, p.caption, p.description, p.text];
+  for (const c of candidates) {
+    if (typeof c !== 'string') continue;
+    const t = c.trim();
+    if (!t) continue;
+    // Loại bỏ URL
+    if (/^https?:\/\//i.test(t)) continue;
+    // Loại bỏ filename pattern (kết thúc .jpg/.png/.mp4...)
+    if (/\.(jpe?g|png|webp|gif|mp4|mov|avi|mkv|webm|pdf|doc|docx|xls|xlsx|zip|rar)$/i.test(t)) continue;
+    // Loại bỏ path bắt đầu bằng /
+    if (t.startsWith('/')) continue;
+    return t;
+  }
+  return '';
+});
+
+const formattedCaption = computed(() => highlightText(messageCaption.value));
 
 // ── Sticker / Video / Voice / GIF helpers ───────────────────────────────────
 const stickerUrl = computed(() => extractMediaUrl('sticker', props.message.content));
@@ -494,6 +539,16 @@ function openFile(href: string) {
 /* Text content with @mention + links */
 .text-content {
   word-break: break-word;
+}
+
+/* Caption text below media (image/video/sticker/gif/file + text) */
+.media-caption {
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--smax-text, #212121);
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 :deep(.mention) {
   color: var(--smax-primary, #2962ff);
