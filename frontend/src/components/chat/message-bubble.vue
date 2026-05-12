@@ -36,8 +36,21 @@
             <div class="reply-text">{{ replyPreviewText }}</div>
           </div>
 
+          <!-- Reminder card — đặt TRƯỚC image branch vì thumb URL của reminder có đuôi .png
+               sẽ làm getImageUrl trả về và render full size hình minh hoạ Zalo (bug cũ). -->
+          <div v-if="isReminderMessage(message)" class="reminder-card">
+            <div class="d-flex align-center mb-1">
+              <v-icon size="16" color="warning" class="mr-1">mdi-calendar-clock</v-icon>
+              <span class="text-caption font-weight-bold" style="color: #FFB74D;">Nhắc hẹn</span>
+            </div>
+            <div class="text-body-2">{{ getReminderTitle(message) }}</div>
+            <div v-if="getReminderTime(message)" class="text-caption mt-1" style="opacity: 0.7;">
+              <v-icon size="12" class="mr-1">mdi-clock-outline</v-icon>{{ getReminderTime(message) }}
+            </div>
+          </div>
+
           <!-- Image (có thể kèm caption phía dưới) -->
-          <div v-if="getImageUrl(message)">
+          <div v-else-if="getImageUrl(message)">
             <img
               :src="getImageUrl(message)!"
               alt="Hình ảnh"
@@ -115,18 +128,6 @@
               <span v-else>🎞 GIF</span>
             </div>
             <div v-if="formattedCaption" class="media-caption" v-html="formattedCaption" />
-          </div>
-
-          <!-- Reminder -->
-          <div v-else-if="isReminderMessage(message)" class="reminder-card">
-            <div class="d-flex align-center mb-1">
-              <v-icon size="16" color="warning" class="mr-1">mdi-calendar-clock</v-icon>
-              <span class="text-caption font-weight-bold" style="color: #FFB74D;">Nhắc hẹn</span>
-            </div>
-            <div class="text-body-2">{{ getReminderTitle(message) }}</div>
-            <div v-if="getReminderTime(message)" class="text-caption mt-1" style="opacity: 0.7;">
-              <v-icon size="12" class="mr-1">mdi-clock-outline</v-icon>{{ getReminderTime(message) }}
-            </div>
           </div>
 
           <!-- Call message (action recommened.calltime/misscall — thường stored as contact_card) -->

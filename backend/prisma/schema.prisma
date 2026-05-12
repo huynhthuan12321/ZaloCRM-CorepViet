@@ -288,6 +288,9 @@ model Message {
 }
 
 // Appointment scheduled for a contact
+// source='zalo' khi sync từ reminder Zalo client, source='manual' khi sale tạo trong CRM.
+// externalRef = Zalo reminderId (unique per org để dedup khi reminder edit/fire lại).
+// zaloMessageId = FK mềm tới Message.id của reminder card → deep-link conversation.
 model Appointment {
   id              String   @id @default(uuid())
   orgId           String   @map("org_id")
@@ -301,10 +304,19 @@ model Appointment {
   reminderSent    Boolean  @default(false) @map("reminder_sent")
   createdAt       DateTime @default(now()) @map("created_at")
 
+  // Nguồn + link Zalo
+  source        String   @default("manual") // "manual" | "zalo"
+  externalRef   String?  @map("external_ref") // Zalo reminderId (params.actions[0].data.reminderId)
+  zaloMessageId String?  @map("zalo_message_id") // FK mềm → Message.id (không cascade, giữ data nếu msg xoá)
+  emoji         String?  // ⏰ 🔔 từ params hoặc default
+
   org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
   assignedUser User?        @relation(fields: [assignedUserId], references: [id])
 
+  @@unique([orgId, externalRef])
+  @@index([source])
+  @@index([orgId, appointmentDate])
   @@map("appointments")
 }
 

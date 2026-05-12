@@ -170,6 +170,13 @@
             </div>
           </div>
 
+          <!-- Reminder notice — render inline timeline event (centered, no bubble) -->
+          <div v-else-if="isReminderNotice(item.msg)" class="msg-system-event reminder-notice">
+            <v-icon size="14" color="warning" class="mr-1">mdi-bell-ring</v-icon>
+            <span>{{ reminderNoticeText(item.msg) }}</span>
+            <span v-if="reminderNoticeTime(item.msg)" class="reminder-notice-time">· {{ reminderNoticeTime(item.msg) }}</span>
+          </div>
+
           <!-- Single message — MessageBubble component -->
           <MessageBubble
             v-else
@@ -471,6 +478,38 @@ function resolveSenderAvatar(msg: Message): string | null {
     return props.conversation?.contact?.avatarUrl || null;
   }
   return null;
+}
+
+// ── Reminder notice (inline timeline event) ─────────────────────────────────
+// Zalo gửi 2 row khi tạo reminder: notice "X tạo nhắc hẹn mới Y - HH:mm" (action=msginfo.actionlist)
+// và card (action=show.profile). Notice không nên là bubble — render centered inline event.
+function isReminderNotice(msg: Message): boolean {
+  if (msg.contentType !== 'reminder') return false;
+  try {
+    const p = JSON.parse(msg.content || '{}');
+    return p.action === 'msginfo.actionlist';
+  } catch { return false; }
+}
+function reminderNoticeText(msg: Message): string {
+  try {
+    const p = JSON.parse(msg.content || '{}');
+    return String(p.title || '').trim() || 'Nhắc hẹn mới';
+  } catch { return 'Nhắc hẹn mới'; }
+}
+function reminderNoticeTime(msg: Message): string {
+  try {
+    const p = JSON.parse(msg.content || '{}');
+    const params = typeof p.params === 'string' ? JSON.parse(p.params) : p.params;
+    const hl = Array.isArray(params?.highLightsV2) ? params.highLightsV2 : [];
+    for (const h of hl) {
+      if (Number(h.ts) > 1e12) {
+        return new Date(Number(h.ts)).toLocaleString('vi-VN', {
+          weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+        });
+      }
+    }
+  } catch {}
+  return '';
 }
 // ── Smart friendship state ─────────────────────────────────────────────────
 // Source: conv.friendship (backend join Friend by zaloAccountId × contactId).
@@ -1043,6 +1082,27 @@ watch(() => props.conversation?.id, async () => {
   width: 60px; height: 1px;
   background: var(--smax-grey-300);
   vertical-align: middle; margin: 0 9px;
+}
+
+/* Inline system event (reminder notice, etc.) — centered, no bubble */
+.msg-system-event {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 10px auto;
+  padding: 6px 14px;
+  background: rgba(255, 152, 0, 0.08);
+  border: 1px solid rgba(255, 152, 0, 0.18);
+  border-radius: 20px;
+  font-size: 12px;
+  color: #ef6c00;
+  max-width: 80%;
+  width: fit-content;
+}
+.msg-system-event.reminder-notice .reminder-notice-time {
+  color: var(--smax-grey-700);
+  font-weight: 500;
 }
 
 .msg-album-wrap { display: flex; }

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { emitWebhook } from '../api/webhook-service.js';
 import { runAutomationRules } from '../automation/automation-service.js';
 import { applyContactAggregateFromMessage, applyContactInteraction, applyFriendAggregate } from '../contacts/contact-aggregate.js';
+import { syncReminderFromMessage } from '../contacts/reminder-sync.js';
 
 export interface IncomingMessage {
   accountId: string;
@@ -150,6 +151,16 @@ export async function handleIncomingMessage(
     };
     void applyContactAggregateFromMessage(aggregateInput);
     void applyFriendAggregate(aggregateInput);
+
+    // Auto-sync Zalo reminder → Appointment (fire-and-forget, dedup theo externalRef)
+    void syncReminderFromMessage({
+      orgId: account.orgId,
+      contactId,
+      messageId: message.id,
+      content: message.content,
+      contentType: message.contentType,
+      senderUid: msg.senderUid,
+    });
 
     // Track first outbound contact date — set once when agent sends first message
     if (msg.isSelf && contactId) {

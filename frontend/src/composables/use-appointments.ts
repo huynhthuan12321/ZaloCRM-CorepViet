@@ -10,13 +10,19 @@ import { api } from '@/api/index';
 export interface Appointment {
   id: string;
   contactId: string;
-  contact?: { id: string; fullName: string | null; phone: string | null };
+  contact?: { id: string; fullName: string | null; phone: string | null; avatarUrl?: string | null; zaloUid?: string | null };
   appointmentDate: string;
   appointmentTime: string;
   type: string;
   status: string;
   notes: string | null;
   createdAt: string;
+  // Phase A: phân biệt nguồn + link sang Zalo conversation
+  source: 'manual' | 'zalo';
+  externalRef: string | null;
+  zaloMessageId: string | null;
+  emoji: string | null;
+  conversationId: string | null; // resolve từ backend join với Message.conversation
 }
 
 export interface AppointmentFilters {
@@ -24,6 +30,7 @@ export interface AppointmentFilters {
   to: string;
   status: string;
   contactId: string;
+  source: 'all' | 'manual' | 'zalo'; // filter chip
 }
 
 export const APPOINTMENT_STATUS_OPTIONS = [
@@ -68,7 +75,9 @@ export function useAppointments() {
     to: '',
     status: '',
     contactId: '',
+    source: 'all',
   });
+  const sourceCounts = ref<Record<string, number>>({});
 
   async function fetchAppointments() {
     loading.value = true;
@@ -79,10 +88,12 @@ export function useAppointments() {
           dateTo: filters.to || undefined,
           status: filters.status || undefined,
           contactId: filters.contactId || undefined,
+          source: filters.source === 'all' ? undefined : filters.source,
         },
       });
       appointments.value = res.data.appointments ?? res.data;
       total.value = res.data.total ?? appointments.value.length;
+      sourceCounts.value = res.data.counts ?? {};
     } catch (err) {
       console.error('Failed to fetch appointments:', err);
     } finally {
@@ -160,7 +171,7 @@ export function useAppointments() {
 
   return {
     appointments, todayAppointments, upcomingAppointments,
-    total, loading, saving, deleting,
+    total, sourceCounts, loading, saving, deleting,
     filters,
     fetchAppointments, fetchToday, fetchUpcoming,
     createAppointment, updateAppointment, deleteAppointment,

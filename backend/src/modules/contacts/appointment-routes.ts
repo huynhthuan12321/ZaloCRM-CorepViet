@@ -65,6 +65,7 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── GET /api/v1/appointments — list with filters ──────────────────────────
+  // Hỗ trợ filter source ('zalo' | 'manual' | 'all'); trả counts per source cho filter chip.
   app.get('/api/v1/appointments', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -75,11 +76,13 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         contactId = '',
         dateFrom = '',
         dateTo = '',
+        source = '',
       } = request.query as QueryParams;
 
       const where: any = { orgId: user.orgId };
       if (status) where.status = status;
       if (contactId) where.contactId = contactId;
+      if (source && source !== 'all') where.source = source;
       if (dateFrom || dateTo) {
         where.appointmentDate = {};
         if (dateFrom) where.appointmentDate.gte = new Date(dateFrom);
@@ -89,7 +92,7 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
 
-      const [appointments, total] = await Promise.all([
+      const [appointments, total, sourceCounts] = await Promise.all([
         prisma.appointment.findMany({
           where,
           include: APPOINTMENT_INCLUDE,
@@ -98,9 +101,37 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
           take: limitNum,
         }),
         prisma.appointment.count({ where }),
+        // Counts per source — ignore current source filter để chip luôn show số đầy đủ
+        prisma.appointment.groupBy({
+          by: ['source'],
+          where: { orgId: user.orgId },
+          _count: true,
+        }),
       ]);
 
-      return { appointments, total, page: pageNum, limit: limitNum };
+      // Resolve conversationId từ zaloMessageId cho deep-link
+      const zaloMsgIds = appointments
+        .filter((a) => a.zaloMessageId)
+        .map((a) => a.zaloMessageId as string);
+      let convMap: Record<string, string> = {};
+      if (zaloMsgIds.length > 0) {
+        const msgs = await prisma.message.findMany({
+          where: { id: { in: zaloMsgIds } },
+          select: { id: true, conversationId: true },
+        });
+        convMap = Object.fromEntries(msgs.map((m) => [m.id, m.conversationId]));
+      }
+
+      return {
+        appointments: appointments.map((a) => ({
+          ...a,
+          conversationId: a.zaloMessageId ? convMap[a.zaloMessageId] || null : null,
+        })),
+        total,
+        page: pageNum,
+        limit: limitNum,
+        counts: Object.fromEntries(sourceCounts.map((c) => [c.source, c._count])),
+      };
     } catch (err) {
       logger.error('[appointments] List error:', err);
       return reply.status(500).send({ error: 'Failed to fetch appointments' });
