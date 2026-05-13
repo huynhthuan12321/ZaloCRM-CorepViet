@@ -529,6 +529,58 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // ── POST /api/v1/conversations/ensure-by-uid — find-or-create Conv (account, uid) ─
+  // Use case: user click "Nhắn tin" trong ZaloUserInfoDialog từ avatar trong group chat.
+  // Nick hiện tại có thể chưa từng nhắn riêng với UID đó → tạo conv mới.
+  // Khác /friends/:id/ensure-conversation: ở đây có thể chưa có Friend row (UID lạ
+  // gặp trong group). Tự link contactId nếu tìm thấy Contact theo zaloUid.
+  app.post('/api/v1/conversations/ensure-by-uid', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const body = (request.body || {}) as { zaloAccountId?: string; uid?: string };
+      if (!body.zaloAccountId || !body.uid) {
+        return reply.status(400).send({ error: 'zaloAccountId và uid required' });
+      }
+      // Verify account thuộc org user
+      const account = await prisma.zaloAccount.findFirst({
+        where: { id: body.zaloAccountId, orgId: user.orgId },
+        select: { id: true },
+      });
+      if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
+
+      const existing = await prisma.conversation.findFirst({
+        where: { zaloAccountId: body.zaloAccountId, externalThreadId: body.uid },
+        select: { id: true },
+      });
+      if (existing) return reply.send({ conversationId: existing.id, created: false });
+
+      // Link Contact nếu tồn tại theo zaloUid (cùng org); else null — sẽ resolve sau khi
+      // có inbound msg đầu tiên qua message-handler.findOrCreateContact.
+      const linkedContact = await prisma.contact.findFirst({
+        where: { orgId: user.orgId, zaloUid: body.uid, mergedInto: null },
+        select: { id: true },
+      });
+
+      const created = await prisma.conversation.create({
+        data: {
+          orgId: user.orgId,
+          zaloAccountId: body.zaloAccountId,
+          contactId: linkedContact?.id ?? null,
+          threadType: 'user',
+          externalThreadId: body.uid,
+          lastMessageAt: new Date(),
+          unreadCount: 0,
+          isReplied: false,
+        },
+        select: { id: true },
+      });
+      return reply.send({ conversationId: created.id, created: true });
+    } catch (err) {
+      logger.error('[conversations] ensure-by-uid error:', err);
+      return reply.status(500).send({ error: 'Ensure conversation failed', detail: String(err) });
+    }
+  });
+
   // ── POST /api/v1/friends/:id/promote-to-parent — gỡ Friend Con thành KH Cha mới ──
   // Tạo Contact mới từ Friend (1 Zalo identity per nick CRM), move Friend +
   // Conversation tương ứng sang Contact mới. Cha cũ giữ lại các Friend khác.

@@ -317,6 +317,12 @@ export function useChat() {
   async function selectConversation(convId: string) {
     selectedConvId.value = convId;
     clearAiState();
+    // Nếu conv không có trong list (filter loại ra HOẶC vừa tạo mới qua
+    // ensure-conversation từ dialog) → refresh list để MessageThread render được.
+    // selectedConv = computed find trong list — list rỗng = blank UI.
+    if (!conversations.value.find(c => c.id === convId)) {
+      await fetchConversations();
+    }
     await fetchMessages(convId);
     try {
       const convDetail = await api.get(`/conversations/${convId}`);
