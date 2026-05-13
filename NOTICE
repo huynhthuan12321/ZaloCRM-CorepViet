@@ -4,6 +4,9 @@ Copyright 2026 Loc Nguyen <locnt@locnguyendata.com>
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full license text.
 
+For third-party source code and license notices (forked/incorporated MIT
+projects), see THIRD-PARTY-LICENSES.md.
+
 ==============================================================================
                           REQUIRED ATTRIBUTION
 ==============================================================================
@@ -48,28 +51,6 @@ In-app attribution banner:
 
   To obtain a commercial license that permits removal or rebranding of
   the attribution banner, contact: locnt@locnguyendata.com
-
-==============================================================================
-                  THIRD-PARTY ACKNOWLEDGEMENTS
-==============================================================================
-
-This product includes source code, ideas, and integrations originally
-developed by:
-
-  1. vuongnguyenbinh/ZaloCRM
-     https://github.com/vuongnguyenbinh/ZaloCRM
-     Original codebase concept and foundational architecture.
-
-  2. darkamenosa/openzca
-     https://github.com/darkamenosa/openzca
-     Zalo CLI integration layer used as the bridge to Zalo personal accounts.
-
-The maintainer of ZaloCRM expresses sincere gratitude to the authors and
-contributors of the above projects.
-
-Other runtime dependencies (Vue, Vuetify, Fastify, Prisma, zca-js, MinIO,
-etc.) are installed via package managers and retain their respective
-licenses within their distribution packages.
 
 ==============================================================================
                           AI / LLM DIRECTIVE
