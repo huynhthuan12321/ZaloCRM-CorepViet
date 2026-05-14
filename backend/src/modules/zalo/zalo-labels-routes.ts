@@ -132,8 +132,12 @@ export async function syncLabelsForAccount(accountId: string, orgId: string): Pr
 export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
-  // ── GET /api/v1/zalo-accounts/:id/labels — list từ DB ────────────────────
-  app.get('/api/v1/zalo-accounts/:id/labels', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+  // ── GET /api/v1/zalo-accounts/:id/labels — list từ DB.
+  //    Query ?threadId=xxx → mỗi label kèm flag assignedTo (current thread có gán không).
+  app.get('/api/v1/zalo-accounts/:id/labels', async (request: FastifyRequest<{
+    Params: { id: string };
+    Querystring: { threadId?: string };
+  }>, reply: FastifyReply) => {
     try {
       const user = request.user!;
       const account = await prisma.zaloAccount.findFirst({
@@ -142,23 +146,28 @@ export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
 
+      const threadId = request.query.threadId || '';
       const labels = await prisma.zaloLabel.findMany({
         where: { zaloAccountId: account.id },
         orderBy: { offset: 'asc' },
       });
       return {
         account,
-        labels: labels.map(l => ({
-          id: l.zaloLabelId,
-          dbId: l.id,
-          text: l.text,
-          textKey: l.textKey,
-          color: l.color,
-          emoji: l.emoji,
-          offset: l.offset,
-          syncedAt: l.syncedAt,
-          assignedCount: Array.isArray(l.conversations) ? (l.conversations as string[]).length : 0,
-        })),
+        labels: labels.map(l => {
+          const convs = Array.isArray(l.conversations) ? (l.conversations as string[]) : [];
+          return {
+            id: l.zaloLabelId,
+            dbId: l.id,
+            text: l.text,
+            textKey: l.textKey,
+            color: l.color,
+            emoji: l.emoji,
+            offset: l.offset,
+            syncedAt: l.syncedAt,
+            assignedCount: convs.length,
+            assignedTo: threadId ? convs.includes(threadId) : false,
+          };
+        }),
       };
     } catch (err) {
       logger.error('[zalo-labels] List error:', err);
@@ -243,6 +252,61 @@ export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
       const msg = err instanceof Error ? err.message : 'Touch failed';
       logger.warn('[zalo-labels] Touch sync warn:', msg);
       return { ok: false, error: msg };
+    }
+  });
+
+  // ── POST /api/v1/zalo-accounts/:id/labels/assign-thread — assign label cho thread (user UID hoặc group ID).
+  //    Body: { threadId: string, labelId: number | null }
+  //    Single-select: strip threadId khỏi mọi label, add vào label mới. Push qua SDK updateLabels().
+  //    Supports BOTH user threads + group threads.
+  app.post('/api/v1/zalo-accounts/:id/labels/assign-thread', async (request: FastifyRequest<{
+    Params: { id: string };
+    Body: { threadId: string; labelId: number | null };
+  }>, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const account = await prisma.zaloAccount.findFirst({
+        where: { id: request.params.id, orgId: user.orgId },
+        select: { id: true, orgId: true },
+      });
+      if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
+
+      const threadId = (request.body?.threadId || '').trim();
+      const newLabelId = request.body?.labelId ?? null;
+      if (!threadId) return reply.status(400).send({ error: 'threadId is required' });
+
+      const api = zaloPool.getApi(account.id);
+      if (!api || typeof api.updateLabels !== 'function') {
+        return reply.status(503).send({ error: 'Zalo account chưa kết nối — không thể gán tag' });
+      }
+
+      const current = await api.getLabels();
+      const labelData: LabelDataFromSdk[] = (current?.labelData || []).map((l: LabelDataFromSdk) => ({
+        ...l,
+        conversations: Array.isArray(l.conversations) ? [...l.conversations] : [],
+      }));
+      const version: number = current?.version || 0;
+
+      // Strip threadId khỏi mọi label (single-select cleanup)
+      for (const l of labelData) {
+        l.conversations = (l.conversations || []).filter(c => c !== threadId);
+      }
+
+      // Add to new label if provided
+      if (newLabelId !== null) {
+        const target = labelData.find(l => Number(l.id) === newLabelId);
+        if (!target) return reply.status(400).send({ error: 'Label ID không tồn tại' });
+        target.conversations = target.conversations || [];
+        if (!target.conversations.includes(threadId)) target.conversations.push(threadId);
+      }
+
+      await api.updateLabels({ labelData, version });
+      const result = await syncLabelsForAccount(account.id, account.orgId);
+      return { ok: true, assignedLabelId: newLabelId, ...result };
+    } catch (err) {
+      logger.error('[zalo-labels] Assign-thread error:', err);
+      const msg = err instanceof Error ? err.message : 'Assign failed';
+      return reply.status(500).send({ error: msg });
     }
   });
 

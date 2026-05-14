@@ -120,9 +120,11 @@ async function persist(next: string[]) {
 
 <style scoped>
 .tag-crm-bar {
-  padding: 6px 12px 4px;
+  /* Extend full-width của input-area (input-area có padding 7px 13px) */
+  margin: -7px -13px 7px;
+  padding: 7px 13px 6px;
   background: var(--smax-bg);
-  border-top: 1px solid var(--smax-grey-100);
+  border-bottom: 1px solid var(--smax-grey-100);
 }
 
 .tag-pills {

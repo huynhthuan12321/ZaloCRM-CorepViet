@@ -43,8 +43,9 @@
               :model-value="(conversation.contact.status as string | null) || 'new'"
               @update:model-value="onCareStatusChange"
             />
-            <!-- Zalo Real label dropdown — Zalo-native UI (single-select, list all labels in account) -->
-            <v-menu v-if="conversation.threadType === 'user' && conversation.friendship" :close-on-content-click="false" location="bottom start">
+            <!-- Zalo Real label dropdown — Zalo-native UI (single-select, list all labels in account)
+                 Hỗ trợ cả user thread (UID) + group thread (groupId). Chỉ ẩn nếu không có externalThreadId. -->
+            <v-menu v-if="conversation.externalThreadId && conversation.zaloAccount" :close-on-content-click="false" location="bottom start">
               <template #activator="{ props: actProps }">
                 <button v-bind="actProps" class="zlbl-trigger" :title="currentLabel ? `Đang gắn: ${currentLabel.text}` : 'Chưa gắn tag Zalo'">
                   <span class="zlbl-icon" :style="currentLabel ? `color: ${currentLabel.color}` : ''">🏷</span>
@@ -541,20 +542,29 @@ const msgInCount = computed(() => props.conversation?.friendship?.totalInbound ?
  *   Nếu label đó đang active → click sẽ unassign (labelId=null).
  * - Sync 2-way: trigger /labels/touch (cooldown 5s) khi conversation đổi.
  * ───────────────────────────────────────────────────────────────────── */
-type AccountLabelView = { id: number; text: string; color: string; emoji: string | null; offset: number; assignedCount: number };
+type AccountLabelView = {
+  id: number;
+  text: string;
+  color: string;
+  emoji: string | null;
+  offset: number;
+  assignedCount: number;
+  assignedTo?: boolean;  // server flag — true nếu thread hiện tại đang gắn label này
+};
 
 const allLabels = ref<AccountLabelView[]>([]);
 const loadingAllLabels = ref(false);
 const assigningLabel = ref(false);
 
+// currentLabel: tìm label có assignedTo=true (do BE trả về khi pass threadId).
+// Fallback: nếu allLabels chưa load, dùng friendship.zaloLabels[0] (chỉ cho user threads).
 const currentLabel = computed<AccountLabelView | null>(() => {
+  const fromList = allLabels.value.find(l => l.assignedTo);
+  if (fromList) return fromList;
   const fs = props.conversation?.friendship;
   const labels = Array.isArray(fs?.zaloLabels) ? fs!.zaloLabels : [];
   if (!labels.length) return null;
   const first = labels[0] as { id?: number | string; name?: string; color?: string; emoji?: string };
-  const fromMaster = allLabels.value.find(l => l.id === Number(first.id));
-  if (fromMaster) return fromMaster;
-  // Fallback: zaloLabels chứa shape khác
   return {
     id: Number(first.id) || 0,
     text: first.name || '—',
@@ -565,12 +575,13 @@ const currentLabel = computed<AccountLabelView | null>(() => {
   };
 });
 
-async function fetchAllLabels(accountId: string) {
+async function fetchAllLabels(accountId: string, threadId?: string | null) {
   if (!accountId) return;
   loadingAllLabels.value = true;
   try {
     const { api: apiClient } = await import('@/api/index');
-    const { data } = await apiClient.get(`/zalo-accounts/${accountId}/labels`);
+    const query = threadId ? `?threadId=${encodeURIComponent(threadId)}` : '';
+    const { data } = await apiClient.get(`/zalo-accounts/${accountId}/labels${query}`);
     allLabels.value = (data.labels || []) as AccountLabelView[];
   } catch (err) {
     console.error('[zalo-labels] fetch all error', err);
@@ -580,43 +591,43 @@ async function fetchAllLabels(accountId: string) {
 }
 
 /* Sync-on-demand: khi đổi conversation → touch endpoint (cooldown 5s server-side).
- * Sau touch xong → re-fetch master list + emit reload-conversation cho parent. */
-async function touchAccountSync(accountId: string) {
+ * Sau touch xong → re-fetch master list với threadId hiện tại để có assignedTo flag. */
+async function touchAccountSync(accountId: string, threadId?: string | null) {
   if (!accountId) return;
   try {
     const { api: apiClient } = await import('@/api/index');
     await apiClient.post(`/zalo-accounts/${accountId}/labels/touch`);
-    await fetchAllLabels(accountId);
-    // Báo parent rằng friendship.zaloLabels có thể đã đổi sau sync — re-fetch conversation detail
+    await fetchAllLabels(accountId, threadId);
     window.dispatchEvent(new CustomEvent('zalo-labels-synced', { detail: { accountId } }));
   } catch (err) {
     // Silent — touch luôn 200 ngay cả khi error
   }
 }
 
-// Watch conversation switch → sync labels (cooldown 5s server-side) + fetch master list
+// Watch conversation switch → sync labels (cooldown 5s server-side) + fetch master list cho thread hiện tại
 watch(() => props.conversation?.id, (newId, oldId) => {
   if (!newId || newId === oldId) return;
   const accId = props.conversation?.zaloAccount?.id;
+  const threadId = props.conversation?.externalThreadId;
   if (accId) {
-    void fetchAllLabels(accId);   // load master để dropdown render đủ
-    void touchAccountSync(accId); // touch để pick up Zalo client changes (2-way)
+    void fetchAllLabels(accId, threadId);  // BE trả assignedTo flag cho thread hiện tại
+    void touchAccountSync(accId, threadId);
   }
 }, { immediate: true });
 
 async function onPickLabel(label: AccountLabelView) {
-  const friendId = props.conversation?.friendship?.id;
-  if (!friendId || assigningLabel.value) return;
+  const accId = props.conversation?.zaloAccount?.id;
+  const threadId = props.conversation?.externalThreadId;
+  if (!accId || !threadId || assigningLabel.value) return;
   assigningLabel.value = true;
   try {
     const { api: apiClient } = await import('@/api/index');
     // Toggle: nếu đang active → unassign (null), ngược lại assign labelId
     const labelId = currentLabel.value?.id === label.id ? null : label.id;
-    await apiClient.post(`/friends/${friendId}/zalo-label`, { labelId });
+    // Dùng assign-thread (hỗ trợ cả user + group), thay vì /friends/:id route
+    await apiClient.post(`/zalo-accounts/${accId}/labels/assign-thread`, { threadId, labelId });
     toast.success(labelId ? `✓ Đã gắn "${label.text}"` : `✓ Đã bỏ tag`);
-    // Re-fetch master + báo parent reload conversation để cập nhật friendship.zaloLabels
-    const accId = props.conversation?.zaloAccount?.id;
-    if (accId) await fetchAllLabels(accId);
+    await fetchAllLabels(accId, threadId);
     window.dispatchEvent(new CustomEvent('zalo-labels-synced', { detail: { accountId: accId } }));
   } catch (err: any) {
     toast.error(err.response?.data?.error || 'Không gán được tag');
@@ -627,12 +638,13 @@ async function onPickLabel(label: AccountLabelView) {
 
 async function onSyncLabels() {
   const accId = props.conversation?.zaloAccount?.id;
+  const threadId = props.conversation?.externalThreadId;
   if (!accId) return;
   try {
     const { api: apiClient } = await import('@/api/index');
     const { data } = await apiClient.post(`/zalo-accounts/${accId}/labels/sync`);
     toast.success(`✓ Sync ${data.labels.length} tag · ${data.friendsUpdated} KH`);
-    await fetchAllLabels(accId);
+    await fetchAllLabels(accId, threadId);
     window.dispatchEvent(new CustomEvent('zalo-labels-synced', { detail: { accountId: accId } }));
   } catch (err: any) {
     toast.error(err.response?.data?.error || 'Sync thất bại');
@@ -1525,20 +1537,21 @@ watch(() => props.editingMessage?.id, async (id) => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: transparent;
-  border: 1px solid transparent;
+  background: var(--smax-grey-100, #f5f6fa);
+  border: 1px solid var(--smax-grey-200, #ebedf0);
   border-radius: 11px;
   font-size: 12px;
   font-weight: 500;
-  padding: 2px 7px;
+  padding: 2px 8px;
   cursor: pointer;
   color: var(--smax-grey-700);
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
   max-width: 180px;
 }
 .zlbl-trigger:hover {
-  background: var(--smax-grey-100);
-  border-color: var(--smax-grey-200);
+  background: var(--smax-primary-soft, #e3f2fd);
+  border-color: var(--smax-primary, #2962ff);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .zlbl-icon { font-size: 12px; flex-shrink: 0; }
 .zlbl-current-name {
