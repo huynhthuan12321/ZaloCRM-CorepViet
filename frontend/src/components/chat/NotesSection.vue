@@ -58,8 +58,9 @@
         <!-- AI parse result banner -->
         <div v-if="aiResult.get(note.id) || aiNoIntent.has(note.id)" class="ai-suggestion-banner" :class="{ muted: aiNoIntent.has(note.id) }">
           <template v-if="aiResult.get(note.id)">
-            <span class="ai-icon">🤖</span>
+            <span class="ai-icon">{{ aiResult.get(note.id)?.source === 'fallback' ? '⚙️' : '🤖' }}</span>
             <span class="ai-text">
+              <span v-if="aiResult.get(note.id)?.source === 'fallback'" class="source-badge" title="Đoán bằng quy tắc (AI hết quota)">local</span>
               <strong v-if="aiResult.get(note.id)?.date">{{ formatAiDate(aiResult.get(note.id)!) }}</strong>
               <span v-else class="needs-input">cần điền thời gian</span>
               · {{ aiResult.get(note.id)?.summary }}
@@ -738,6 +739,18 @@ defineExpose({ rootCount });
   font-size: 11px;
   margin-left: 6px;
   font-weight: 500;
+}
+.source-badge {
+  display: inline-block;
+  background: var(--smax-grey-200);
+  color: var(--smax-grey-700);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-right: 4px;
 }
 
 /* ── Edit appointment dialog ───────────────────────────────────────────── */

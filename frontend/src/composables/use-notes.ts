@@ -44,6 +44,7 @@ export interface ParsedAppointment {
   hasIntent: boolean;
   missingFields: string[];   // 'date' | 'time' | 'location'
   confidence: number;
+  source?: 'ai' | 'fallback'; // 'ai'=Gemini OK, 'fallback'=rule-based khi AI fail
 }
 
 export function useNotes(getContactId: () => string | null) {

@@ -188,7 +188,7 @@ export async function notesRoutes(app: FastifyInstance): Promise<void> {
       if (!parsed || !parsed.hasIntent) {
         return { parsed: null, reason: 'Không phát hiện ý định hẹn rõ ràng trong ghi chú này' };
       }
-      return { parsed };
+      return { parsed, source: parsed.source };
     } catch (err) {
       logger.error('[notes] AI parse error:', err);
       const msg = err instanceof Error ? err.message : 'Failed to parse note';

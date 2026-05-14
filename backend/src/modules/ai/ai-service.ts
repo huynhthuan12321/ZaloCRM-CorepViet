@@ -1,5 +1,6 @@
 import { prisma } from '../../shared/database/prisma-client.js';
 import { config } from '../../config/index.js';
+import { logger } from '../../shared/utils/logger.js';
 import { getProviderConfig, getAvailableProviders } from './provider-registry.js';
 import { generateWithAnthropic } from './providers/anthropic.js';
 import { generateWithGemini } from './providers/gemini.js';
@@ -7,6 +8,7 @@ import { generateWithOpenaiCompat } from './providers/openai-compat.js';
 import { buildReplyDraftPrompt } from './prompts/reply-draft.js';
 import { buildSummaryPrompt } from './prompts/summary.js';
 import { buildSentimentPrompt } from './prompts/sentiment.js';
+import { parseAppointmentRuleBased } from './appointment-fallback-parser.js';
 
 export type AiTaskType = 'reply_draft' | 'summary' | 'sentiment';
 
@@ -222,15 +224,27 @@ export type ParsedAppointment = {
   hasIntent: boolean;        // true nếu phát hiện ý định lập lịch (kể cả thông tin chưa đủ)
   missingFields: string[];   // ['date','time','location'] — field nào AI thiếu, FE prompt user điền
   confidence: number;        // 0..1
+  source?: 'ai' | 'fallback'; // 'ai'=Gemini OK, 'fallback'=rule-based (AI fail/quota)
 };
 
-export async function parseAppointmentFromText(input: { orgId: string; text: string; now?: Date }): Promise<ParsedAppointment | null> {
-  const currentConfig = await getAiConfig(input.orgId);
-  if (!currentConfig.enabled) throw new Error('AI is disabled for this organization');
-  const apiKey = await getProviderApiKey(input.orgId, currentConfig.provider);
-  if (!apiKey) throw new Error('AI provider key is not configured');
-
+export async function parseAppointmentFromText(input: { orgId: string; text: string; now?: Date }): Promise<ParsedAppointment & { source?: 'ai' | 'fallback' } | null> {
   const now = input.now || new Date();
+  const currentConfig = await getAiConfig(input.orgId);
+
+  // ── Fallback rule-based parser luôn chạy trước/song song để có kết quả nếu AI fail.
+  //    Result được trả nếu AI throw (429 quota, timeout, network). source='fallback'
+  //    để FE hiển thị hint "AI hết quota — đã dùng rule-based".
+  const fallback = parseAppointmentRuleBased(input.text, now);
+
+  if (!currentConfig.enabled) {
+    // AI tắt → chỉ trả fallback nếu có intent
+    return fallback.hasIntent ? { ...fallback, source: 'fallback' } : null;
+  }
+  const apiKey = await getProviderApiKey(input.orgId, currentConfig.provider);
+  if (!apiKey) {
+    logger.warn('[ai-parse] No API key — using rule-based fallback');
+    return fallback.hasIntent ? { ...fallback, source: 'fallback' } : null;
+  }
   const today = now.toISOString().slice(0, 10);
   const weekday = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][now.getDay()];
 
@@ -260,7 +274,21 @@ export async function parseAppointmentFromText(input: { orgId: string; text: str
   ].join('\n');
 
   const userPrompt = `<note>\n${escapeXmlBoundary(input.text)}\n</note>\nReturn JSON only.`;
-  const raw = await generateText(currentConfig.provider, apiKey, currentConfig.model, system, userPrompt);
+
+  let raw: string;
+  try {
+    raw = await generateText(currentConfig.provider, apiKey, currentConfig.model, system, userPrompt);
+  } catch (err: unknown) {
+    // AI fail (429 quota, timeout, network) → fallback to rule-based parser
+    const msg = err instanceof Error ? err.message : String(err);
+    const is429 = msg.includes('429');
+    if (fallback.hasIntent) {
+      logger.warn(`[ai-parse] AI failed (${is429 ? 'quota/rate-limit 429' : msg}) — using rule-based fallback`);
+      return { ...fallback, source: 'fallback' };
+    }
+    // Không fallback được nữa → rethrow để FE biết là AI fail
+    throw new Error(is429 ? 'AI hết quota (429) — vui lòng đợi reset hoặc đổi provider' : msg);
+  }
 
   // Strip code fences if model wrapped JSON in ```json ... ```
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -268,11 +296,21 @@ export async function parseAppointmentFromText(input: { orgId: string; text: str
   try {
     parsed = JSON.parse(cleaned) as typeof parsed;
   } catch {
+    // AI trả response không parse được → fallback
+    if (fallback.hasIntent) {
+      logger.warn('[ai-parse] AI returned unparseable JSON — using rule-based fallback');
+      return { ...fallback, source: 'fallback' };
+    }
     return null;
   }
 
   const hasIntent = !!parsed.hasIntent;
   if (!hasIntent) {
+    // AI says no intent — nhưng rule-based có thể detect ra → ưu tiên fallback nếu nó tự tin
+    if (fallback.hasIntent && fallback.confidence >= 0.5) {
+      logger.info('[ai-parse] AI says no intent but rule-based detected → using fallback');
+      return { ...fallback, source: 'fallback' };
+    }
     return {
       date: null, time: null, type: null, location: null,
       summary: '', hasIntent: false, missingFields: [], confidence: 0,
@@ -300,5 +338,6 @@ export async function parseAppointmentFromText(input: { orgId: string; text: str
     hasIntent: true,
     missingFields: missing,
     confidence,
+    source: 'ai',
   };
 }
