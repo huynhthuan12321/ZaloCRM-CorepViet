@@ -272,12 +272,16 @@ export async function syncLabelsForAccount(
     const addedLabels = [...newNames].filter(n => !oldNames.has(n));
     const removedLabels = [...oldNames].filter(n => !newNames.has(n));
 
-    // Mirror sang crmTagsPerNick: remove tag "🔵 {oldLabel}" + add tag "🔵 {newLabel}"
+    // Mirror sang crmTagsPerNick: remove tag "🔵 {oldLabel}" + add tag "🔵 {newLabel}".
+    // Lưu ý: emoji 🔵 (U+1F535) là surrogate pair — JS string length = 2 code units,
+    // cộng dấu cách = 3 ký tự. PHẢI dùng prefix constant để strip; slice(2) sẽ để lại
+    // dấu cách → labelName = " 1688" → never matches newNames → strip toàn bộ mirror tag.
+    const MIRROR_PREFIX = '🔵 ';
     const oldCrmTags = Array.isArray(f.crmTagsPerNick) ? (f.crmTagsPerNick as string[]) : [];
     let newCrmTags = oldCrmTags.filter(t => {
       // Giữ lại tag KHÔNG phải Zalo-mirrored, hoặc tag Zalo-mirrored mà vẫn còn trong newNames
-      if (!t.startsWith('🔵 ')) return true;
-      const labelName = t.slice(2);
+      if (!t.startsWith(MIRROR_PREFIX)) return true;
+      const labelName = t.slice(MIRROR_PREFIX.length);
       return newNames.has(labelName);
     });
     for (const labelName of addedLabels) {
