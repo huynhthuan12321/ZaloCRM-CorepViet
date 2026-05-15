@@ -305,6 +305,165 @@ export async function scoringRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  // ──── Stuck Detection Dashboard ────────────────────────────────────────
+
+  /**
+   * GET /api/v1/leads/stuck — Stuck deals dashboard data.
+   * Response shape:
+   *   {
+   *     totalStuck: 10,
+   *     byStage: [
+   *       { stage: "Mới", thresholdDays: 7, alertLabel: "...", nbaTemplateKey: "...",
+   *         friends: [{ friendId, contactId, contactName, score, daysInStage,
+   *                     daysSinceLastInbound, autoTags, nbaTemplate? }] }
+   *       ...
+   *     ]
+   *   }
+   */
+  app.get('/api/v1/leads/stuck', async (request, reply) => {
+    const user = request.user!;
+    try {
+      const thresholds = await prisma.stuckThreshold.findMany({
+        where: { orgId: user.orgId, enabled: true },
+        orderBy: { stage: 'asc' },
+      });
+
+      const stuckFriends = await prisma.friend.findMany({
+        where: {
+          orgId: user.orgId,
+          stuckSince: { not: null },
+        },
+        select: {
+          id: true,
+          contactId: true,
+          leadScore: true,
+          stuckSince: true,
+          stageEnteredAt: true,
+          createdAt: true,
+          lastInboundAt: true,
+          autoTags: true,
+          zaloDisplayName: true,
+          aliasInNick: true,
+          statusRef: { select: { id: true, name: true, color: true } },
+          contact: {
+            select: {
+              id: true,
+              fullName: true,
+              crmName: true,
+              avatarUrl: true,
+              phone: true,
+            },
+          },
+        },
+        orderBy: { stuckSince: 'asc' },
+      });
+
+      // Group by stage
+      const byStageMap = new Map<
+        string,
+        {
+          stage: string;
+          color: string | null;
+          thresholdDays: number;
+          alertLabel: string;
+          nbaTemplateKey: string | null;
+          friends: any[];
+        }
+      >();
+
+      for (const t of thresholds) {
+        byStageMap.set(t.stage, {
+          stage: t.stage,
+          color: null,
+          thresholdDays: t.thresholdDays,
+          alertLabel: t.alertLabel,
+          nbaTemplateKey: t.nbaTemplateKey,
+          friends: [],
+        });
+      }
+
+      for (const f of stuckFriends) {
+        const stageName = f.statusRef?.name;
+        if (!stageName) continue;
+        const group = byStageMap.get(stageName);
+        if (!group) continue;
+
+        if (!group.color && f.statusRef?.color) group.color = f.statusRef.color;
+
+        const referenceTime = f.stageEnteredAt ?? f.createdAt;
+        const daysInStage = Math.floor((Date.now() - referenceTime.getTime()) / (24 * 3600 * 1000));
+        const daysSinceLastInbound = f.lastInboundAt
+          ? Math.floor((Date.now() - f.lastInboundAt.getTime()) / (24 * 3600 * 1000))
+          : null;
+
+        group.friends.push({
+          friendId: f.id,
+          contactId: f.contactId,
+          contactName:
+            f.aliasInNick ||
+            f.zaloDisplayName ||
+            f.contact?.crmName ||
+            f.contact?.fullName ||
+            'Khách hàng',
+          contactAvatar: f.contact?.avatarUrl ?? null,
+          phone: f.contact?.phone ?? null,
+          score: f.leadScore,
+          daysInStage,
+          daysSinceLastInbound,
+          stuckSince: f.stuckSince,
+          autoTags: f.autoTags ?? [],
+        });
+      }
+
+      // Attach NBA template content
+      const allTemplateKeys = Array.from(byStageMap.values())
+        .map((g) => g.nbaTemplateKey)
+        .filter((k): k is string => !!k);
+      const templates =
+        allTemplateKeys.length > 0
+          ? await prisma.nbaTemplate.findMany({
+              where: { orgId: user.orgId, key: { in: allTemplateKeys }, enabled: true },
+            })
+          : [];
+      const templateMap = new Map(templates.map((t) => [t.key, t]));
+
+      const byStage = Array.from(byStageMap.values())
+        .map((g) => ({
+          ...g,
+          friends: g.friends.sort((a, b) => b.daysInStage - a.daysInStage), // most stuck first
+          nbaTemplate: g.nbaTemplateKey ? templateMap.get(g.nbaTemplateKey) ?? null : null,
+        }))
+        .filter((g) => g.friends.length > 0);
+
+      return {
+        totalStuck: stuckFriends.length,
+        byStage,
+      };
+    } catch (err) {
+      logger.error({ err }, 'GET /leads/stuck failed');
+      return reply.status(500).send({ error: 'internal_error' });
+    }
+  });
+
+  /**
+   * POST /api/v1/leads/stuck/scan — admin trigger stuck detection scan now.
+   * Don't wait for daily cron.
+   */
+  app.post('/api/v1/leads/stuck/scan', async (request, reply) => {
+    const user = request.user!;
+    if (user.role !== 'admin' && user.role !== 'owner') {
+      return reply.status(403).send({ error: 'forbidden' });
+    }
+    try {
+      const { runStuckDetectionForOrg } = await import('./stuck-detection.js');
+      const result = await runStuckDetectionForOrg(user.orgId);
+      return result;
+    } catch (err) {
+      logger.error({ err }, 'manual stuck scan failed');
+      return reply.status(500).send({ error: 'internal_error' });
+    }
+  });
+
   // ──── Recompute final scores (after weights change) ───────────────────
 
   app.post('/api/v1/scoring/recompute-all', async (request, reply) => {

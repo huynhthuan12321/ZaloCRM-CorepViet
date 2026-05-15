@@ -219,6 +219,9 @@ async function bootstrap() {
     startContactIntelligence();
     startLabelsBackgroundSync(60_000); // realtime-ish 2-way pull every 60s
     startInteractionCron(); // daily silent_30d detection (02:00 VN)
+    // Phase 6 — Lead Scoring background jobs (decay hourly + stuck detection 6am daily)
+    const { startScoringScheduler } = await import('./modules/scoring/scoring-scheduler.js');
+    startScoringScheduler({ enabled: config.nodeEnv !== 'test' });
     await eventBuffer.start(io);
   } catch (err) {
     logger.error('Failed to start server:', err);
