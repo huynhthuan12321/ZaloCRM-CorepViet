@@ -1,8 +1,182 @@
+# ZaloCRM — hsholding Edition
+
+> **Fork repository** của [locphamnguyen/ZaloCRM](https://github.com/locphamnguyen/ZaloCRM) — phát triển song song với upstream, thêm các module phục vụ nghiệp vụ nội bộ HS Holding (Lead Scoring, popup edit khách hàng nâng cao, fix performance chat).
+
+**Fork:** [https://github.com/locphamnguyen/ZaloCRM](https://github.com/locphamnguyen/ZaloCRM)
+**Upstream gốc:** [https://github.com/locphamnguyen/ZaloCRM](https://github.com/locphamnguyen/ZaloCRM)
+
+---
+
+## 📊 So sánh với upstream locphamnguyen
+
+| | locphamnguyen (upstream) | hsholding (fork này) |
+|---|---|---|
+| **Latest release** | v3.1.2 (`5a47da9`, 2026-05-15) | v3.1.2 + 6 commit Phase 6 + flicker fix |
+| **Stable tag** | `v3.1.2` | `stable-2026-05-18` |
+| **Branch chính** | `main` | `feat/phase-6-lead-scoring` |
+| **Lead Scoring** | ❌ Không có | ✅ Module đầy đủ (scoring engine + auto-tag + stuck detection) |
+| **Popup edit KH** | Cơ bản | ✅ Header avatar + progress bar + tab Friends + webhook events |
+| **Alias 2-way sync** | ❌ | ✅ Friend.aliasInNick sync Zalo Real ↔ CRM |
+| **Flicker cột 2 chat** | Có | ✅ Đã fix triệt để (FLIP animation + 4 root cause) |
+| **Tên cột "Tên gợi nhớ"** | "Tên CRM/Nick KH" | ✅ Đổi sang "Tên gợi nhớ" + reorder columns |
+| **Tab "Ghi chú"** | Mix lẫn activity | ✅ Chỉ trả notes thuần |
+
+### Đã đồng bộ từ upstream
+
+Toàn bộ commits của locphamnguyen đến `v3.1.2` đều có trong fork này. Merge base = `5a47da9` (`release: v3.1.2 — timeline realtime, zalo-tag auto-sync, perf fixes`). Không có commit upstream nào fork thiếu.
+
+---
+
+## 🌳 Trạng thái branches
+
+### Trên GitHub fork (`locphamnguyen/ZaloCRM`)
+
+| Branch | Vai trò | Trạng thái vs `origin/main` |
+|---|---|---|
+| `main` | Mirror locphamnguyen v3.1.2 (reference only) | = upstream |
+| `feat/phase-6-lead-scoring` | **Core ổn định** — chứa stable tag | +7 commits |
+| `feat/ui-phase5` | WIP popup edit + alias sync | +5 / -41 (chưa rebase) |
+
+### Tag stable để restore
+
+```bash
+# Khôi phục về bản chốt ổn định bất cứ lúc nào:
+git fetch origin --tags
+git checkout stable-2026-05-18
+# hoặc tạo branch mới từ tag:
+git checkout -b restore-2026-05-18 stable-2026-05-18
+```
+
+`stable-2026-05-18` = `feat/phase-6-lead-scoring` HEAD = `8f50e1e` (locphamnguyen v3.1.2 + Lead Scoring + flicker fix).
+
+---
+
+## 🎯 Tính năng riêng của fork hsholding
+
+### Phase 6 — Lead Scoring system (6 commits, ~5,917 dòng code)
+
+**Backend** (`backend/src/modules/scoring/`):
+- `score-engine.ts` — Signal detect + apply + decay
+- `signal-detector.ts` — Phát hiện inbound/outbound/meeting signal
+- `auto-tag.ts` — 7 auto tag (cold-lead / warm-lead / hot-lead / etc.) real-time + cron
+- `stuck-detection.ts` — Cron phát hiện KH đình trệ
+- `stage-promotion.ts` — Logic chuyển stage tự động
+- `decay-cron.ts` — Auto decay điểm theo thời gian
+- `scoring-routes.ts` — Admin API routes
+- `seed-defaults.ts` — Config mặc định + types
+
+**Frontend**:
+- `ScoreBreakdownModal.vue` — Popup giải thích chi tiết điểm số (Explainability UI)
+- `StuckLeadsView.vue` — Dashboard KH đình trệ
+- `ScoringSettingsView.vue` — Cài đặt scoring (signal weights, thresholds, decay rate)
+- `use-scoring.ts` — Composable
+- Nav menu thêm 2 trang: `/scoring/settings`, `/scoring/stuck-leads`
+
+### UI/UX improvements (branch `feat/ui-phase5`, chưa merge)
+
+- **Popup edit khách hàng refactor** — Header avatar + chips + progress bar + action strip + tab Friends + Nâng cao toggle (incomeRange, social, preferredLang) + webhook outbound events
+- **2-way alias sync** — `Friend.aliasInNick` sync Zalo Real ↔ CRM, polling từng đoạn pagination 200 friend/page
+- **Tên cột Khách hàng** — Đổi "Tên CRM/Nick KH" → "Tên gợi nhớ" + reorder cột (Ảnh KH → Tên Zalo+UID → Tên gợi nhớ)
+- **Auto-scroll selected conv** — Khi nav từ Contacts/Groups → tự scroll cột 2 tới conv đang chọn
+- **Fix tab "Ghi chú"** — Chỉ trả notes thuần, không mix activity
+
+### Performance fixes
+
+- **Flicker cột 2 chat triệt để** (commit `8f50e1e`) — Fix 4 root cause:
+  1. `behavior: smooth → auto` cho `scrollSelectedIntoView` (bỏ glide 200-500ms)
+  2. Bỏ `watch(selectedIndex)` — reorder do socket không kéo auto-scroll
+  3. Loading indicator guard — chỉ show "Đang tải…" khi list rỗng (initial), bỏ ±57px oscillation khi background re-fetch
+  4. `<TransitionGroup>` + FLIP animation 0.25s — reorder do tin mới đến glide mượt thay vì instant jump
+- Đo đạc: 5 phút quan sát sau fix → **0 layoutShift, 0 scrollHeight oscillation, 0 childList DOM remove/add**
+
+- **Message order fix** (commit `891dd61`, có ở branch `feat/ui-phase5`) — `insertMessageSorted` binary search by sentAt, xử lý socket non-chronological delivery (old_messages backfill reverse)
+
+---
+
+## 🔄 Workflow phát triển song song với locphamnguyen
+
+Mô hình 4-nhánh để giữ fork ổn định nhưng vẫn dễ pull updates từ upstream:
+
+```
+origin/main (locphamnguyen)     ← READ ONLY
+        │
+        │ git fetch + review diff
+        ▼
+upstream-watch                  ← Mirror origin/main, để review
+        │
+        │ chọn lọc merge sau khi review
+        ▼
+main (= fork/main)              ← Core stable, deploy từ đây
+        │
+        │ checkout
+        ▼
+feat/xxx                        ← Test riêng, chỉ push khi ổn định
+```
+
+### Review upstream trước khi merge
+
+```bash
+git fetch origin
+git checkout upstream-watch
+git merge --ff-only origin/main
+git log main..upstream-watch --oneline   # Xem commits mới
+git diff main..upstream-watch --stat     # Xem file thay đổi
+# Đọc + quyết định:
+git checkout main
+git merge upstream-watch                 # merge cả batch
+# HOẶC cherry-pick từng commit:
+git cherry-pick <hash1> <hash2>
+git push fork main
+```
+
+### Phát triển feature riêng
+
+```bash
+git checkout main
+git pull fork main                        # Lấy main mới nhất
+git checkout -b feat/abc                  # Branch mới
+# code + commit local — test thoải mái
+# Test bằng docker compose: docker compose up -d --build
+# Khi ổn → merge vào main:
+git checkout main
+git merge feat/abc
+git push fork main
+```
+
+### Sync fork main về đúng locphamnguyen v3.1.2
+
+Fork hiện tại có `main` = `origin/main` đầy đủ. Nếu sau này upstream có release mới (v3.1.3, v3.2…):
+
+```bash
+git fetch origin
+git checkout main
+git merge --ff-only origin/main
+git push fork main
+```
+
+---
+
+## 🏷️ Tags & restore points
+
+| Tag | Commit | Mô tả |
+|---|---|---|
+| `stable-2026-05-18` | `8f50e1e` | **Bản chốt hiện tại** — v3.1.2 + Phase 6 + flicker fix |
+| `v3.1.2` | `5a47da9` | Upstream release từ locphamnguyen (2026-05-15) |
+| `v3.1.1` | — | Upstream |
+| `v3.1.0` | — | Upstream |
+| `v3.0` / `v2.x` / `v1.0.0` | — | Upstream history |
+
+---
+
+## ⚠️ Nội dung phía dưới = README gốc của upstream locphamnguyen (giữ nguyên để tham khảo)
+
+---
+
 # ZaloCRM v3.0 — Quản lý nhiều tài khoản Zalo cá nhân
 
 Hệ thống quản lý tập trung nhiều tài khoản Zalo cá nhân trên 1 giao diện web. Chat real-time, gửi ảnh/video/file qua MinIO, AI assistant, workflow tự động, tích hợp đa nền tảng, analytics nâng cao, PWA mobile.
 
-**GitHub:** [https://github.com/locphamnguyen/ZaloCRM](https://github.com/locphamnguyen/ZaloCRM)
+**GitHub (upstream):** [https://github.com/locphamnguyen/ZaloCRM](https://github.com/locphamnguyen/ZaloCRM)
 
 ## Ảnh chụp giao diện
 
