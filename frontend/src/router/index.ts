@@ -80,6 +80,14 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    // Tab "Hồ sơ KH tổng hợp" — SKELETON, render 3 field ẩn cột 4 (email/address/occupation)
+    // + aggregate Friend rows. Backend route stub, full impl ở phase sau.
+    path: '/contacts/:id/profile',
+    name: 'ContactProfile',
+    component: () => import('@/views/ContactProfileView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/leads/stuck',
     name: 'StuckLeads',
     component: () => import('@/views/StuckLeadsView.vue'),

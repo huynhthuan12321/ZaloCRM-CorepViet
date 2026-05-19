@@ -102,9 +102,10 @@
             </div>
           </div>
 
-          <!-- Expand toggle -->
-          <button class="info-expand-toggle" @click="toggleInfoExpand">
+          <!-- Expand toggle — 3 states: hidden | auto (timer) | sticky (no timer) -->
+          <button class="info-expand-toggle" :class="{ 'is-sticky': isSticky }" @click="toggleInfoExpand">
             <span v-if="!infoExpanded">▾ Xem đầy đủ</span>
+            <span v-else-if="isSticky">▴ Thu gọn <span class="sticky-badge" title="Ghim mở — KHÔNG tự thu">📌</span></span>
             <span v-else>▴ Thu gọn (tự thu sau {{ collapseRemain }}s)</span>
           </button>
 
@@ -146,21 +147,18 @@
                 <input v-model="form.phone3" placeholder="SĐT phụ 2" @blur="saveContact" />
               </div>
             </template>
-            <div class="ip-form-row">
-              <span class="ip-icon">✉</span>
-              <span class="ip-label">Email</span>
-              <input v-model="form.email" placeholder="Chưa có email" @blur="saveContact" />
-            </div>
-            <div class="ip-form-row">
-              <span class="ip-icon">📍</span>
-              <span class="ip-label">Địa chỉ</span>
-              <input v-model="form.addressLine" placeholder="Địa chỉ chi tiết" @blur="saveContact" />
-            </div>
-            <div class="ip-form-row">
-              <span class="ip-icon">💼</span>
-              <span class="ip-label">Nghề</span>
-              <input v-model="form.occupation" placeholder="Nghề nghiệp" @blur="saveContact" />
-            </div>
+            <!-- 3 field Email · Địa chỉ · Nghề: ẨN khỏi cột 4 (quick view chat panel).
+                 Schema giữ nguyên — data vẫn lưu/edit qua tab "Hồ sơ KH tổng hợp" (phase sau).
+                 Xem ContactProfileView.vue stub + use-contact-profile.ts composable. -->
+            <button
+              v-if="contact?.id"
+              class="info-fullprofile-link"
+              type="button"
+              :title="'Xem hồ sơ KH tổng hợp (email, địa chỉ, nghề, ...)'"
+              @click="openFullProfile"
+            >
+              <span>✨ Xem hồ sơ KH tổng hợp →</span>
+            </button>
           </template>
         </section>
 
@@ -363,6 +361,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import type { Contact } from '@/composables/use-contacts';
 import type { AiSentiment } from '@/composables/use-chat';
 import { useChatContactPanel } from '@/composables/use-chat-contact-panel';
@@ -440,38 +439,77 @@ async function saveAlias() {
 // ════════ Tab state (persist sang tab khác KH khác) ════════
 const activeTab = ref<'profile' | 'relations' | 'activity' | 'score'>('profile');
 
-// Info section auto-collapse: mặc định compact (chỉ Tên + SĐT). Click tab Hồ Sơ
-// hoặc bấm "Xem đầy đủ" → expand, đếm 5s rồi tự thu gọn lại.
-const infoExpanded = ref(false);
+// ════════════════════════════════════════════════════════════════════════
+// Info section state machine — 3 modes:
+//   'auto'   → vừa load conv / vừa click tab Hồ Sơ, expand + countdown 5s
+//   'sticky' → user click expand thủ công, KHÔNG auto-hide
+//   'hidden' → ẩn (default sau countdown hoặc user click hide)
+//
+// localStorage preference: sau khi user 1 lần set sticky, lần sau load conv
+// mặc định sticky (skip auto-collapse) để khỏi phiền user power.
+// ════════════════════════════════════════════════════════════════════════
+type ExpandMode = 'auto' | 'sticky' | 'hidden';
+const STICKY_PREF_KEY = 'chat-contact-panel-sticky-default';
+const expandMode = ref<ExpandMode>('hidden');
+const infoExpanded = computed(() => expandMode.value !== 'hidden');
+const isSticky = computed(() => expandMode.value === 'sticky');
 const collapseRemain = ref(5);
 let collapseTimer: ReturnType<typeof setInterval> | null = null;
+
 function clearCollapseTimer() {
   if (collapseTimer) { clearInterval(collapseTimer); collapseTimer = null; }
 }
-function startCollapseCountdown() {
+function startAutoCollapse() {
   clearCollapseTimer();
   collapseRemain.value = 5;
   collapseTimer = setInterval(() => {
     collapseRemain.value--;
     if (collapseRemain.value <= 0) {
-      infoExpanded.value = false;
+      // Chỉ tự hide khi đang ở mode 'auto'. Sticky thì never timeout.
+      if (expandMode.value === 'auto') expandMode.value = 'hidden';
       clearCollapseTimer();
     }
   }, 1000);
 }
+
+// User click nút expand: upgrade auto → sticky (clear timeout, không bao giờ tự ẩn nữa).
+// Từ hidden → sticky (mở thủ công cũng = sticky, vì là intent rõ ràng).
 function toggleInfoExpand() {
-  infoExpanded.value = !infoExpanded.value;
-  if (infoExpanded.value) startCollapseCountdown();
-  else clearCollapseTimer();
+  if (expandMode.value === 'hidden') {
+    // User mở thủ công → sticky luôn
+    expandMode.value = 'sticky';
+    clearCollapseTimer();
+    saveStickyPreference(true);
+  } else {
+    // Đang auto hoặc sticky → user click = thu gọn
+    expandMode.value = 'hidden';
+    clearCollapseTimer();
+    saveStickyPreference(false);
+  }
 }
-// Khi click tab Hồ Sơ → expand + start countdown
+
+function saveStickyPreference(prefer: boolean) {
+  try { localStorage.setItem(STICKY_PREF_KEY, prefer ? '1' : '0'); } catch { /* ignore */ }
+}
+function loadStickyPreference(): boolean {
+  try { return localStorage.getItem(STICKY_PREF_KEY) === '1'; } catch { return false; }
+}
+
+// Khi click tab Hồ Sơ:
+//   - Nếu user trước đó đã set sticky → mở sticky (không countdown)
+//   - Còn lại → mở auto + countdown 5s
 watch(activeTab, (tab) => {
   if (tab === 'profile') {
-    infoExpanded.value = true;
-    startCollapseCountdown();
+    if (loadStickyPreference()) {
+      expandMode.value = 'sticky';
+      clearCollapseTimer();
+    } else {
+      expandMode.value = 'auto';
+      startAutoCollapse();
+    }
   } else {
     clearCollapseTimer();
-    infoExpanded.value = false;
+    expandMode.value = 'hidden';
   }
 });
 
@@ -625,6 +663,15 @@ const automationCards = computed<AutomationCard[]>(() => {
 function onAutomationAction(_id: string, _kind: string) { /* TODO wire to API */ }
 function onAttachAutomation() { toast.warning('Gắn automation: chờ backend schema delta'); }
 
+// ════════ Hồ sơ KH tổng hợp (phase sau) ════════
+// Tạm thời chỉ navigate sang route /contacts/:id/profile (skeleton view).
+// Sau khi backend GET /api/v1/contacts/:id/profile sẵn sàng + ContactProfileView
+// implement đầy đủ → tab này hiển thị 3 field Email/Address/Occupation đã ẩn ở cột 4.
+function openFullProfile() {
+  if (!props.contact?.id) return;
+  router.push(`/contacts/${props.contact.id}/profile`);
+}
+
 // MOCK: zaloLabels (per-pair native labels) chưa expose qua API
 const zaloLabels = ref<string[]>([]);
 
@@ -671,6 +718,7 @@ const hasAnyActivity = computed(() =>
 );
 
 const toast = useToast();
+const router = useRouter();
 
 // Khi đổi sang contact mới, reset về tab Hồ sơ + refetch relations
 // (NotesSection tự fetch khi prop contactId đổi).
@@ -678,8 +726,14 @@ const toast = useToast();
 // watch(activeTab) sẽ KHÔNG fire khi cùng giá trị → form section stuck ở state cũ.
 watch(() => props.contactId, (id) => {
   activeTab.value = 'profile';
-  infoExpanded.value = true;
-  startCollapseCountdown();
+  // State machine: nếu user trước đó set sticky → mở sticky luôn, không countdown
+  if (loadStickyPreference()) {
+    expandMode.value = 'sticky';
+    clearCollapseTimer();
+  } else {
+    expandMode.value = 'auto';
+    startAutoCollapse();
+  }
   if (id) void fetchRelations(id);
   else relations.value = { friends: [] };
 }, { immediate: true });
@@ -936,6 +990,40 @@ function relativeTime(dateStr: string) {
   transition: background 0.12s;
 }
 .info-expand-toggle:hover { background: var(--smax-primary-soft, #e3f2fd); }
+.info-expand-toggle.is-sticky {
+  background: linear-gradient(135deg, #FEF3C7, #FDE68A);
+  color: #92400E;
+  border-color: #FCD34D;
+}
+.info-expand-toggle .sticky-badge {
+  font-size: 11px;
+  margin-left: 3px;
+}
+
+/* Link Hồ sơ KH tổng hợp — thay thế 3 field email/address/occupation ẩn ở cột 4 */
+.info-fullprofile-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: calc(100% - 24px);
+  margin: 6px 12px 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6366F1;
+  background: #EEF2FF;
+  border: 1px dashed #C7D2FE;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.info-fullprofile-link:hover {
+  background: #E0E7FF;
+  border-color: #818CF8;
+  border-style: solid;
+}
 .ip-form-row {
   display: grid;
   grid-template-columns: 22px 80px 1fr;
