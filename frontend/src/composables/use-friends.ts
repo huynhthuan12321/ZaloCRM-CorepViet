@@ -28,6 +28,12 @@ export interface DbFriend {
   zaloAvatarUrl?: string | null;
   zaloGlobalId?: string | null;
   zaloUsername?: string | null;
+  // Phase 6 — Lead Scoring + auto-tags + stuck detection
+  scoreBreakdown?: { engagement?: number; intent?: number; fit?: number; velocity?: number; finalScore?: number } | null;
+  scoreUpdatedAt?: string | null;
+  stuckSince?: string | null;
+  autoTags?: string[];
+  stageEnteredAt?: string | null;
   contact?: {
     id: string;
     fullName: string | null;

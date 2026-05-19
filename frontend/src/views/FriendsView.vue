@@ -34,8 +34,37 @@
             placeholder="🔍 Tìm KH theo tên / SĐT / nick Zalo..."
             @input="debouncedFetch"
           />
-          <button class="btn" title="Tùy chỉnh cột">⚙ Cột</button>
-          <button class="btn" title="Xuất CSV">⬇ Xuất CSV</button>
+          <button class="btn" title="Xuất CSV (chưa làm)" @click="onExportCsv">⬇ Xuất CSV</button>
+          <v-menu :close-on-content-click="false">
+            <template #activator="{ props: act }">
+              <button v-bind="act" class="btn" title="Bật/tắt cột tuỳ chọn">⚙ Cột</button>
+            </template>
+            <v-list density="compact" min-width="280">
+              <v-list-subheader>Cột mặc định (luôn hiện)</v-list-subheader>
+              <v-list-item v-for="c in DEFAULT_COLUMNS" :key="c.key" disabled>
+                <template #prepend>
+                  <v-icon size="18" color="primary">mdi-checkbox-marked</v-icon>
+                </template>
+                <v-list-item-title>{{ c.label }}</v-list-item-title>
+                <v-list-item-subtitle v-if="c.hint" class="text-caption">{{ c.hint }}</v-list-item-subtitle>
+              </v-list-item>
+              <v-divider class="my-1" />
+              <v-list-subheader>Cột tuỳ chọn (bật/tắt)</v-list-subheader>
+              <v-list-item
+                v-for="c in OPTIONAL_COLUMNS"
+                :key="c.key"
+                @click="toggleColumn(c.key)"
+              >
+                <template #prepend>
+                  <v-icon size="18" :color="visibleCols[c.key] ? 'primary' : ''">
+                    {{ visibleCols[c.key] ? 'mdi-checkbox-marked' : 'mdi-checkbox-blank-outline' }}
+                  </v-icon>
+                </template>
+                <v-list-item-title>{{ c.label }}</v-list-item-title>
+                <v-list-item-subtitle v-if="c.hint" class="text-caption">{{ c.hint }}</v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+          </v-menu>
           <button
             v-if="activeAccount"
             class="btn primary"
@@ -87,6 +116,7 @@
           :loading="loadingDb"
           :density="state.density.value"
           :selected="selected"
+          :visible-cols="visibleCols"
           @update:selected="selected = $event"
           @open-detail="onOpenDetail"
           @open-chat="onOpenChat"
@@ -172,6 +202,55 @@ const DENSITY_OPTIONS: { value: DensityMode; label: string }[] = [
   { value: 'normal',   label: 'Vừa' },
   { value: 'detailed', label: 'Rộng' },
 ];
+
+// ─── Column toggle (Tier 1 default vs Tier 2 optional) ───
+// Tier 1: KB từ ngày, Đình trệ, Auto tag — luôn hiện, không toggle được (subheader disable)
+const DEFAULT_COLUMNS = [
+  { key: 'becameFriendAt', label: '🕒 KB từ ngày',  hint: 'Ngày trở thành bạn bè trên Zalo' },
+  { key: 'stuckSince',     label: '⚠ Đình trệ',    hint: 'KH bị cron flag stuck do không tương tác' },
+  { key: 'autoTags',       label: '🤖 Auto tag',    hint: 'System auto: active / stuck / cold / ready ...' },
+] as const;
+
+// Tier 2: optional, toggle qua menu, persist localStorage
+const OPTIONAL_COLUMNS = [
+  { key: 'zaloGlobalId',  label: '🌐 Global ID',         hint: 'Zalo global identity, cross-nick' },
+  { key: 'zaloUsername',  label: '@ Username',           hint: 'Zalo handle (@t_abc...)' },
+  { key: 'lastInboundAt', label: '📥 KH nhắn cuối',      hint: 'Tách riêng inbound (tin từ KH)' },
+  { key: 'lastOutboundAt',label: '📤 Sale nhắn cuối',    hint: 'Tách riêng outbound (tin từ sale)' },
+  { key: 'firstMessageAt',label: '💬 First message',     hint: 'Mở chat 1-1 lần đầu' },
+  { key: 'stageEnteredAt',label: '⏱ Stage từ',           hint: 'Vào trạng thái KH hiện tại lúc nào' },
+  // Phase 2 — Derived cols (tính từ field có sẵn)
+  { key: 'silent',        label: '🔇 Silent',            hint: 'Số ngày KH không nhắn (KH cold tail)' },
+  { key: 'replyRate',     label: '📨 Reply rate',        hint: 'Tỷ lệ outbound/inbound — sale có chăm đủ không' },
+  { key: 'healthBars',    label: '🌡 Health bars',       hint: 'Score breakdown 4-dim mini bars (engagement/intent/fit/velocity)' },
+] as const;
+
+type OptionalColKey = (typeof OPTIONAL_COLUMNS)[number]['key'];
+
+const LS_KEY_COLS = 'friendsview.visibleCols.v1';
+function loadVisibleCols(): Record<OptionalColKey, boolean> {
+  const def: Record<OptionalColKey, boolean> = {
+    zaloGlobalId: false, zaloUsername: false,
+    lastInboundAt: false, lastOutboundAt: false,
+    firstMessageAt: false, stageEnteredAt: false,
+    silent: false, replyRate: false, healthBars: false,
+  };
+  try {
+    const raw = localStorage.getItem(LS_KEY_COLS);
+    if (raw) return { ...def, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return def;
+}
+const visibleCols = ref<Record<OptionalColKey, boolean>>(loadVisibleCols());
+function toggleColumn(key: OptionalColKey) {
+  visibleCols.value[key] = !visibleCols.value[key];
+  try { localStorage.setItem(LS_KEY_COLS, JSON.stringify(visibleCols.value)); } catch { /* ignore */ }
+}
+
+function onExportCsv() {
+  // Placeholder: chưa làm. Defer phase sau, tránh button placeholder không phản hồi.
+  console.warn('[FriendsView] CSV export chưa implement');
+}
 
 const searchInput = ref('');
 const pagination = reactive({ page: 1, limit: 25 });

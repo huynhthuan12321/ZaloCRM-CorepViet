@@ -17,7 +17,20 @@
           <th>Tên CRM / Nick</th>
           <th>Trạng thái KB</th>
           <th>Trạng thái KH</th>
+          <th title="Auto tag system (active/cold/stuck/ready) + CRM tag manual">🤖 Tag</th>
           <th>Tag CRM</th>
+          <th title="Ngày kết bạn Zalo">🕒 KB từ</th>
+          <th class="stuck-col" title="KH bị flag stuck — sale priority chăm lại">⚠ Stuck</th>
+          <!-- Tier 2 optional cols (conditional v-if) -->
+          <th v-if="visibleCols.zaloGlobalId" title="Zalo global identity">🌐 Global ID</th>
+          <th v-if="visibleCols.zaloUsername" title="Zalo username handle">@ Username</th>
+          <th v-if="visibleCols.lastInboundAt" title="KH nhắn cuối (inbound)">📥 KH cuối</th>
+          <th v-if="visibleCols.lastOutboundAt" title="Sale nhắn cuối (outbound)">📤 Sale cuối</th>
+          <th v-if="visibleCols.firstMessageAt" title="Lần đầu mở chat 1-1">💬 First msg</th>
+          <th v-if="visibleCols.stageEnteredAt" title="Vào stage hiện tại lúc nào">⏱ Stage từ</th>
+          <th v-if="visibleCols.silent" class="silent-col" title="Số ngày KH không nhắn">🔇 Silent</th>
+          <th v-if="visibleCols.replyRate" class="reply-col" title="Tỷ lệ sale/KH messages">📨 Reply</th>
+          <th v-if="visibleCols.healthBars" class="health-col" title="Score 4 chiều (engage/intent/fit/velocity)">🌡 Health</th>
           <th>Tương tác cuối</th>
           <th>Score</th>
           <th>Tin (in/out)</th>
@@ -104,6 +117,19 @@
             <span v-if="careLabel(f)" class="badge" :class="careClass(f)">{{ careLabel(f) }}</span>
             <span v-else class="dim-cell">—</span>
           </td>
+          <!-- 🤖 Auto tag (Tier 1, always visible) -->
+          <td>
+            <div v-if="getAutoTags(f).length" class="tag-chips">
+              <span
+                v-for="t in getAutoTags(f)"
+                :key="'at-' + t"
+                class="auto-tag-chip"
+                :class="autoTagColor(t)"
+                :title="'Auto tag system: ' + t"
+              >🤖 {{ autoTagLabel(t) }}</span>
+            </div>
+            <span v-else class="dim-cell">—</span>
+          </td>
           <td>
             <div v-if="getCrmTags(f).length || getZaloLabels(f).length" class="tag-chips">
               <!-- CRM tag per-pair -->
@@ -124,6 +150,68 @@
               >🏷 {{ l.name }}</span>
             </div>
             <span v-else class="dim-cell">—</span>
+          </td>
+          <!-- 🕒 KB từ ngày (Tier 1) -->
+          <td>
+            <span v-if="f.becameFriendAt" class="kb-date" :title="formatExactDate(f.becameFriendAt)">
+              {{ relativeDate(f.becameFriendAt) }}
+            </span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <!-- ⚠ Đình trệ (Tier 1) -->
+          <td class="stuck-col">
+            <span v-if="f.stuckSince" class="stuck-badge" :title="'Đình trệ từ ' + formatExactDate(f.stuckSince)">
+              ⚠ {{ stuckDaysLabel(f.stuckSince) }}
+            </span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <!-- Tier 2 optional cells -->
+          <td v-if="visibleCols.zaloGlobalId">
+            <span v-if="f.zaloGlobalId" class="sub-uid" :title="f.zaloGlobalId">{{ truncate(f.zaloGlobalId, 12) }}</span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <td v-if="visibleCols.zaloUsername">
+            <span v-if="f.zaloUsername" class="sub-uid">@{{ f.zaloUsername }}</span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <td v-if="visibleCols.lastInboundAt">
+            <span v-if="f.lastInboundAt" class="last-int" :title="formatExactDate(f.lastInboundAt)">📥 {{ relativeDate(f.lastInboundAt) }}</span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <td v-if="visibleCols.lastOutboundAt">
+            <span v-if="f.lastOutboundAt" class="last-int" :title="formatExactDate(f.lastOutboundAt)">📤 {{ relativeDate(f.lastOutboundAt) }}</span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <td v-if="visibleCols.firstMessageAt">
+            <span v-if="f.firstMessageAt" class="last-int" :title="formatExactDate(f.firstMessageAt)">{{ relativeDate(f.firstMessageAt) }}</span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <td v-if="visibleCols.stageEnteredAt">
+            <span v-if="f.stageEnteredAt" class="last-int">{{ relativeDate(f.stageEnteredAt) }}</span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <!-- 🔇 Silent (Phase 2 derived) — số ngày KH không nhắn -->
+          <td v-if="visibleCols.silent" class="silent-col">
+            <span v-if="silentDays(f) >= 7" class="silent-badge" :class="silentSeverity(f)" :title="silentTooltip(f)">
+              🔇 {{ silentDays(f) }}d
+            </span>
+            <span v-else-if="silentDays(f) > 0" class="dim-cell">{{ silentDays(f) }}d</span>
+            <span v-else class="dim-cell">—</span>
+          </td>
+          <!-- 📨 Reply rate (Phase 2 derived) -->
+          <td v-if="visibleCols.replyRate" class="reply-col">
+            <span class="reply-rate" :class="replyRateClass(f)" :title="replyRateTooltip(f)">
+              {{ replyRateLabel(f) }}
+            </span>
+          </td>
+          <!-- 🌡 Health bars 4-dim (Phase 2 derived) -->
+          <td v-if="visibleCols.healthBars" class="health-col">
+            <div class="health-bars" :title="healthTooltip(f)">
+              <div class="hb"><div class="hb-fill engage" :style="{ height: healthDim(f, 'engagement') + '%' }" /></div>
+              <div class="hb"><div class="hb-fill intent" :style="{ height: healthDim(f, 'intent') + '%' }" /></div>
+              <div class="hb"><div class="hb-fill fit" :style="{ height: healthDim(f, 'fit') + '%' }" /></div>
+              <div class="hb"><div class="hb-fill velocity" :style="{ height: healthDim(f, 'velocity') + '%' }" /></div>
+            </div>
           </td>
           <td>
             <span v-if="f.lastInteractionAt" class="last-int">📥 {{ relativeDate(f.lastInteractionAt) }}</span>
@@ -165,11 +253,26 @@ import { computed } from 'vue';
 import type { DbFriend } from '@/composables/use-friends';
 import type { DensityMode } from '@/composables/use-friends-state';
 
+interface VisibleColsMap {
+  zaloGlobalId: boolean;
+  zaloUsername: boolean;
+  lastInboundAt: boolean;
+  lastOutboundAt: boolean;
+  firstMessageAt: boolean;
+  stageEnteredAt: boolean;
+  // Phase 2 derived
+  silent: boolean;
+  replyRate: boolean;
+  healthBars: boolean;
+}
+
 const props = defineProps<{
   friends: DbFriend[];
   loading: boolean;
   density: DensityMode;
   selected: Set<string>;
+  /** Tier 2 column toggle state (Tier 1 luôn show, không trong map này) */
+  visibleCols: VisibleColsMap;
 }>();
 
 const emit = defineEmits<{
@@ -371,6 +474,122 @@ function relativeDate(iso: string): string {
   if (days < 30) return `${days}d trước`;
   return `${Math.floor(days / 30)}m trước`;
 }
+
+/** Date exact "DD/MM/YYYY HH:mm" cho tooltip. */
+function formatExactDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function truncate(s: string, max: number): string {
+  if (!s) return '';
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+/** Số ngày stuck dưới dạng chip. */
+function stuckDaysLabel(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days < 1) return '< 1d';
+  if (days === 1) return '1 ngày';
+  if (days < 30) return `${days} ngày`;
+  const months = Math.floor(days / 30);
+  return `${months} tháng`;
+}
+
+// ─── Auto tag (system-generated) ──────────────────────────────────────────
+// Color: theo loại (active=xanh / cold=xám / stuck=đỏ / ready=cam ...) — combo
+// với prefix 🤖 phân biệt khỏi CRM tag manual.
+function getAutoTags(f: DbFriend): string[] {
+  return Array.isArray(f.autoTags) ? f.autoTags : [];
+}
+
+const AUTO_TAG_COLOR_MAP: Record<string, string> = {
+  active: 'auto-active',     // xanh — đang tương tác tốt
+  ready: 'auto-ready',       // cam — sẵn sàng chốt
+  rewarmed: 'auto-rewarmed', // tím — vừa hồi sinh
+  stuck: 'auto-stuck',       // đỏ — đình trệ
+  atrisk: 'auto-atrisk',     // vàng — sắp stuck
+  cold: 'auto-cold',         // xám — nguội
+  frozen: 'auto-frozen',     // đen — đông cứng
+};
+function autoTagColor(tag: string): string {
+  return AUTO_TAG_COLOR_MAP[tag.toLowerCase()] || 'auto-default';
+}
+
+const AUTO_TAG_VN_LABEL: Record<string, string> = {
+  active: 'active',
+  ready: 'ready',
+  rewarmed: 'hồi sinh',
+  stuck: 'stuck',
+  atrisk: 'rủi ro',
+  cold: 'nguội',
+  frozen: 'đông cứng',
+};
+function autoTagLabel(tag: string): string {
+  return AUTO_TAG_VN_LABEL[tag.toLowerCase()] || tag;
+}
+
+// ─── Phase 2 derived columns helpers ──────────────────────────────────────
+
+/** Số ngày KH không gửi inbound. 0 nếu chưa từng nhắn. */
+function silentDays(f: DbFriend): number {
+  if (!f.lastInboundAt) return 0;
+  return Math.floor((Date.now() - new Date(f.lastInboundAt).getTime()) / 86_400_000);
+}
+function silentSeverity(f: DbFriend): string {
+  const d = silentDays(f);
+  if (d >= 30) return 'critical';  // > 1 tháng = nguy hiểm
+  if (d >= 14) return 'warn';      // 2 tuần = cảnh báo
+  return 'mild';                    // 7-13 ngày = nhẹ
+}
+function silentTooltip(f: DbFriend): string {
+  if (!f.lastInboundAt) return 'KH chưa từng nhắn';
+  return `KH nhắn lần cuối: ${formatExactDate(f.lastInboundAt)}`;
+}
+
+/** Reply rate = totalOutbound / totalInbound. Ý nghĩa:
+ *   > 1.5 → sale chăm quá nhiều (push), KH ít reply
+ *   0.8-1.5 → cân bằng tốt
+ *   < 0.5 → sale chăm chưa đủ
+ *   N/A → chưa có inbound */
+function replyRateNumeric(f: DbFriend): number | null {
+  const inb = f.totalInbound ?? 0;
+  const out = f.totalOutbound ?? 0;
+  if (inb === 0) return null;
+  return out / inb;
+}
+function replyRateLabel(f: DbFriend): string {
+  const r = replyRateNumeric(f);
+  if (r === null) return '—';
+  return `${(r * 100).toFixed(0)}%`;
+}
+function replyRateClass(f: DbFriend): string {
+  const r = replyRateNumeric(f);
+  if (r === null) return 'rr-none';
+  if (r < 0.5) return 'rr-low';      // đỏ — sale chăm thiếu
+  if (r <= 1.5) return 'rr-ok';      // xanh — cân bằng
+  return 'rr-high';                  // cam — push quá
+}
+function replyRateTooltip(f: DbFriend): string {
+  const r = replyRateNumeric(f);
+  if (r === null) return 'Chưa có tin inbound từ KH';
+  const tone = r < 0.5 ? 'Sale chăm chưa đủ' : r <= 1.5 ? 'Cân bằng tốt' : 'Sale push nhiều, KH ít reply';
+  return `Tỷ lệ outbound/inbound: ${(r * 100).toFixed(0)}% — ${tone}`;
+}
+
+/** Health bars: 4 mini bars dọc từ scoreBreakdown. Mỗi chiều 0-100. */
+function healthDim(f: DbFriend, key: 'engagement' | 'intent' | 'fit' | 'velocity'): number {
+  const v = f.scoreBreakdown?.[key];
+  if (typeof v !== 'number') return 0;
+  return Math.max(0, Math.min(100, v));
+}
+function healthTooltip(f: DbFriend): string {
+  const b = f.scoreBreakdown;
+  if (!b) return 'Chưa có score breakdown';
+  return `Engage ${b.engagement ?? 0} · Intent ${b.intent ?? 0} · Fit ${b.fit ?? 0} · Velocity ${b.velocity ?? 0}`;
+}
 </script>
 
 <style scoped>
@@ -378,13 +597,46 @@ function relativeDate(iso: string): string {
   flex: 1;
   overflow: auto;
   background: #fff;
+  /* Phase 3 — smooth horizontal scroll khi nhiều cột toggle bật */
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
 }
+.table-wrap::-webkit-scrollbar { height: 10px; width: 10px; }
+.table-wrap::-webkit-scrollbar-track { background: #f9fafc; }
+.table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
+.table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
 .ftable {
-  width: 100%;
+  /* min-width đảm bảo cột không bị squash khi nhiều cột bật; horizontal scroll active */
+  min-width: 100%;
+  width: max-content;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
 }
+
+/* Phase 3 — Freeze 2 cột đầu (checkbox + Khách hàng) khi scroll ngang */
+.ftable thead th.cb-col,
+.ftable tbody td.cb-col {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #fff;
+}
+.ftable thead th.cb-col { z-index: 4; }
+.ftable thead th:nth-child(2),
+.ftable tbody td:nth-child(2) {
+  position: sticky;
+  left: 32px;  /* sau cb-col 32px */
+  z-index: 3;
+  background: #fff;
+  box-shadow: 1px 0 0 #e4e8ef;  /* viền chia tách rõ */
+}
+.ftable thead th:nth-child(2) { z-index: 4; }
+.ftable tbody tr:hover td:nth-child(1),
+.ftable tbody tr:hover td:nth-child(2) { background: #f9fafc; }
+.ftable tbody tr.selected td:nth-child(1),
+.ftable tbody tr.selected td:nth-child(2) { background: #e8f0fe; }
 .ftable thead th {
   position: sticky; top: 0;
   background: #fff; z-index: 2;
@@ -484,6 +736,97 @@ function relativeDate(iso: string): string {
 .av-s5 { background: #db2777; }
 .av-s6 { background: #7c3aed; }
 .av-s7 { background: #dc2626; }
+
+/* ── Auto tag chip (system-generated) ────────────────────────────────────
+   Khác với CRM tag manual ở chỗ có prefix 🤖 + màu theo loại. */
+.auto-tag-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid;
+  margin-right: 3px;
+  white-space: nowrap;
+}
+.auto-active   { background: #d1fae5; color: #047857; border-color: #6ee7b7; }
+.auto-ready    { background: #fed7aa; color: #c2410c; border-color: #fdba74; }
+.auto-rewarmed { background: #e9d5ff; color: #7e22ce; border-color: #d8b4fe; }
+.auto-stuck    { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+.auto-atrisk   { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+.auto-cold     { background: #e5e7eb; color: #4b5563; border-color: #d1d5db; }
+.auto-frozen   { background: #1f2937; color: #f3f4f6; border-color: #374151; }
+.auto-default  { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+
+/* ── Stuck badge ────────────────────────────────────────────────────────── */
+.stuck-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  white-space: nowrap;
+}
+.stuck-col { width: 80px; }
+
+/* ── KB date ────────────────────────────────────────────────────────────── */
+.kb-date {
+  font-size: 11px;
+  color: #5b6573;
+  white-space: nowrap;
+}
+
+/* ── Phase 2 derived columns ───────────────────────────────────────────── */
+.silent-col, .reply-col, .health-col { width: 70px; }
+
+.silent-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.silent-badge.mild     { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+.silent-badge.warn     { background: #fed7aa; color: #c2410c; border: 1px solid #fdba74; }
+.silent-badge.critical { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+
+.reply-rate {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+.rr-none { color: #8d96a4; }
+.rr-low  { background: #fee2e2; color: #b91c1c; }
+.rr-ok   { background: #d1fae5; color: #047857; }
+.rr-high { background: #fed7aa; color: #c2410c; }
+
+/* Health bars — 4 mini vertical bars, mỗi chiều 1 màu */
+.health-bars {
+  display: flex; gap: 2px; align-items: flex-end;
+  height: 24px; width: 40px;
+}
+.health-bars .hb {
+  width: 7px; height: 100%;
+  background: #e5e7eb; border-radius: 2px;
+  position: relative; overflow: hidden;
+}
+.health-bars .hb-fill {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  border-radius: 2px;
+  transition: height 0.2s;
+}
+.hb-fill.engage   { background: #4f46e5; }   /* Engagement xanh-tím */
+.hb-fill.intent   { background: #db2777; }   /* Intent đỏ-hồng (mua) */
+.hb-fill.fit      { background: #059669; }   /* Fit xanh lá (phù hợp) */
+.hb-fill.velocity { background: #d97706; }   /* Velocity cam (tốc độ) */
 
 .alias-cell { font-size: 12px; color: #1a2433; }
 .alias-empty { font-size: 12px; color: #8d96a4; font-style: italic; }
