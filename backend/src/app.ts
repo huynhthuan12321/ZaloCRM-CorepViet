@@ -173,6 +173,8 @@ async function bootstrap() {
   await registerDepartmentRoutes(app);
   const { registerPermissionGroupRoutes } = await import('./modules/rbac/permission-group-routes.js');
   await registerPermissionGroupRoutes(app);
+  const { registerUserAssignmentRoutes } = await import('./modules/rbac/user-assignment-routes.js');
+  await registerUserAssignmentRoutes(app);
   await app.register(zaloLabelsRoutes);
   await app.register(zinstantProxyRoutes);
   await app.register(dashboardRoutes);

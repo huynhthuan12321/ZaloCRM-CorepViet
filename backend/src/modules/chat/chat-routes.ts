@@ -848,7 +848,8 @@ export async function chatRoutes(app: FastifyInstance) {
       const io = (app as any).io as Server;
       io?.emit('chat:message', { accountId: conversation.zaloAccountId, message, conversationId: id });
 
-      return message;
+      // FIX 2026-05-21: BigInt zaloMsgIdNum không JSON.stringify được → cast string
+      return { ...message, zaloMsgIdNum: message.zaloMsgIdNum?.toString() ?? null };
     } catch (err) {
       logger.error('[chat] Send message error:', err);
       return reply.status(500).send({ error: 'Failed to send message' });
