@@ -108,6 +108,23 @@ export function statusLabel(status: string): string {
 }
 
 /**
+ * AI parse result từ ghi chú → fill các trường tạo lịch hẹn (AppointmentEditor).
+ * Sản sinh bởi cascade backend `parseAppointmentFromText`:
+ *   Step 1: parseAppointmentRuleBased (regex tiếng Việt: "thứ X", "mai", "ghé", ...)
+ *   Step 2: AI provider (Gemini default) với prompt phân tích structured JSON
+ *   Fallback: nếu AI fail (quota/429) → trả rule-based result (nếu confidence ≥ 0.5)
+ * Field nào null → editor giữ default (date/time → roundToNextSlot now).
+ */
+export interface AiPrefill {
+  date?: string | null;       // YYYY-MM-DD
+  time?: string | null;       // HH:MM
+  type?: string | null;       // call/message/meeting/follow_up
+  location?: string | null;
+  title?: string | null;      // = summary AI sinh
+  notes?: string | null;      // = note body gốc (tham chiếu)
+}
+
+/**
  * Resolve avatar URL từ contact: ưu tiên Contact.avatarUrl (manual upload), fallback
  * sang Friend.zaloAvatarUrl của friend hoạt động gần nhất (per-nick Zalo profile pic).
  * KH import từ Zalo thường có Contact.avatarUrl=null vì avatar lưu per-nick ở Friend.

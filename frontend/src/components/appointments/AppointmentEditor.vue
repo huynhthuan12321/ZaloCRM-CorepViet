@@ -329,6 +329,7 @@ import {
   typeIcon,
   initials,
   type AppointmentEx as Appointment,
+  type AiPrefill,
 } from '@/composables/appointment-helpers';
 
 interface ContactLite {
@@ -359,6 +360,8 @@ const props = defineProps<{
   users?: UserLite[];
   /** ID của user đang đăng nhập — default Sale phụ trách */
   currentUserId?: string | null;
+  /** AI parse result từ ghi chú → fill các trường tạo lịch hẹn */
+  aiPrefill?: AiPrefill | null;
 }>();
 
 const emit = defineEmits<{
@@ -623,6 +626,26 @@ watch(() => props.modelValue, (open) => {
     // Tiêu đề default = template theo loại hiện tại (call), kèm tên KH nếu prefill
     form.title = buildTitleFromType(form.type);
     calMonth.value = new Date(base);
+
+    // AI prefill (sau khi default đã set) — override field nào AI có giá trị.
+    // Đến từ NotesSection sau khi ai-parse cascade (rule-based + Gemini).
+    if (props.aiPrefill) {
+      const p = props.aiPrefill;
+      if (p.type) form.type = p.type;
+      if (p.date) {
+        form.date = p.date;
+        calMonth.value = new Date(p.date + 'T00:00:00');
+      }
+      if (p.time) form.time = p.time;
+      if (p.location) form.location = p.location;
+      // Title: ưu tiên AI summary, fallback template theo type mới
+      if (p.title && p.title.trim()) {
+        form.title = p.title.trim();
+      } else {
+        form.title = buildTitleFromType(form.type);
+      }
+      if (p.notes) form.notes = p.notes;
+    }
   }
 
   nextTick(() => titleInputRef.value?.focus());
