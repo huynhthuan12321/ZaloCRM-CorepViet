@@ -1735,7 +1735,7 @@ function handleSend() {
 
   // 2026-05-21 fix: lấy rich payload {text, styles} từ editor để gửi format đi Zalo.
   // Nếu không có styles → behaves như plain text (backward compat).
-  const rich = editorRef.value?.getRichPayload?.() || { text: inputText.value, styles: [] };
+  const rich = (editorRef.value as any)?.getRichPayload?.() || { text: inputText.value, styles: [] };
   const textToSend = rich.text || inputText.value;
   const styles = Array.isArray(rich.styles) && rich.styles.length > 0 ? rich.styles : undefined;
 

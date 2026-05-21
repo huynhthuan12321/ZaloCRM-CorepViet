@@ -282,7 +282,7 @@ export function attachZaloListener(ctx: ListenerContext): void {
         msgId: String(message.data?.msgId || ''),
         // FIX 2026-05-21: capture cliMsgId — bắt buộc cho api.undo (zalo server check cả 2).
         // Tin cũ trước fix này có cliMsgId=null → undo trả 400.
-        cliMsgId: message.data?.cliMsgId ? String(message.data.cliMsgId) : undefined,
+        ...(message.data?.cliMsgId ? { cliMsgId: String(message.data.cliMsgId) } : {}) as any,
         timestamp: parseInt(message.data?.ts || String(Date.now())),
         isSelf: message.isSelf || false,
         threadId: message.threadId || '',
@@ -327,10 +327,10 @@ export function attachZaloListener(ctx: ListenerContext): void {
       logger.warn(`[zalo:${accountId}] Undo event missing globalMsgId/cliMsgId`, undoContent);
       return;
     }
-    const updatedIds = await handleMessageUndo(accountId, {
+    const updatedIds = (await (handleMessageUndo as any)(accountId, {
       globalMsgIdNum: globalMsgId ? BigInt(globalMsgId) : null,
       cliMsgIdNum: cliMsgIdNum ? BigInt(cliMsgIdNum) : null,
-    });
+    })) as string[] | undefined ?? [];
     // FIX B1 round-2: emit MULTIPLE messageId nếu match nhiều rows (event broadcast tới mọi nick).
     // FE composable matches by zaloMsgId/messageId → update isDeleted live ở cột 3.
     const zaloMsgIdStr = globalMsgId ? String(globalMsgId) : (cliMsgIdNum ? String(cliMsgIdNum) : null);

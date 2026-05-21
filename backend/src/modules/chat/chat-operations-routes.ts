@@ -398,12 +398,12 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
       let succeeded = 0;
       let failed = 0;
       if (userTargets.length) {
-        const res = (await zaloOps.forwardMessage(conv.zaloAccountId, textToForward, userTargets, 0, reference)) as FwdResp;
+        const res = (await (zaloOps.forwardMessage as any)(conv.zaloAccountId, textToForward, userTargets, 0, reference)) as FwdResp;
         succeeded += res?.success?.length ?? userTargets.length;
         failed += res?.fail?.length ?? 0;
       }
       if (groupTargets.length) {
-        const res = (await zaloOps.forwardMessage(conv.zaloAccountId, textToForward, groupTargets, 1, reference)) as FwdResp;
+        const res = (await (zaloOps.forwardMessage as any)(conv.zaloAccountId, textToForward, groupTargets, 1, reference)) as FwdResp;
         succeeded += res?.success?.length ?? groupTargets.length;
         failed += res?.fail?.length ?? 0;
       }

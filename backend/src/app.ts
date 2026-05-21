@@ -168,6 +168,9 @@ async function bootstrap() {
   // Phase 8 — Engagement heatmap timeline + admin recompute/backfill
   const { registerEngagementRoutes } = await import('./modules/engagement/engagement-routes.js');
   await registerEngagementRoutes(app);
+  // RBAC Phase Phân Quyền 2026-05-21 — Department + PermissionGroup (M2 Getfly Clone)
+  const { registerDepartmentRoutes } = await import('./modules/rbac/department-routes.js');
+  await registerDepartmentRoutes(app);
   await app.register(zaloLabelsRoutes);
   await app.register(zinstantProxyRoutes);
   await app.register(dashboardRoutes);
