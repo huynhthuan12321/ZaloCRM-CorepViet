@@ -191,6 +191,10 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
           type: body.type,
           status: body.status ?? 'scheduled',
           notes: body.notes,
+          // 2026-05-21 "Nhắc hẹn" refactor
+          title: body.title ?? null,
+          durationMin: typeof body.durationMin === 'number' ? body.durationMin : 15,
+          location: body.location ?? null,
         },
         include: APPOINTMENT_INCLUDE,
       });
@@ -265,6 +269,10 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
           type: body.type,
           status: body.status,
           notes: body.notes,
+          // 2026-05-21 nhắc hẹn fields
+          ...(body.title !== undefined ? { title: body.title || null } : {}),
+          ...(typeof body.durationMin === 'number' ? { durationMin: body.durationMin } : {}),
+          ...(body.location !== undefined ? { location: body.location || null } : {}),
           ...(statusChanging ? { statusChangedByUserId: user.id, statusChangedAt: new Date() } : {}),
         },
         include: APPOINTMENT_INCLUDE,

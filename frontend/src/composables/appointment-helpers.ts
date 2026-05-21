@@ -49,10 +49,29 @@ export function appointmentOwnerName(a: AppointmentEx): string {
 
 export function typeIcon(type: string): string {
   switch (type) {
+    case 'call':      return '📞';
+    case 'message':   return '💬';
+    case 'meeting':   return '🤝';
+    case 'follow_up': return '👁';
+    // Legacy values (pre-2026-05-21 migration) — fallback an toàn
     case 'consultation': return '💬';
-    case 'follow_up': return '🔁';
-    case 'new_visit': return '🆕';
+    case 'new_visit':    return '🤝';
+    case 'reminder':     return '👁';
+    case 'tai_kham':     return '👁';
     default: return '📌';
+  }
+}
+
+/**
+ * Type → signature tint cho icon container (mockup nhac-hen-editor 2026-05-21).
+ */
+export function typeTint(type: string): { bg: string; text: string } {
+  switch (type) {
+    case 'call':      return { bg: '#fdf0e3', text: '#7a4115' };
+    case 'message':   return { bg: '#e8f4ee', text: '#1f4d39' };
+    case 'meeting':   return { bg: '#fbe6dc', text: '#7a2000' };
+    case 'follow_up': return { bg: '#fdf3df', text: '#7a5818' };
+    default: return { bg: '#f8fafc', text: '#41454d' };
   }
 }
 

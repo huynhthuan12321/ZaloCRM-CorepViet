@@ -4,7 +4,7 @@
       <div class="empty-icon">📅</div>
       <h3>Chưa có lịch hẹn</h3>
       <p>Lọc hiện tại không khớp lịch nào. Thử bỏ bớt filter hoặc tạo lịch hẹn mới.</p>
-      <button class="empty-btn" @click="$emit('create')">＋ Tạo lịch hẹn</button>
+      <button class="empty-btn" @click="$emit('create')">＋ Tạo nhắc hẹn</button>
     </div>
 
     <div v-for="group in grouped" :key="group.iso" class="group">

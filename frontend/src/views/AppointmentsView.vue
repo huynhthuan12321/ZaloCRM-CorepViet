@@ -19,7 +19,7 @@
           </button>
           <button class="at-btn at-btn--primary" @click="openQuickCreate(null)">
             <span class="ic">+</span>
-            <span class="btn-label">Tạo lịch hẹn</span>
+            <span class="btn-label">Tạo nhắc hẹn</span>
           </button>
         </div>
       </div>
@@ -174,12 +174,14 @@
       />
     </div>
 
-    <!-- Quick create modal -->
-    <AppointmentQuickCreate
+    <!-- Editor modal — 1 UI cho create + edit "Nhắc hẹn" -->
+    <AppointmentEditor
       v-model="quickCreateOpen"
+      :appointment="editAppointment"
       :default-date="quickCreateDate"
       :prefill-contact="quickCreatePrefillContact"
       @created="onAppointmentCreated"
+      @updated="onAppointmentUpdated"
     />
   </div>
 </template>
@@ -202,7 +204,7 @@ import AppointmentsSidebar from '@/components/appointments/AppointmentsSidebar.v
 import AppointmentsWeekView from '@/components/appointments/AppointmentsWeekView.vue';
 import AppointmentsListView from '@/components/appointments/AppointmentsListView.vue';
 import AppointmentDetailPanel from '@/components/appointments/AppointmentDetailPanel.vue';
-import AppointmentQuickCreate from '@/components/appointments/AppointmentQuickCreate.vue';
+import AppointmentEditor from '@/components/appointments/AppointmentEditor.vue';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -293,6 +295,8 @@ const countByType = computed<Record<string, number>>(() => {
 const quickCreateOpen = ref(false);
 const quickCreateDate = ref<Date | null>(null);
 const quickCreatePrefillContact = ref<{ id: string; fullName: string | null; phone: string | null; zaloUid?: string | null } | null>(null);
+// Edit mode: nếu set → mở editor ở mode sửa, ngược lại null = create.
+const editAppointment = ref<Appointment | null>(null);
 
 // Detail panel
 const selectedAppointment = ref<Appointment | null>(null);
@@ -392,11 +396,22 @@ function onCreateSlot(payload: { date: Date }) {
   openQuickCreate(payload.date);
 }
 function openQuickCreate(date: Date | null) {
+  editAppointment.value = null; // create mode
   quickCreateDate.value = date;
   quickCreatePrefillContact.value = null;
   quickCreateOpen.value = true;
 }
+function openEditor(a: Appointment) {
+  editAppointment.value = a;
+  quickCreateDate.value = null;
+  quickCreatePrefillContact.value = null;
+  quickCreateOpen.value = true;
+}
 async function onAppointmentCreated() {
+  await reloadAppointments();
+}
+async function onAppointmentUpdated() {
+  selectedAppointment.value = null;
   await reloadAppointments();
 }
 
@@ -416,18 +431,9 @@ async function onNoShow(a: Appointment) {
   await reloadAppointments();
 }
 function onReschedule(a: Appointment) {
-  // Placeholder: pre-fill quick create with same contact
+  // Mở Editor ở mode edit (giữ data + sửa giờ) thay vì tạo mới
   selectedAppointment.value = null;
-  quickCreateDate.value = appointmentStart(a);
-  quickCreatePrefillContact.value = a.contact
-    ? {
-        id: a.contact.id,
-        fullName: a.contact.fullName,
-        phone: a.contact.phone,
-        zaloUid: a.contact.zaloUid ?? null,
-      }
-    : null;
-  quickCreateOpen.value = true;
+  openEditor(a);
 }
 function onOpenChat(a: Appointment) {
   if (a.source === 'zalo' && a.conversationId) {

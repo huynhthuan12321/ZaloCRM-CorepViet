@@ -79,7 +79,7 @@
     <div class="side-section">
       <div class="sidebar-callout">
         <strong>💡 Mẹo nhanh</strong><br>
-        Bấm <kbd>N</kbd> để tạo lịch hẹn nhanh · <kbd>←</kbd><kbd>→</kbd> chuyển tuần · click slot trống để chọn giờ
+        Bấm <kbd>N</kbd> để tạo nhắc hẹn nhanh · <kbd>←</kbd><kbd>→</kbd> chuyển tuần · click slot trống để chọn giờ
       </div>
     </div>
 
