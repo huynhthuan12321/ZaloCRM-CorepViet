@@ -17,6 +17,8 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { zaloPool } from './zalo-pool.js';
 import { logger } from '../../shared/utils/logger.js';
 import { getZaloScope, canManageAccount } from './zalo-scope.js';
+import { uptimeWindowBatch } from './status-log-service.js';
+import { revokeAllSessions } from '../privacy/pin-service.js';
 
 const DAILY_QUOTA = 500; // per-nick soft cap shown in UI (msg today X / 500)
 
@@ -59,46 +61,51 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
       where: { orgId: user.orgId, id: { in: scope.accessibleIds } },
       select: { id: true, status: true, lastConnectedAt: true },
     });
+    const accountIds = accounts.map((a) => a.id);
 
-    // Today aggregate across all nicks
+    // Today aggregate (msgToday only — không dùng cho active/idle nữa)
     const todayStats = await prisma.dailyMessageStat.aggregate({
-      where: { orgId: user.orgId, statDate: today },
+      where: { orgId: user.orgId, statDate: today, zaloAccountId: { in: accountIds } },
       _sum: { messagesSent: true, messagesReceived: true },
     });
 
-    // 7-day window for per-account "active days" computation
-    const { start: weekStart } = lastNDays(7);
-    const weekRows = await prisma.dailyMessageStat.groupBy({
-      by: ['zaloAccountId', 'statDate'],
-      where: { orgId: user.orgId, statDate: { gte: weekStart, lte: today } },
-      _sum: { messagesSent: true },
+    // Anh chốt 2026-05-22 Phase 3: ACTIVE = connected + activity 24h (KHÔNG còn 7 ngày).
+    // Activity 24h dựa trên DailyMessageStat (hôm nay + hôm qua có gửi/nhận).
+    // Uptime team từ ZaloAccountStatusLog (connection time thật) thay vì proxy.
+    const yesterday = new Date(today);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const last24hRows = await prisma.dailyMessageStat.groupBy({
+      by: ['zaloAccountId'],
+      where: {
+        orgId: user.orgId,
+        zaloAccountId: { in: accountIds },
+        statDate: { gte: yesterday, lte: today },
+      },
+      _sum: { messagesSent: true, messagesReceived: true },
     });
-
-    // Map zaloAccountId → count of days with activity (messagesSent > 0)
-    const activeDaysMap = new Map<string, number>();
-    for (const r of weekRows) {
-      const sent = r._sum.messagesSent ?? 0;
-      if (sent > 0) {
-        activeDaysMap.set(r.zaloAccountId, (activeDaysMap.get(r.zaloAccountId) ?? 0) + 1);
-      }
+    const activeRecent = new Set<string>();
+    for (const r of last24hRows) {
+      const total = (r._sum.messagesSent ?? 0) + (r._sum.messagesReceived ?? 0);
+      if (total > 0) activeRecent.add(r.zaloAccountId);
     }
+
+    // Uptime 7d batch — N+1-safe.
+    const uptimeMap = await uptimeWindowBatch(accountIds, 7);
 
     let totalNick = accounts.length;
     let active = 0;
     let idle = 0;
     let error = 0;
     let uptimeSum = 0;
-    let needReloginIds: string[] = [];
+    const needReloginIds: string[] = [];
 
     for (const a of accounts) {
       const live = zaloPool.getStatus(a.id) ?? a.status;
-      const activeDays = activeDaysMap.get(a.id) ?? 0;
-      const uptimePct = (activeDays / 7) * 100;
-      uptimeSum += uptimePct;
+      const u = uptimeMap.get(a.id);
+      uptimeSum += u?.uptimePct ?? 0;
 
       if (live === 'connected') {
-        // Active = connected AND sent something today; otherwise Idle
-        if (activeDays > 0) active++;
+        if (activeRecent.has(a.id)) active++;
         else idle++;
       } else {
         error++;
@@ -130,7 +137,6 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
     const user = request.user!;
     const userId = (user as any).userId ?? user.id;
     const today = startOfDay(new Date());
-    const { start: weekStart } = lastNDays(7);
 
     // RBAC scope 2026-05-22: chỉ trả nicks user được phép xem.
     const scope = await getZaloScope(userId, user.orgId, user.role);
@@ -177,21 +183,10 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
       ]),
     );
 
-    // 7-day activity per account (active days count)
-    const weekRows = await prisma.dailyMessageStat.groupBy({
-      by: ['zaloAccountId', 'statDate'],
-      where: { orgId: user.orgId, statDate: { gte: weekStart, lte: today }, zaloAccountId: { in: ids } },
-      _sum: { messagesSent: true },
-    });
-    const activeDaysMap = new Map<string, number>();
-    for (const r of weekRows) {
-      const sent = r._sum.messagesSent ?? 0;
-      if (sent > 0) {
-        activeDaysMap.set(r.zaloAccountId, (activeDaysMap.get(r.zaloAccountId) ?? 0) + 1);
-      }
-    }
+    // Phase 3 2026-05-22: uptime7d từ status log (connection time thật), KHÔNG còn proxy.
+    const uptimeMap = await uptimeWindowBatch(ids, 7);
 
-    // Last activity per account (most recent statDate with activity)
+    // Last activity per account (most recent statDate with activity) — vẫn dùng cho UI display
     const lastActivityRows = await prisma.dailyMessageStat.groupBy({
       by: ['zaloAccountId'],
       where: { orgId: user.orgId, zaloAccountId: { in: ids } },
@@ -203,8 +198,8 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
 
     return accounts.map((a) => {
       const live = zaloPool.getStatus(a.id) ?? a.status;
-      const activeDays = activeDaysMap.get(a.id) ?? 0;
-      const uptime7d = Number(((activeDays / 7) * 100).toFixed(1));
+      const u = uptimeMap.get(a.id);
+      const uptime7d = u?.uptimePct ?? 0;
       const msgToday = todayMap.get(a.id) ?? 0;
       const lastActivity = lastActivityMap.get(a.id) ?? a.lastConnectedAt;
 
@@ -243,6 +238,86 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
       };
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────
+  // PATCH /api/v1/zalo-accounts/:id/owner — re-assign owner
+  // Phase ZaloAccounts redesign 2026-05-22.
+  // Permission: org admin/owner HOẶC current owner (chuyển nhượng chính chủ).
+  // Side effect: revoke ALL active privacy sessions của owner cũ — tránh owner
+  // cũ vẫn unlock được data của nick sau khi mất quyền.
+  // ───────────────────────────────────────────────────────────────────
+  app.patch<{ Params: { id: string }; Body: { newOwnerUserId: string } }>(
+    '/api/v1/zalo-accounts/:id/owner',
+    async (request, reply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { id } = request.params;
+      const { newOwnerUserId } = request.body ?? ({} as any);
+
+      if (!newOwnerUserId || typeof newOwnerUserId !== 'string') {
+        return reply.status(400).send({ error: 'newOwnerUserId required' });
+      }
+
+      const account = await prisma.zaloAccount.findFirst({
+        where: { id, orgId: user.orgId },
+        select: { id: true, ownerUserId: true, displayName: true },
+      });
+      if (!account) return reply.status(404).send({ error: 'Account not found' });
+
+      // Permission gate: org admin/owner OR current owner.
+      const isAdmin = ['owner', 'admin'].includes(user.role);
+      const isCurrentOwner = account.ownerUserId === userId;
+      if (!isAdmin && !isCurrentOwner) {
+        return reply.status(403).send({
+          error: 'Chỉ org admin/owner hoặc chính chủ nick mới được re-assign owner',
+        });
+      }
+
+      // Verify new owner tồn tại trong cùng org.
+      const newOwner = await prisma.user.findFirst({
+        where: { id: newOwnerUserId, orgId: user.orgId },
+        select: { id: true, fullName: true, email: true },
+      });
+      if (!newOwner) {
+        return reply.status(400).send({ error: 'newOwnerUserId không thuộc org' });
+      }
+
+      // No-op nếu chính chủ không đổi.
+      if (account.ownerUserId === newOwnerUserId) {
+        return reply.send({ ok: true, noop: true });
+      }
+
+      const oldOwnerId = account.ownerUserId;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.zaloAccount.update({
+          where: { id },
+          data: { ownerUserId: newOwnerUserId },
+        });
+      });
+
+      // Side effect: revoke ALL privacy sessions của owner cũ.
+      // Phòng trường hợp owner cũ vẫn còn cookie HttpOnly từ session unlock trước.
+      // Lỗi revoke không block — nick đã đổi owner trong DB.
+      try {
+        await revokeAllSessions(oldOwnerId);
+      } catch (err) {
+        logger.warn(`[zalo-owner-reassign] revokeAllSessions(${oldOwnerId}) failed: ${String(err)}`);
+      }
+
+      logger.info(
+        `[zalo-owner-reassign] account=${id} from=${oldOwnerId} to=${newOwnerUserId} by=${userId}`,
+      );
+
+      return reply.send({
+        ok: true,
+        accountId: id,
+        oldOwnerUserId: oldOwnerId,
+        newOwnerUserId,
+        newOwner: { id: newOwner.id, fullName: newOwner.fullName, email: newOwner.email },
+      });
+    },
+  );
 
   // ───────────────────────────────────────────────────────────────────
   // GET /api/v1/zalo-accounts/:id/uptime?range=7d — sparkline data
