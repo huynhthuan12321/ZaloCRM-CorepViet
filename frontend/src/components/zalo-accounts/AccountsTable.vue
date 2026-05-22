@@ -79,7 +79,7 @@
               class="owner-cell"
               :class="{ clickable: acct.canManage }"
               :title="acct.canManage ? 'Click để chuyển nhượng owner' : ''"
-              @click.stop="acct.canManage && $emit('reassign-owner', acct)"
+              @click.stop="onOwnerClick(acct)"
             >
               <span class="avatar-mini owner-avatar" :style="{ background: avatarColor(acct.owner.fullName || acct.owner.email, 0) }">
                 {{ shortName(acct.owner.fullName || acct.owner.email) }}
@@ -243,6 +243,12 @@ function onRowClick(id: string, e: MouseEvent) {
 
 function onActionClick(account: EnrichedAccount, action: 'reconnect' | 'sync') {
   emit('action', { account, action });
+}
+
+function onOwnerClick(account: EnrichedAccount) {
+  // Chỉ owner-of-nick HOẶC org admin được reassign. BE cũng gate, FE chỉ skip UX noise.
+  if (!account.canManage) return;
+  emit('reassign-owner', account);
 }
 
 function statusClass(live: string): string {

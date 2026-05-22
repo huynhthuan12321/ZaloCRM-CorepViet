@@ -116,6 +116,7 @@
       @add-crew="onAddCrew"
       @remove-crew="onRemoveCrew"
       @action="onDrawerAction"
+      @reassign-owner="onOpenReassign"
     />
 
     <!-- BULK ACTION BAR -->

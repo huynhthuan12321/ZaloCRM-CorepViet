@@ -52,10 +52,32 @@
           </div>
         </div>
 
+        <!-- OWNER (chính chủ) — Phase 4 2026-05-22 -->
+        <section v-if="account.owner" class="d-section">
+          <div class="h">
+            <span>Chính chủ (Owner)</span>
+            <a v-if="account.canManage" class="link" @click="$emit('reassign-owner', account)">⚙ Chuyển nhượng</a>
+          </div>
+          <div class="owner-row-detail">
+            <div class="avatar-mini" :style="{ background: avatarColor(account.owner.fullName || account.owner.email, 0) }">
+              {{ shortName(account.owner.fullName || account.owner.email) }}
+            </div>
+            <div class="nm-col">
+              <div class="nm">{{ account.owner.fullName || account.owner.email }}</div>
+              <div class="em">{{ account.owner.email }}</div>
+            </div>
+            <div class="owner-meta">
+              <span v-if="account.ownerDepartment" class="dept-chip">{{ account.ownerDepartment.name }}</span>
+              <span v-if="account.ownerDeptRole === 'leader'" class="role-chip leader">Trưởng phòng</span>
+              <span v-else-if="account.ownerDeptRole === 'deputy'" class="role-chip deputy">Phó phòng</span>
+            </div>
+          </div>
+        </section>
+
         <!-- CREW LIST -->
         <section class="d-section">
           <div class="h">
-            <span>Sale phụ trách ({{ account.crew.length }})</span>
+            <span>Đội ngũ chia sẻ ({{ account.crew.length }})</span>
             <a class="link" @click="$emit('add-crew', account.id)">+ Thêm sale</a>
           </div>
           <div v-if="!account.crew.length" class="muted-italic">Chưa gán sale nào</div>
@@ -143,6 +165,7 @@ const emit = defineEmits<{
   (e: 'add-crew', accountId: string): void;
   (e: 'remove-crew', payload: { accountId: string; accessId: string }): void;
   (e: 'action', payload: { accountId: string; action: 'sync-contacts' | 'sync-history' | 'reconnect' | 'qr-login' | 'edit-proxy' | 'disconnect' | 'delete' }): void;
+  (e: 'reassign-owner', account: EnrichedAccount): void;
 }>();
 
 function close() {
@@ -424,6 +447,23 @@ function maskPhone(p: string): string {
   border-radius: 99px;
 }
 .role-badge.owner { background: #DBEAFE; color: #1E40AF }
+
+/* Owner row in detail drawer — Phase 4 2026-05-22 */
+.owner-row-detail {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: #EFF6FF; border: 1px solid #DBEAFE; border-radius: 8px;
+}
+.owner-meta { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.dept-chip {
+  background: #F3F4F6; color: #374151; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 6px;
+}
+.role-chip {
+  font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 9999px;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.role-chip.leader { background: #DBEAFE; color: #1D4ED8; }
+.role-chip.deputy { background: #FEF3C7; color: #92400E; }
 .role-badge.editor { background: #D1FAE5; color: #065F46 }
 .role-badge.viewer { background: #F3F4F6; color: #4B5563 }
 .x {
