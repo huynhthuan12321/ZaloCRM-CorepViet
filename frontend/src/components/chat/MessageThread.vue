@@ -282,23 +282,35 @@
             <span v-if="reminderNoticeTime(item.msg)" class="reminder-notice-time">· {{ reminderNoticeTime(item.msg) }}</span>
           </div>
 
-          <!-- Single message — MessageBubble component -->
-          <MessageBubble
+          <!-- Single message — MessageBubble component (wrap với privacy blur khi redacted) -->
+          <div
             v-else
-            :message="item.msg"
-            :reply="item.msg.reply || null"
-            :reactions="item.msg.reactions || []"
-            :is-self="item.msg.senderType === 'self'"
-            :is-group="conversation.threadType === 'group'"
-            :sender-avatar-url="resolveSenderAvatar(item.msg)"
-            @contextmenu="onContextMenu($event, item.msg)"
-            @preview-image="openImageLightbox($event, [])"
-            @preview-video="previewVideoUrl = $event"
-            @toggle-reaction="onToggleReaction(item.msg, $event)"
-            @sender-click="onSenderClick(item.msg)"
-            @callback="onMessageCallback(item.msg)"
-            @open-profile="onOpenProfileFromCard"
-          />
+            class="msg-bubble-wrap"
+            :class="{ 'msg-privacy-blurred': privacyVisibility.shouldBlurMessage(item.msg, conversation) }"
+          >
+            <MessageBubble
+              :message="item.msg"
+              :reply="item.msg.reply || null"
+              :reactions="item.msg.reactions || []"
+              :is-self="item.msg.senderType === 'self'"
+              :is-group="conversation.threadType === 'group'"
+              :sender-avatar-url="resolveSenderAvatar(item.msg)"
+              @contextmenu="onContextMenu($event, item.msg)"
+              @preview-image="openImageLightbox($event, [])"
+              @preview-video="previewVideoUrl = $event"
+              @toggle-reaction="onToggleReaction(item.msg, $event)"
+              @sender-click="onSenderClick(item.msg)"
+              @callback="onMessageCallback(item.msg)"
+              @open-profile="onOpenProfileFromCard"
+            />
+            <div
+              v-if="privacyVisibility.shouldBlurMessage(item.msg, conversation)"
+              class="msg-privacy-overlay"
+              @click.stop="onPrivacyUnlockRequest"
+            >
+              <span class="lock-pill">🔒 Riêng tư — chỉ chính chủ xem được</span>
+            </div>
+          </div>
         </template>
 
         <div v-if="!loading && messages.length === 0" class="text-center pa-8 text-grey">Chưa có tin nhắn</div>
@@ -317,7 +329,19 @@
       />
 
       <!-- ════════ Input area: toolbar trên textarea (Smax-style) ════════ -->
-      <div class="input-area">
+      <!-- PRIVACY LOCK 2026-05-22: nick privacy + viewer không phải owner → composer disabled -->
+      <div
+        v-if="!privacyVisibility.canSendInConv(conversation)"
+        class="composer-locked-overlay"
+        @click.stop="onPrivacyUnlockRequest"
+      >
+        <div class="lock-card">
+          <div class="lock-icon-big">🔒</div>
+          <div class="lock-title">Nick này đang bật chế độ Riêng tư</div>
+          <div class="lock-desc">Chỉ chủ nick mới gửi được tin nhắn. Bot và automation vẫn hoạt động bình thường.</div>
+        </div>
+      </div>
+      <div class="input-area" :class="{ 'is-locked': !privacyVisibility.canSendInConv(conversation) }">
         <!-- CRM tag pills (Smax-style) — chỉ KH chat 1-1, ẩn ở group -->
         <TagCrmBar
           v-if="conversation.contact && conversation.threadType === 'user'"
@@ -562,6 +586,12 @@ import Avatar from '@/components/ui/Avatar.vue';
 import EmojiPicker from '@/components/chat/EmojiPicker.vue';
 import QuickTemplatePopup from '@/components/chat/quick-template-popup.vue';
 import MessageBubble from '@/components/chat/message-bubble.vue';
+import { usePrivacyVisibility } from '@/composables/use-privacy-visibility';
+
+const privacyVisibility = usePrivacyVisibility();
+function onPrivacyUnlockRequest() {
+  window.location.href = '/settings/privacy';
+}
 import StickerPicker from '@/components/chat/StickerPicker.vue';
 import ZaloUserInfoDialog from '@/components/chat/ZaloUserInfoDialog.vue';
 import LinkParentDialog from '@/components/chat/LinkParentDialog.vue';
@@ -1845,6 +1875,89 @@ watch(() => props.editingMessage?.id, async (id) => {
   height: 100%;
   background: var(--smax-grey-100);
   overflow: hidden;
+}
+
+/* ════════ Privacy blur — message bubble (cột 3) ════════ */
+.msg-bubble-wrap { position: relative; }
+.msg-privacy-blurred > :not(.msg-privacy-overlay) {
+  filter: blur(8px) saturate(0.4);
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
+  transition: filter 0.2s ease;
+}
+.msg-privacy-blurred:hover > :not(.msg-privacy-overlay) {
+  filter: blur(10px) saturate(0.3);
+  opacity: 0.5;
+}
+.msg-privacy-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(251, 230, 220, 0.1), rgba(251, 230, 220, 0.4));
+  border-radius: 8px;
+}
+.msg-privacy-overlay .lock-pill {
+  background: white;
+  color: #7a2000;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(170, 45, 0, 0.25);
+  box-shadow: 0 2px 8px rgba(170, 45, 0, 0.15);
+  white-space: nowrap;
+}
+.msg-privacy-overlay:hover .lock-pill {
+  background: #aa2d00;
+  color: white;
+  border-color: #aa2d00;
+}
+
+/* ════════ Privacy composer lock (Smax-style lock overlay) ════════ */
+.composer-locked-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  border-top: 1px solid #FBE6DC;
+  cursor: pointer;
+  min-height: 100px;
+}
+.composer-locked-overlay .lock-card {
+  text-align: center;
+  max-width: 480px;
+}
+.composer-locked-overlay .lock-icon-big {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+.composer-locked-overlay .lock-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #7a2000;
+  margin-bottom: 4px;
+}
+.composer-locked-overlay .lock-desc {
+  font-size: 12px;
+  color: #41454d;
+  line-height: 1.5;
+}
+.input-area.is-locked {
+  filter: blur(2px) saturate(0.5);
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
 }
 
 .empty-state {

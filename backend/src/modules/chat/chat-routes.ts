@@ -482,14 +482,29 @@ export async function chatRoutes(app: FastifyInstance) {
       }]));
     }
 
+    // PRIVACY REDACT 2026-05-22 — apply redactConversationRow + redactMessage
+    // cho preview text ở cột 2 khi conv thuộc nick privacy='main' + non-owner.
+    const { buildPrivacyContext, redactConversationRow, redactMessage } = await import('../privacy/redact.js');
+    const privacyCtx = await buildPrivacyContext(request);
+
     return {
-      conversations: conversations.map((c) => ({
-        ...c,
-        isPinned: c.pins.length > 0,
-        friendship: c.contactId && c.externalThreadId
-          ? friendMap.get(`${c.zaloAccountId}:${c.externalThreadId}`) || null
-          : null,
-      })),
+      conversations: conversations.map((c) => {
+        const base = {
+          ...c,
+          isPinned: c.pins.length > 0,
+          friendship: c.contactId && c.externalThreadId
+            ? friendMap.get(`${c.zaloAccountId}:${c.externalThreadId}`) || null
+            : null,
+        };
+        const redactedConv = redactConversationRow(base as any, privacyCtx);
+        // Cũng redact preview message (snippet cuối trong messages[0])
+        if ((redactedConv as any).messages?.length && (redactedConv as any).redacted) {
+          (redactedConv as any).messages = (redactedConv as any).messages.map((m: any) =>
+            redactMessage(m, c as any, privacyCtx),
+          );
+        }
+        return redactedConv;
+      }),
       total,
       page: parseInt(page),
       limit: Math.min(parseInt(limit), 200),
@@ -773,6 +788,18 @@ export async function chatRoutes(app: FastifyInstance) {
     const instance = zaloPool.getInstance(conversation.zaloAccountId);
     if (!instance?.api) return reply.status(400).send({ error: 'Zalo account not connected' });
 
+    // PRIVACY GUARD 2026-05-22: nick privacy='main' → chỉ chính chủ (owner) gửi được
+    // qua UI. Bot/automation đi qua zaloPool trực tiếp (không qua route này) → vẫn OK.
+    if (conversation.zaloAccount.privacyMode === 'main') {
+      const senderUserId = (user as any).userId ?? user.id;
+      if (conversation.zaloAccount.ownerUserId !== senderUserId) {
+        return reply.status(403).send({
+          error: 'Nick này đang bật Riêng tư — chỉ chính chủ mới gửi tin nhắn được. Vui lòng nhờ chủ nick gửi.',
+          code: 'PRIVACY_LOCKED',
+        });
+      }
+    }
+
     // Rate limit check — prevent account blocking
     const limits = await zaloRateLimiter.checkLimits(conversation.zaloAccountId);
     if (!limits.allowed) {
@@ -866,7 +893,16 @@ export async function chatRoutes(app: FastifyInstance) {
       // Cast trước khi emit + return.
       const safeMessage = { ...message, zaloMsgIdNum: message.zaloMsgIdNum?.toString() ?? null };
       const io = (app as any).io as Server;
-      io?.emit('chat:message', { accountId: conversation.zaloAccountId, message: safeMessage, conversationId: id });
+      // PRIVACY 2026-05-22: kèm _privacyMeta để FE detect & blur cho non-owner
+      io?.emit('chat:message', {
+        accountId: conversation.zaloAccountId,
+        message: safeMessage,
+        conversationId: id,
+        _privacyMeta: {
+          privacyMode: conversation.zaloAccount.privacyMode,
+          ownerUserId: conversation.zaloAccount.ownerUserId,
+        },
+      });
 
       return safeMessage;
     } catch (err) {
@@ -987,7 +1023,16 @@ export async function chatRoutes(app: FastifyInstance) {
 
       const io = (app as any).io as Server;
       for (const m of createdMessages) {
-        io?.emit('chat:message', { accountId: conversation.zaloAccountId, message: m, conversationId: id });
+        // PRIVACY 2026-05-22: kèm _privacyMeta để FE detect & blur cho non-owner
+        io?.emit('chat:message', {
+          accountId: conversation.zaloAccountId,
+          message: m,
+          conversationId: id,
+          _privacyMeta: {
+            privacyMode: conversation.zaloAccount.privacyMode,
+            ownerUserId: conversation.zaloAccount.ownerUserId,
+          },
+        });
       }
 
       return { success: true, count: tmpFiles.length, messages: createdMessages };

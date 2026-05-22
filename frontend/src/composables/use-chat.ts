@@ -4,11 +4,16 @@ import { io, Socket } from 'socket.io-client';
 import type { Contact } from '@/composables/use-contacts';
 import { useAuthStore } from '@/stores/auth';
 import { applyPendingTags } from '@/composables/use-pending-mutations';
+import { usePrivacyStore } from '@/stores/privacy';
 
 interface ZaloAccount {
   id: string;
   displayName: string | null;
   avatarUrl?: string | null;
+  /** Privacy Phase 2026-05-22 — 'main' = nick chính chủ (privacy mode on), 'sub' = công khai */
+  privacyMode?: 'main' | 'sub';
+  /** Owner user của nick (chính chủ) — dùng cho gate UI privacy blur + composer lock */
+  ownerUserId?: string | null;
 }
 
 export interface AiSentiment {
@@ -132,6 +137,8 @@ export interface Message {
   // Edit audit (2026-05-21) — set khi sale sửa tin trên CRM. Edit chỉ áp dụng local, không sync Zalo.
   originalContent?: string | null;
   editedAt?: string | null;
+  /** Privacy 2026-05-22 — true = server đã redact (non-owner xem nick privacy='main'). UI blur. */
+  redacted?: boolean;
 }
 
 /** Sort comparator: primary by zaloMsgIdNum (Zalo Snowflake), fallback sentAt cho row chưa echo */
@@ -202,6 +209,9 @@ function mergeConvListPreserveDetail(existing: Conversation[], incoming: Convers
 
 export function useChat() {
   const authStore = useAuthStore();
+  const privacyStore = usePrivacyStore();
+  function currentUserIdForPrivacy(): string | null { return authStore.user?.id ?? null; }
+  function privacyUnlockedRef(): boolean { return !!privacyStore.isUnlocked; }
   const conversations = ref<Conversation[]>([]);
   const selectedConvId = ref<string | null>(null);
   const messages = ref<Message[]>([]);
@@ -563,7 +573,24 @@ export function useChat() {
   function initSocket() {
     socket = io({ transports: ['websocket', 'polling'] });
 
-    socket.on('chat:message', (data: { message: Message; conversationId: string }) => {
+    socket.on('chat:message', (data: { message: Message; conversationId: string; _privacyMeta?: { privacyMode?: string; ownerUserId?: string | null } }) => {
+      // PRIVACY 2026-05-22 — backend kèm _privacyMeta cho mỗi event, FE đánh dấu
+      // redacted client-side khi non-owner để blur hiệu lực ngay realtime (tránh
+      // bug "tin mới không bị mờ" anh báo). Server không gửi raw content cho
+      // non-owner conv (đã có gate), nên đây chỉ là safety belt cho UI.
+      const meta = data._privacyMeta;
+      if (meta?.privacyMode === 'main') {
+        const myId = currentUserIdForPrivacy();
+        const isOwner = !!myId && meta.ownerUserId === myId;
+        const unlocked = privacyUnlockedRef();
+        if (!isOwner || !unlocked) {
+          (data.message as any).redacted = true;
+          (data.message as any).content = '';
+          (data.message as any).originalContent = null;
+          (data.message as any).attachments = [];
+        }
+      }
+
       if (data.conversationId === selectedConvId.value) {
         if (!messages.value.find(m => m.id === data.message.id)) {
           // INSERT theo sortedBy sentAt thay vì push cuối array. Lý do: socket có
