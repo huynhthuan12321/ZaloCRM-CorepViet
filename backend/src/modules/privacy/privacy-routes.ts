@@ -158,8 +158,30 @@ export async function registerPrivacyRoutes(app: FastifyInstance): Promise<void>
       select: { id: true, ownerUserId: true, privacyMode: true },
     });
     if (!account) return reply.status(404).send({ error: 'Nick không tồn tại' });
-    if (account.ownerUserId !== (user.userId ?? user.id)) {
+    const userId = user.userId ?? user.id;
+    if (account.ownerUserId !== userId) {
       return reply.status(403).send({ error: 'Chỉ owner của nick mới flip privacy mode' });
+    }
+
+    // Phase Privacy v2 2026-05-23: hard cap khi flip sang 'main'.
+    // Đếm nicks user đang 'main' (exclude nick hiện tại nếu đang main → reuse slot).
+    if (body.mode === 'main' && account.privacyMode !== 'main') {
+      const me = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { maxPrivacyNicks: true },
+      });
+      const max = me?.maxPrivacyNicks ?? 2;
+      const currentMainCount = await prisma.zaloAccount.count({
+        where: { ownerUserId: userId, privacyMode: 'main' },
+      });
+      if (currentMainCount >= max) {
+        return reply.status(400).send({
+          error: `Cấu trúc ổn định hệ thống mặc định ${max} nick riêng tư. Liên hệ admin nếu phát sinh thêm.`,
+          code: 'MAX_PRIVACY_NICKS_EXCEEDED',
+          maxPrivacyNicks: max,
+          currentCount: currentMainCount,
+        });
+      }
     }
 
     await prisma.zaloAccount.update({

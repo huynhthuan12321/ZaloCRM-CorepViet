@@ -325,6 +325,12 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
           where: { id },
           data: { ownerUserId: newOwnerUserId },
         });
+        // Phase Privacy v2 2026-05-23: cascade clear internalContactZaloAccountId của owner cũ
+        // nếu trỏ tới nick này — sale cũ không còn own → phải re-pick.
+        await tx.user.updateMany({
+          where: { internalContactZaloAccountId: id },
+          data: { internalContactZaloAccountId: null },
+        });
       });
 
       // Side effect: revoke ALL privacy sessions của owner cũ.

@@ -121,6 +121,19 @@
             </p>
           </section>
 
+          <!-- ── Cấu hình Riêng tư — Phase Privacy v2 2026-05-23 ── -->
+          <section class="section">
+            <h3 class="section-title">Cấu hình Riêng tư</h3>
+            <label class="field-label">Max nick riêng tư</label>
+            <select v-model="maxPrivacyLocal" class="field-input" :disabled="busy" @change="onMaxPrivacyChange">
+              <option v-for="n in 10" :key="n" :value="n">{{ n }} nick</option>
+            </select>
+            <p class="hint-soft" style="margin-top:6px">
+              User được phép đánh dấu tối đa N nick là "Riêng tư". Default = 2.
+              Vượt giới hạn → BE reject với message "liên hệ admin". Cho phép 1-10.
+            </p>
+          </section>
+
           <!-- ── Danger zone ─────────────────────── -->
           <section v-if="canDeactivate" class="section section-danger">
             <h3 class="section-title danger-title">Vùng nguy hiểm</h3>
@@ -187,6 +200,8 @@ const deptIdLocal = ref<string>('');
 const deptRoleLocal = ref<'leader' | 'deputy' | 'member'>('member');
 const pgIdLocal = ref<string>('');
 const ownedNicks = ref<OwnedNick[]>([]);
+// Phase Privacy v2 2026-05-23
+const maxPrivacyLocal = ref<number>(2);
 
 const canEditInfo = computed(() => {
   const u = props.user;
@@ -246,6 +261,7 @@ watch(
     deptIdLocal.value = props.user.departmentMember?.departmentId ?? '';
     deptRoleLocal.value = props.user.departmentMember?.deptRole ?? 'member';
     pgIdLocal.value = props.user.permissionGroupId ?? '';
+    maxPrivacyLocal.value = (props.user as any).maxPrivacyNicks ?? 2;
     error.value = '';
     ownedNicks.value = [];
     // Load owned nicks
@@ -343,6 +359,22 @@ async function onPgChange() {
     emit('changed');
   } catch (e: any) {
     error.value = e?.response?.data?.error || 'Lỗi đổi nhóm quyền';
+  } finally {
+    busy.value = false;
+  }
+}
+
+// Phase Privacy v2 2026-05-23
+async function onMaxPrivacyChange() {
+  if (!props.user) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    await api.patch(`/users/${props.user.id}/max-privacy-nicks`, { maxPrivacyNicks: maxPrivacyLocal.value });
+    emit('changed');
+  } catch (e: any) {
+    error.value = e?.response?.data?.error || 'Lỗi đổi maxPrivacyNicks';
+    maxPrivacyLocal.value = (props.user as any).maxPrivacyNicks ?? 2;
   } finally {
     busy.value = false;
   }

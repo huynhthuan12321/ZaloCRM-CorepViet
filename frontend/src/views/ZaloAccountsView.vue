@@ -24,6 +24,29 @@
       </div>
     </div>
 
+    <!-- Phase Privacy v2 2026-05-23 — Tab strip: Quản lý nick / Riêng tư -->
+    <div class="za-tabs">
+      <button
+        class="za-tab"
+        :class="{ active: activeTab === 'manage' }"
+        @click="setTab('manage')"
+      >
+        Quản lý nick
+      </button>
+      <button
+        class="za-tab"
+        :class="{ active: activeTab === 'privacy' }"
+        @click="setTab('privacy')"
+      >
+        🔒 Riêng tư
+        <span v-if="privacyCounter" class="za-tab-counter" :class="{ full: privacyCounter.atMax }">
+          ({{ privacyCounter.used }}/{{ privacyCounter.max }})
+        </span>
+      </button>
+    </div>
+
+    <!-- Tab content: manage (default) -->
+    <template v-if="activeTab === 'manage'">
     <!-- STATS CARDS -->
     <StatsCards :stats="stats" />
 
@@ -104,6 +127,13 @@
       :account="reassignAccount"
       @reassigned="onReassigned"
     />
+
+    </template>
+
+    <!-- Tab content: privacy (Phase Privacy v2 2026-05-23) -->
+    <template v-else-if="activeTab === 'privacy'">
+      <PrivacyNicksTab />
+    </template>
 
     <!-- DETAIL DRAWER -->
     <AccountDetailDrawer
@@ -219,8 +249,10 @@ import AccountsTable from '@/components/zalo-accounts/AccountsTable.vue';
 import AccountDetailDrawer from '@/components/zalo-accounts/AccountDetailDrawer.vue';
 import BulkActionBar from '@/components/zalo-accounts/BulkActionBar.vue';
 import OwnerReassignDrawer from '@/components/zalo-accounts/OwnerReassignDrawer.vue';
+import PrivacyNicksTab from '@/components/zalo-accounts/PrivacyNicksTab.vue';
 import ZaloAccessDialog from '@/components/settings/ZaloAccessDialog.vue';
 import { api } from '@/api/index';
+import { useRoute, useRouter } from 'vue-router';
 import type { EnrichedAccount } from '@/composables/use-zalo-accounts-dashboard';
 
 const dash = useZaloAccountsDashboard();
@@ -262,6 +294,28 @@ const accessTargetName = ref('');
 const deleteTarget = computed(() => filtered.value.find((a) => a.id === deleteTargetId.value));
 
 const lastRefreshLabel = computed(() => relativeTime(lastRefresh.value.toISOString()));
+
+// Phase Privacy v2 2026-05-23 — Tab strip state + URL sync
+const route = useRoute();
+const router = useRouter();
+type TabKey = 'manage' | 'privacy';
+const activeTab = ref<TabKey>((route.query.tab as TabKey) === 'privacy' ? 'privacy' : 'manage');
+function setTab(t: TabKey) {
+  activeTab.value = t;
+  router.replace({ query: { ...route.query, tab: t === 'manage' ? undefined : t } });
+  if (t === 'privacy') loadPrivacyCounter();
+}
+
+// Counter (N/max) hiển thị trên tab "Riêng tư"
+const privacyCounter = ref<{ used: number; max: number; atMax: boolean } | null>(null);
+async function loadPrivacyCounter() {
+  try {
+    const { data } = await api.get<{ maxPrivacyNicks: number }>('/me/internal-contact');
+    const myNicks = await api.get<Array<{ privacyMode: string }>>('/privacy/my-nicks');
+    const used = myNicks.data.filter((n) => n.privacyMode === 'main').length;
+    privacyCounter.value = { used, max: data.maxPrivacyNicks, atMax: used >= data.maxPrivacyNicks };
+  } catch { /* silent — counter optional */ }
+}
 
 // Phase 4 2026-05-22: Owner filter dropdown (KHÔNG còn "Sales" — đã đổi thành Owner per design).
 // Derive từ accounts hiện tại, chỉ owner chính chủ (ownerUserId).
@@ -505,7 +559,7 @@ async function handleDelete() {
 // ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
   setupSocket();
-  await Promise.all([refreshAll(), fetchDeptTree()]);
+  await Promise.all([refreshAll(), fetchDeptTree(), loadPrivacyCounter()]);
   lastRefresh.value = new Date();
 
   // Light polling — refresh stats every 60s while page is open.
@@ -519,6 +573,30 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* Phase Privacy v2 2026-05-23 — Tab strip */
+.za-tabs {
+  display: flex; gap: 6px;
+  border-bottom: 1px solid #E5E7EB;
+  margin-bottom: 18px; padding-bottom: 0;
+}
+.za-tab {
+  background: transparent; border: none; cursor: pointer;
+  padding: 10px 18px; font-family: inherit; font-size: 13.5px; font-weight: 600;
+  color: #6B7280; position: relative;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.za-tab:hover { color: #374151; }
+.za-tab.active { color: #5E6AD2; border-bottom-color: #5E6AD2; }
+.za-tab-counter {
+  font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 9999px;
+  background: #EFF6FF; color: #1D4ED8;
+  font-variant-numeric: tabular-nums;
+}
+.za-tab-counter.full { background: #FEF2F2; color: #B91C1C; }
+
 /* Phase 4 redesign 2026-05-22: filter chip Phòng ban + group-by toggle */
 .chip-multi { position: relative; }
 .chip-btn {

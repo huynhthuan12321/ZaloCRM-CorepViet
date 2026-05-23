@@ -66,6 +66,10 @@ model Organization {
   zaloAccountStatusLog ZaloAccountStatusLog[]
   // Phase metrics layer 2026-05-22 — phone search log
   phoneSearchEvents    PhoneSearchEvent[]
+  // Phase Privacy v2 2026-05-23 — nick chuyên dùng GỬI system notification cho cả org.
+  // Admin pick bất kỳ nick connected. FK SET NULL khi nick bị xóa.
+  systemNotifyZaloAccountId String?      @map("system_notify_zalo_account_id")
+  systemNotifyNick          ZaloAccount? @relation("OrgSystemNotify", fields: [systemNotifyZaloAccountId], references: [id], onDelete: SetNull)
 
   @@map("organizations")
 }
@@ -102,6 +106,13 @@ model User {
   privacyFailedCount Int              @default(0) @map("privacy_failed_count")
   privacyLockedUntil DateTime?        @map("privacy_locked_until")
   privacySessions    UserPrivacySession[]
+  // Phase Privacy v2 2026-05-23 — hard cap số nick user được flip sang 'main' (privacyMode).
+  // Default 2, admin sửa qua /users/:id/max-privacy-nicks. BE reject 400 khi vượt.
+  maxPrivacyNicks    Int              @default(2) @map("max_privacy_nicks")
+  // Phase Privacy v2 2026-05-23 — nick "liên lạc nội bộ" — sale chọn 1 nick mình OWN làm
+  // địa chỉ nhận system notification (miss KH msg, mention, alert). FK SET NULL khi reassign owner.
+  internalContactZaloAccountId String? @map("internal_contact_zalo_account_id")
+  internalContactNick          ZaloAccount? @relation("UserInternalContact", fields: [internalContactZaloAccountId], references: [id], onDelete: SetNull)
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -183,6 +194,9 @@ model ZaloAccount {
   statusLogs       ZaloAccountStatusLog[]
   // Phase metrics layer 2026-05-22 — phone search log per nick
   phoneSearchEvents PhoneSearchEvent[]
+  // Phase Privacy v2 2026-05-23 — reverse relations
+  internalContactForUsers User[]         @relation("UserInternalContact")
+  systemNotifyForOrgs     Organization[] @relation("OrgSystemNotify")
 
   @@map("zalo_accounts")
 }
