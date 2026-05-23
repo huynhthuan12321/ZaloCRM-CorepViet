@@ -23,6 +23,7 @@ import {
   adminResetPin,
   revokeAllSessions,
   changePin,
+  verifyPin,
   type SessionDuration,
 } from './pin-service.js';
 
@@ -61,6 +62,25 @@ export async function registerPrivacyRoutes(app: FastifyInstance): Promise<void>
     try {
       await setupPin(user.userId ?? user.id, body.pin);
       return reply.send({ ok: true });
+    } catch (e: any) {
+      return reply.status(400).send({ error: e.message });
+    }
+  });
+
+  // Phase Privacy v2 2026-05-23 — POST /privacy/verify-pin
+  // Verify oldPin trước khi cho user sang step 2 (đặt PIN mới). UX: feedback ngay
+  // "PIN cũ sai" thay vì để user nhập newPin xong mới biết fail.
+  // KHÔNG increment fail counter (verify là check, không phải unlock attempt).
+  app.post('/api/v1/privacy/verify-pin', { preHandler: authMiddleware }, async (request, reply) => {
+    const user = (request as any).user;
+    if (!user) return reply.status(401).send({ error: 'unauthorized' });
+    const body = (request.body ?? {}) as { pin?: string };
+    if (!body.pin || !/^\d{4}$/.test(body.pin)) {
+      return reply.status(400).send({ error: 'PIN phải 4 chữ số' });
+    }
+    try {
+      const valid = await verifyPin(user.userId ?? user.id, body.pin);
+      return reply.send({ valid });
     } catch (e: any) {
       return reply.status(400).send({ error: e.message });
     }

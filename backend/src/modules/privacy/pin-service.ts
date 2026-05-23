@@ -71,6 +71,24 @@ export async function setupPin(userId: string, newPin: string): Promise<void> {
 }
 
 /**
+ * Phase Privacy v2 2026-05-23 — Verify PIN không tạo session.
+ * Dùng cho step 1 Đổi PIN: verify oldPin TRƯỚC khi cho user nhập newPin.
+ * KHÔNG count vào privacyFailedCount khi verify để tránh lock PIN bất ngờ
+ * (verify là UX flow, không phải unlock attempt).
+ */
+export async function verifyPin(userId: string, pin: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { privacyPinHash: true, privacyLockedUntil: true },
+  });
+  if (!user || !user.privacyPinHash) return false;
+  if (user.privacyLockedUntil && user.privacyLockedUntil > new Date()) {
+    throw new Error('PIN đang khoá. Đợi hết thời hạn lock.');
+  }
+  return bcrypt.compare(pin, user.privacyPinHash);
+}
+
+/**
  * Phase Privacy v2 2026-05-23 — Đổi PIN bằng PIN cũ.
  * Verify oldPin → set newPin → revoke ALL sessions ngay (no grace, force re-unlock).
  */

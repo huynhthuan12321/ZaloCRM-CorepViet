@@ -47,8 +47,10 @@
             maxlength="4"
             inputmode="numeric"
             pattern="[0-9]*"
+            autocomplete="off"
+            :name="`oldPin_${nameSalt}`"
             @input="oldPin = oldPin.replace(/\D/g, '')"
-            @keyup.enter="canVerifyOldPin && (step = 'new')"
+            @keyup.enter="canVerifyOldPin && onVerifyOldPin()"
           />
         </div>
 
@@ -62,8 +64,8 @@
 
         <div class="ps-actions">
           <button class="ps-btn-ghost" @click="close">Huỷ</button>
-          <button class="ps-btn-primary" :disabled="!canVerifyOldPin" @click="step = 'new'">
-            Tiếp tục →
+          <button class="ps-btn-primary" :disabled="!canVerifyOldPin || verifying" @click="onVerifyOldPin">
+            {{ verifying ? 'Đang xác minh...' : 'Tiếp tục →' }}
           </button>
         </div>
       </div>
@@ -102,16 +104,20 @@
             maxlength="4"
             inputmode="numeric"
             pattern="[0-9]*"
+            autocomplete="off"
+            :name="`newPin_${nameSalt}`"
             @input="newPin = newPin.replace(/\D/g, '')"
           />
           <input
             v-model="confirmPin"
             type="password"
             class="ps-input ps-pin-input"
-            placeholder="Xác nhận PIN (gõ lại)"
+            placeholder="• • • • (gõ lại để xác nhận)"
             maxlength="4"
             inputmode="numeric"
             pattern="[0-9]*"
+            autocomplete="off"
+            :name="`confirmPin_${nameSalt}`"
             @input="confirmPin = confirmPin.replace(/\D/g, '')"
             @keyup.enter="canSavePin && onSavePin()"
           />
@@ -147,6 +153,7 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import { usePrivacyStore } from '@/stores/privacy';
 import { useToast } from '@/composables/use-toast';
+import { api } from '@/api/index';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -169,6 +176,9 @@ const newPin = ref('');
 const confirmPin = ref('');
 const errorMsg = ref('');
 const submitting = ref(false);
+const verifying = ref(false);
+// Random salt cho name field — chặn Chrome/Cốc Cốc autofill cache PIN cũ.
+const nameSalt = ref(Date.now().toString());
 
 const oldPinInput = ref<HTMLInputElement | null>(null);
 const newPinInput = ref<HTMLInputElement | null>(null);
@@ -180,7 +190,12 @@ watch(() => props.modelValue, async (open) => {
     newPin.value = '';
     confirmPin.value = '';
     errorMsg.value = '';
+    // Re-randomize name salt mỗi lần mở dialog → autofill cache invalidated
+    nameSalt.value = Date.now().toString() + Math.random().toString(36).slice(2, 7);
     await nextTick();
+    // DOM-level clear chống autofill cache
+    if (oldPinInput.value) oldPinInput.value.value = '';
+    if (newPinInput.value) newPinInput.value.value = '';
     (step.value === 'old' ? oldPinInput.value : newPinInput.value)?.focus();
   }
 });
@@ -209,6 +224,29 @@ const canSavePin = computed(() =>
   && newPin.value === confirmPin.value
   && !weakPin.value,
 );
+
+// Phase Privacy v2 fix 2026-05-23: verify oldPin TRƯỚC khi cho user sang step 2.
+// Bug trước: step 1 cho phép pass với PIN cũ sai → user nhập newPin xong mới biết fail.
+async function onVerifyOldPin() {
+  if (!canVerifyOldPin.value || verifying.value) return;
+  verifying.value = true;
+  errorMsg.value = '';
+  try {
+    const { data } = await api.post<{ valid: boolean }>('/privacy/verify-pin', { pin: oldPin.value });
+    if (data.valid) {
+      step.value = 'new';
+    } else {
+      errorMsg.value = 'PIN cũ sai. Nhập lại.';
+      oldPin.value = '';
+      await nextTick();
+      oldPinInput.value?.focus();
+    }
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.error || 'Verify PIN thất bại';
+  } finally {
+    verifying.value = false;
+  }
+}
 
 async function onSavePin() {
   if (!canSavePin.value || submitting.value) return;
@@ -357,8 +395,14 @@ function close() {
   font-weight: 700;
   padding: 13px 14px;
 }
+/* Phase Privacy v2 fix 2026-05-23: placeholder reset letter-spacing để text "Xác nhận PIN"
+   hiển thị bình thường, không stretch. Khi user gõ vào, ::value (digit) sẽ lấy lại
+   letter-spacing 14px từ rule trên. */
 .ps-input.ps-pin-input::placeholder {
-  letter-spacing: 8px; font-size: 18px;
+  letter-spacing: normal !important;
+  font-size: 13px;
+  font-weight: 400;
+  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
 }
 
 .ps-status-row {
