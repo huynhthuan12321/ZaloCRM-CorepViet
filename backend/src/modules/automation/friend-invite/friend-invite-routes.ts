@@ -30,6 +30,9 @@ export async function friendInviteRoutes(app: FastifyInstance): Promise<void> {
       greetingTemplate: string;
       skipRules: { recencyDays: number; friendCap: number; entryStatuses: string[] };
       ruleOverrides?: Record<string, unknown>;
+      // Wave 2 2026-05-29 — per-trigger welcome message (replaces org-wide config)
+      welcomeMessageTemplate?: string | null;
+      welcomeDelaySeconds?: number;
     };
   }>(`${BASE}/friend-invite`, async (request, reply) => {
     const user = request.user!;
@@ -50,6 +53,35 @@ export async function friendInviteRoutes(app: FastifyInstance): Promise<void> {
       return reply
         .status(400)
         .send({ error: 'greetingTemplate_missing_name', hint: 'Phải chứa biến {name}' });
+
+    // Wave 2 2026-05-29 — per-trigger welcome message validation.
+    // Null/empty = welcome gate is SKIPPED (drainer enrolls Sequence directly).
+    let welcomeTemplate: string | null = null;
+    if (body.welcomeMessageTemplate !== undefined && body.welcomeMessageTemplate !== null) {
+      const trimmed = String(body.welcomeMessageTemplate).trim();
+      if (trimmed.length > 0) {
+        if (trimmed.length > 4000)
+          return reply
+            .status(400)
+            .send({ error: 'welcomeMessageTemplate_too_long', hint: 'Tối đa 4000 ký tự' });
+        if (!trimmed.includes('{name}') && !trimmed.includes('{gender}'))
+          return reply.status(400).send({
+            error: 'welcomeMessageTemplate_missing_var',
+            hint: 'Phải chứa {name} hoặc {gender}',
+          });
+        welcomeTemplate = trimmed;
+      }
+    }
+
+    let welcomeDelaySeconds = 60;
+    if (body.welcomeDelaySeconds !== undefined) {
+      const v = Number(body.welcomeDelaySeconds);
+      if (!Number.isFinite(v) || v < 0 || v > 3600)
+        return reply
+          .status(400)
+          .send({ error: 'welcomeDelaySeconds_invalid', hint: 'Phải từ 0 đến 3600 giây' });
+      welcomeDelaySeconds = Math.round(v);
+    }
 
     // Verify list belongs to org
     const list = await prisma.customerList.findFirst({
@@ -94,6 +126,9 @@ export async function friendInviteRoutes(app: FastifyInstance): Promise<void> {
           ...body.ruleOverrides,
           allowStrangerMessage: true, // Friend Invite sequences allow stranger messaging
         } as object,
+        // Wave 2 2026-05-29 — per-trigger welcome probe config
+        welcomeMessageTemplate: welcomeTemplate,
+        welcomeDelaySeconds,
         state: 'draft',
         enabled: false, // explicit activation required
         createdById: user.id,
@@ -267,10 +302,16 @@ export async function friendInviteRoutes(app: FastifyInstance): Promise<void> {
     const trigger = await prisma.automationTrigger.findFirst({
       where: { id, orgId: user.orgId, eventType: 'friend_invite_to_list' },
       include: {
-        sequence: { select: { id: true, name: true } },
+        sequence: { select: { id: true, name: true, steps: true } },
       },
     });
     if (!trigger) return reply.status(404).send({ error: 'trigger_not_found' });
+
+    // Sequence steps count for badge + step bar (mockup 2-MucTieu-Detail)
+    let sequenceStepsCount = 0;
+    if (trigger.sequence?.steps && Array.isArray(trigger.sequence.steps)) {
+      sequenceStepsCount = (trigger.sequence.steps as unknown[]).length;
+    }
 
     // Counters via single GROUP BY query
     const counts = await prisma.customerListEntry.groupBy({
@@ -343,17 +384,97 @@ export async function friendInviteRoutes(app: FastifyInstance): Promise<void> {
       }),
     );
 
+    // Recent entries for the table (paginated) — mockup row shape.
+    // Default limit 50, support ?limit=&offset=&filter=
+    const rawLimit = Number((request.query as { limit?: string } | undefined)?.limit ?? 50);
+    const rawOffset = Number((request.query as { offset?: string } | undefined)?.offset ?? 0);
+    const limit = Math.min(200, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 50));
+    const offset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
+
+    const totalEntries = await prisma.customerListEntry.count({
+      where: { triggerId: trigger.id },
+    });
+
+    const entriesRaw = await prisma.customerListEntry.findMany({
+      where: { triggerId: trigger.id },
+      orderBy: { rowIndex: 'asc' },
+      skip: offset,
+      take: limit,
+      select: {
+        id: true,
+        rowIndex: true,
+        phoneRaw: true,
+        nameRaw: true,
+        phoneE164: true,
+        zaloName: true,
+        zaloUid: true,
+        resolvedByNickId: true,
+        claimedByNickId: true,
+        queueStatus: true,
+        hasZalo: true,
+        contactId: true,
+        dupWithContactId: true,
+      },
+    });
+
+    // Look up task currentStepIdx for the Sequence-bound contacts (Phase 2 progress).
+    const contactIds = entriesRaw.map((e) => e.contactId).filter((x): x is string => !!x);
+    const tasks =
+      contactIds.length > 0
+        ? await prisma.automationTask.findMany({
+            where: {
+              orgId: user.orgId,
+              contactId: { in: contactIds },
+              sequenceId: trigger.sequenceId ?? undefined,
+            },
+            select: { contactId: true, currentStepIdx: true, state: true },
+          })
+        : [];
+    const taskByContact = new Map<string, { currentStepIdx: number | null; state: string }>();
+    for (const t of tasks) {
+      if (t.contactId) taskByContact.set(t.contactId, { currentStepIdx: t.currentStepIdx, state: t.state });
+    }
+
+    // Map nick display names so the table can render the pin chip.
+    const nickNameById = new Map<string, string | null>();
+    for (const n of nicks) nickNameById.set(n.id, n.displayName);
+
+    const entries = entriesRaw.map((e) => {
+      const pinNickId = e.claimedByNickId ?? e.resolvedByNickId ?? null;
+      const task = e.contactId ? taskByContact.get(e.contactId) ?? null : null;
+      return {
+        id: e.id,
+        rowIndex: e.rowIndex,
+        displayName: e.zaloName ?? e.nameRaw ?? null,
+        phone: e.phoneE164 ?? e.phoneRaw,
+        nickId: pinNickId,
+        nickName: pinNickId ? nickNameById.get(pinNickId) ?? null : null,
+        queueStatus: e.queueStatus,
+        hasZalo: e.hasZalo,
+        dedup: e.dupWithContactId ? 'merged' : 'new',
+        currentStepIdx: task?.currentStepIdx ?? null,
+        taskStatus: task?.state ?? null,
+      };
+    });
+
     return reply.send({
       trigger: {
         id: trigger.id,
         name: trigger.name,
         state: trigger.state,
         greetingTemplate: trigger.greetingTemplate,
-        successorSequence: trigger.sequence,
+        welcomeMessageTemplate: trigger.welcomeMessageTemplate,
+        successorSequence: trigger.sequence
+          ? { id: trigger.sequence.id, name: trigger.sequence.name, stepsCount: sequenceStepsCount }
+          : null,
         createdAt: trigger.createdAt,
       },
       counters: { ...counters, sent, accepted },
       nicks: nickStats,
+      entries,
+      entriesTotal: totalEntries,
+      entriesOffset: offset,
+      entriesLimit: limit,
     });
   });
 }

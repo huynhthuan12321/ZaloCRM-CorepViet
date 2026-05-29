@@ -113,9 +113,6 @@ const routes: RouteRecordRaw[] = [
       // Phase Lead Pool 2026-05-24 — bố trí menu 2026-05-29
       { path: 'crm/lead-pool',         name: 'Settings.LeadPool',        component: () => import('@/views/settings/LeadPoolConfigPage.vue') },
       { path: 'crm/lead-pool/queue',   name: 'Settings.LeadPoolQueue',   component: () => import('@/views/settings/LeadPoolPreviewPage.vue') },
-      // Phase Wave 2 welcome-probe 2026-05-29
-      { path: 'marketing/welcome-message', name: 'Settings.WelcomeMessage', component: () => import('@/views/settings/WelcomeMessageView.vue') },
-
       // 🔌 Channels & Integrations
       { path: 'channels/zalo',             name: 'Settings.ZaloAccounts',    component: () => import('@/views/ZaloAccountsView.vue') },
       // Phase Multi-Source Lead Ads 2026-05-27

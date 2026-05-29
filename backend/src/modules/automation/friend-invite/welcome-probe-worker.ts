@@ -32,6 +32,7 @@ interface ProbeRow {
   org_id: string;
   nick_id: string;
   contact_id: string;
+  trigger_id: string | null;
   welcome_retry_count: number;
 }
 
@@ -67,22 +68,40 @@ async function renderGreeting(raw: string, contactId: string, nickId: string): P
 }
 
 async function processRow(row: ProbeRow): Promise<void> {
-  const org = await prisma.organization.findUnique({
-    where: { id: row.org_id },
-    select: {
-      friendInviteWelcomeTemplate: true,
-      welcomeMaxRetries: true,
-      welcomeStrangerInboxEnabled: true,
-    },
-  });
-  if (!org?.friendInviteWelcomeTemplate) {
-    // Contact may not exist yet (early Wave 1.5 rows had contact_id = null).
-    // Guard the contact update so a missing contact doesn't crash the tx and
-    // strand the row with the claim token still set in welcome_last_error.
+  // Wave 2 refactor 2026-05-29 — template + delay now PER-TRIGGER, not per-org.
+  // Org still owns retry/stranger-inbox knobs (cross-trigger policy).
+  const [org, trigger] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: row.org_id },
+      select: {
+        welcomeMaxRetries: true,
+        welcomeStrangerInboxEnabled: true,
+      },
+    }),
+    row.trigger_id
+      ? prisma.automationTrigger.findUnique({
+          where: { id: row.trigger_id },
+          select: { welcomeMessageTemplate: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  if (!org) {
+    await prisma.friendRequestOutbox.update({
+      where: { id: row.id },
+      data: { welcomeOutcome: 'HARD_FAIL', welcomeLastError: 'org missing', welcomeSentAt: new Date() },
+    });
+    return;
+  }
+
+  // Fallback: trigger has no welcome template → mark SKIPPED so the drainer
+  // can still enroll the contact into the successor Sequence. The welcome gate
+  // is intentionally a no-op for triggers configured without a greeting.
+  if (!trigger?.welcomeMessageTemplate) {
     await prisma.$transaction(async (tx) => {
       await tx.friendRequestOutbox.update({
         where: { id: row.id },
-        data: { welcomeOutcome: 'HARD_FAIL', welcomeLastError: 'no friend-invite template configured', welcomeSentAt: new Date() },
+        data: { welcomeOutcome: 'SKIPPED', welcomeSentAt: new Date() },
       });
       if (row.contact_id) {
         await tx.contact.updateMany({
@@ -141,7 +160,7 @@ async function processRow(row: ProbeRow): Promise<void> {
 
   const channel = isWarm ? 'SENT_FRIEND' : 'SENT_STRANGER';
   const channelLabel = isWarm ? 'friend_msg' : 'stranger_inbox';
-  const msg = await renderGreeting(org.friendInviteWelcomeTemplate, row.contact_id, row.nick_id);
+  const msg = await renderGreeting(trigger.welcomeMessageTemplate, row.contact_id, row.nick_id);
 
   // Race-safe contact lock: atomically claim welcomeSentAt before network send.
   // Any concurrent worker (or replay) that also picked this contact will get 0 rows.
@@ -214,6 +233,9 @@ async function runProbeTick(): Promise<void> {
     // 60s `created_at` floor doubles as a stale-claim recovery: if a prior process crashed
     // mid-tick, the row becomes re-claimable on the next eligible tick.
     const claimToken = 'claim:' + (++tickCounter) + ':' + process.pid;
+    // Wave 2 refactor 2026-05-29 — delay floor now comes from the trigger
+    // (welcome_delay_seconds), not from the organization. 60s minimum kept as
+    // a safety floor so probes never fire before the friend-accept settles.
     const rows = await prisma.$queryRaw<ProbeRow[]>`
       UPDATE friend_request_outbox
       SET welcome_last_error = ${claimToken}
@@ -225,8 +247,7 @@ async function runProbeTick(): Promise<void> {
           AND o.welcome_outcome IS NULL
           AND (o.welcome_last_error IS NULL OR o.welcome_last_error NOT LIKE 'claim:%')
           AND o.created_at <= NOW() - INTERVAL '60 seconds'
-          AND o.created_at <= NOW() - make_interval(secs => COALESCE(
-            (SELECT welcome_delay_after_friend_req_sec FROM organizations WHERE id = t.org_id), 60))
+          AND o.created_at <= NOW() - make_interval(secs => COALESCE(t.welcome_delay_seconds, 60))
         ORDER BY o.created_at ASC
         LIMIT 5
       )
@@ -234,6 +255,7 @@ async function runProbeTick(): Promise<void> {
         id,
         nick_id,
         contact_id,
+        trigger_id,
         welcome_retry_count,
         (SELECT org_id FROM automation_triggers WHERE id = friend_request_outbox.trigger_id) AS org_id
     `;

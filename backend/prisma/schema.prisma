@@ -80,7 +80,6 @@ model Organization {
   // Ảnh upload 1 lần, dùng cho mọi tin login. SĐT admin fallback nhận credentials
   // khi tin gửi sale fail (để admin chuyển thủ công).
   welcomeMessageTemplate String? @map("welcome_message_template") @db.Text
-  friendInviteWelcomeTemplate String? @map("friend_invite_welcome_template") @db.Text
   welcomeImageUrl        String? @map("welcome_image_url")
   adminFallbackPhone     String? @map("admin_fallback_phone")
 
@@ -1812,6 +1811,9 @@ model AutomationTrigger {
   // Phase Friend Invite 2026-05-28 — successor sequence + greeting template
   successorSequenceId String?  @map("successor_sequence_id")
   greetingTemplate    String?  @map("greeting_template") @db.Text
+  // Wave 2 2026-05-29 — per-trigger welcome probe (split from Org-level)
+  welcomeMessageTemplate String? @map("welcome_message_template") @db.Text
+  welcomeDelaySeconds    Int     @default(60) @map("welcome_delay_seconds")
   state               String   @default("draft") // 'draft' | 'active' | 'paused' | 'cancelling' | 'cancelled' | 'completed'
   createdById         String   @map("created_by_id")
   createdAt           DateTime @default(now()) @map("created_at")
