@@ -15,8 +15,8 @@
           <div class="lfb-tip-head">
             <div class="lfb-tip-head-main">
               <span class="lfb-tip-title">🎁 Pool Lead</span>
-              <span class="lfb-tip-subtitle">
-                <strong>{{ stats.poolAvailable }}</strong> lead đang chờ
+              <span class="lfb-tip-subtitle" :title="'Lead bạn có thể bấm Nhận Lead để xin tiếp. Đã loại bỏ lead bạn đang giữ + lead sale khác đang chăm + lead trong cooldown.'">
+                <strong>{{ stats.poolAvailable }}</strong> lead bạn có thể xin
               </span>
             </div>
             <span class="lfb-tip-role">{{ roleLabel }}</span>

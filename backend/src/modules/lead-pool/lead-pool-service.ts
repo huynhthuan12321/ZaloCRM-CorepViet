@@ -1545,14 +1545,19 @@ export async function getQueueTodayStats(args: { orgId: string }) {
     requestedToday,
     notedToday,
   ] = await Promise.all([
-    // pool size: candidate count (approximate) via forgotten query
+    // pool size: candidate count consistent với queryForgottenCandidates.
+    // Phase v2.G 2026-05-29 — Fix: thêm excludedStatuses + phoneFilter + BỎ rule
+    // assigned_user_id IS NULL strict. Lead có sale cũ đã release (qua manual_return
+    // hoặc auto_return) vẫn vào pool chia lại — NOT EXISTS pending/cooldown đã đủ.
+    // Trước đây tooltip FAB và queue admin lệch nhau (FAB 3 vs Queue 0) → anh confused.
     prisma.$queryRawUnsafe<Array<{ cnt: number }>>(`
       SELECT COUNT(*)::INTEGER AS cnt FROM contacts c
       WHERE c.org_id = $1
         AND COALESCE(c.last_inbound_at, c.created_at) < NOW() - ($2 || ' days')::INTERVAL
         AND c.consent_status != 'revoked'
+        AND (c.status IS NULL OR c.status != ALL($4::text[]))
         AND c.merged_into IS NULL
-        AND c.assigned_user_id IS NULL
+        ${config.requirePhoneInPool ? 'AND c.phone_normalized IS NOT NULL' : ''}
         AND NOT EXISTS (
           SELECT 1 FROM lead_requests lr
           WHERE lr.contact_id = c.id
@@ -1565,7 +1570,7 @@ export async function getQueueTodayStats(args: { orgId: string }) {
             AND lr2.note_submitted_at > NOW() - ($3 || ' days')::INTERVAL
             AND lr2.release_reason IS NULL
         )
-    `, args.orgId, String(config.forgottenThresholdDays), String(config.cooldownAfterNoteDays)).then((r) => Number(r[0]?.cnt ?? 0)),
+    `, args.orgId, String(config.forgottenThresholdDays), String(config.cooldownAfterNoteDays), config.excludedStatuses).then((r) => Number(r[0]?.cnt ?? 0)),
 
     prisma.leadRequest.count({
       where: { contact: { orgId: args.orgId }, noteSubmittedAt: null, releaseReason: null, autoReturnedAt: null, requestedAt: { gte: startToday } },
@@ -1656,17 +1661,46 @@ export async function getLeadPoolStats(args: { orgId: string; userId: string; ro
   };
 
   // ── Pool size (ai cũng xem được — giúp sale biết còn lead không) ──
-  const thresholdDate = new Date(Date.now() - config.forgottenThresholdDays * 24 * 60 * 60 * 1000);
-  const poolAvailable = await prisma.contact.count({
-    where: {
-      orgId: args.orgId,
-      lastActivity: { lt: thresholdDate },
-      status: { notIn: config.excludedStatuses },
-      consentStatus: { not: 'revoked' },
-      mergedInto: null,
-      OR: [{ assignedUserId: null }, { assignedUserId: { not: args.userId } }],
-    },
-  });
+  // Phase v2.G 2026-05-29 — Fix: dùng cùng logic queryForgottenCandidates.
+  // Trước đây dùng prisma.contact.count với điều kiện CŨ → tooltip lệch với pool thật.
+  // BUG cũ:
+  //   - dùng lastActivity (gộp inbound+outbound) thay lastInboundAt
+  //   - thiếu rule loại lead pending (NOT EXISTS active lead_request)
+  //   - thiếu rule loại lead cooldown (NOT EXISTS noted lead_request trong N ngày)
+  const phoneFilter = config.requirePhoneInPool ? 'AND c.phone_normalized IS NOT NULL' : '';
+  const poolRows = await prisma.$queryRawUnsafe<Array<{ cnt: number }>>(
+    `
+    SELECT COUNT(*)::INTEGER AS cnt
+    FROM contacts c
+    WHERE c.org_id = $1
+      AND COALESCE(c.last_inbound_at, c.created_at) < NOW() - ($2 || ' days')::INTERVAL
+      AND c.consent_status != 'revoked'
+      AND (c.status IS NULL OR c.status != ALL($3::text[]))
+      AND (c.assigned_user_id IS NULL OR c.assigned_user_id != $4)
+      AND c.merged_into IS NULL
+      ${phoneFilter}
+      AND NOT EXISTS (
+        SELECT 1 FROM lead_requests lr
+        WHERE lr.contact_id = c.id
+          AND lr.note_submitted_at IS NULL
+          AND lr.release_reason IS NULL
+          AND lr.auto_returned_at IS NULL
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM lead_requests lr2
+        WHERE lr2.contact_id = c.id
+          AND lr2.note_submitted_at IS NOT NULL
+          AND lr2.note_submitted_at > NOW() - ($5 || ' days')::INTERVAL
+          AND lr2.release_reason IS NULL
+      )
+    `,
+    args.orgId,
+    String(config.forgottenThresholdDays),
+    config.excludedStatuses,
+    args.userId,
+    String(config.cooldownAfterNoteDays),
+  );
+  const poolAvailable = Number(poolRows[0]?.cnt ?? 0);
 
   const baseResult: any = {
     role: args.role,
