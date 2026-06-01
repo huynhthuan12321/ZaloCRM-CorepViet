@@ -82,30 +82,40 @@
         <tbody>
           <tr v-for="tag in filteredTags" :key="tag.id" :class="{ archived: tag.archivedAt }">
             <td class="t2-cell-name">
-              <ZaloBrandIcon v-if="tag.source === 'zalo_real'" class="t2-zalo-icon" />
-              <span v-else-if="tag.emoji" class="t2-emoji">{{ tag.emoji }}</span>
-              <span class="t2-name">{{ tag.name }}</span>
+              <!-- Tag pill style đồng nhất UI chat — color-mix derive bg/border/text từ tag.color.
+                   Zalo Real có ZaloBrandIcon brand mark prefix. -->
+              <span
+                class="t2-tag-pill"
+                :class="{ 'is-zalo-real': tag.source === 'zalo_real', 'is-auto': tag.source?.startsWith('auto_') }"
+                :style="{ '--tag-color': tag.color }"
+              >
+                <ZaloBrandIcon v-if="tag.source === 'zalo_real'" class="t2-pill-zalo-icon" />
+                <span v-else-if="tag.emoji" class="t2-pill-emoji">{{ tag.emoji }}</span>
+                <span class="t2-pill-text">{{ tag.name }}</span>
+              </span>
             </td>
             <td><code class="t2-slug">{{ displaySlug(tag) }}</code></td>
             <td class="t2-cell-source">
               <span class="t2-source-chip" :style="{ background: getSourceColor(tag.source) }">
                 {{ getSourceLabel(tag.source) }}
               </span>
-              <span v-if="tag.zaloAccount" class="t2-source-nick">
+              <span v-if="tag.zaloAccount" class="t2-source-nick" :title="tag.zaloAccount.displayName">
                 {{ tag.zaloAccount.displayName }}
               </span>
             </td>
             <td class="t2-cell-priority">
               <span class="t2-priority-badge">{{ tag.priority }}</span>
             </td>
-            <td>{{ tag.usageCount }}</td>
-            <td>
+            <td class="t2-cell-usage">{{ tag.usageCount }}</td>
+            <td class="t2-cell-color">
               <span class="t2-color-swatch" :style="{ background: tag.color }" :title="tag.color"></span>
             </td>
-            <td>
-              <button class="t2-btn-sm primary" @click="openEditDialog(tag)">Sửa</button>
-              <button class="t2-btn-sm" @click="openMergeDialog(tag)" :disabled="tag.source === 'zalo_real'">Merge</button>
-              <button class="t2-btn-sm danger" @click="archiveTag(tag.id)" :disabled="tag.source === 'zalo_real'">Archive</button>
+            <td class="t2-cell-action">
+              <div class="t2-action-group">
+                <button class="t2-btn-sm primary" @click="openEditDialog(tag)">Sửa</button>
+                <button class="t2-btn-sm" @click="openMergeDialog(tag)" :disabled="tag.source === 'zalo_real'">Merge</button>
+                <button class="t2-btn-sm danger" @click="archiveTag(tag.id)" :disabled="tag.source === 'zalo_real'">Archive</button>
+              </div>
             </td>
           </tr>
           <tr v-if="filteredTags.length === 0">
@@ -484,7 +494,7 @@ watch(activeTab, () => {
 .t2-btn-primary:disabled { background: #999; cursor: not-allowed; }
 .t2-btn-secondary { background: white; color: #41454d; border: 1px solid #dddddd; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
 .t2-btn-secondary:hover { background: #f5f7fa; }
-.t2-btn-sm { background: white; color: #41454d; border: 1px solid #dddddd; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-right: 4px; }
+.t2-btn-sm { background: white; color: #41454d; border: 1px solid #dddddd; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; white-space: nowrap; }
 .t2-btn-sm.primary { color: #0068FF; border-color: #b3d4ff; font-weight: 500; }
 .t2-btn-sm.danger { color: #d32f2f; border-color: #ef9a9a; }
 .t2-btn-sm:hover:not(:disabled) { background: #f5f7fa; }
@@ -510,39 +520,94 @@ watch(activeTab, () => {
   font-size: 13px; box-sizing: border-box;
 }
 
-.t2-table-wrap { background: white; border: 1px solid #dddddd; border-radius: 8px; overflow: hidden; }
-.t2-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.t2-table-wrap { background: white; border: 1px solid #dddddd; border-radius: 8px; overflow-x: auto; }
+.t2-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+
+/* Fixed width per column → tránh hàng nhảy vỡ */
+.t2-col-name      { width: 26%; min-width: 200px; }
+.t2-col-slug      { width: 18%; min-width: 160px; }
+.t2-col-source    { width: 16%; min-width: 140px; }
+.t2-col-priority  { width: 8%;  min-width: 70px; }
+.t2-col-usage     { width: 7%;  min-width: 60px; }
+.t2-col-color     { width: 7%;  min-width: 50px; }
+.t2-col-action    { width: 18%; min-width: 200px; }
+
 .t2-table th {
   text-align: left; padding: 8px 10px; background: #f5f7fa; color: #41454d;
-  font-weight: 600; border-bottom: 1px solid #dddddd; font-size: 11px;
+  font-weight: 600; border-bottom: 1px solid #dddddd; font-size: 11px; white-space: nowrap;
 }
-.t2-table td { padding: 8px 10px; border-bottom: 1px solid #eef0f3; vertical-align: middle; }
+.t2-table td {
+  padding: 10px; border-bottom: 1px solid #eef0f3; vertical-align: middle;
+  overflow: hidden;
+}
 .t2-table tr:hover td { background: #fafbfc; }
 .t2-table tr.archived td { opacity: 0.5; }
 
-.t2-cell-name { display: flex; align-items: center; gap: 6px; }
-.t2-zalo-icon { width: 16px; height: 16px; flex-shrink: 0; }
-.t2-emoji { font-size: 14px; }
-.t2-name { font-weight: 500; }
+/* Tag pill — đồng nhất style UI chat (color-mix derive 3 màu phụ từ --tag-color) */
+.t2-cell-name { padding-right: 6px; }
+.t2-tag-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px; border-radius: 14px;
+  font-size: 13px; font-weight: 500;
+  border: 1.4px solid;
+  --tag-color: #546E7A;
+  background: color-mix(in srgb, var(--tag-color) 12%, white);
+  border-color: color-mix(in srgb, var(--tag-color) 75%, white);
+  color: color-mix(in srgb, var(--tag-color) 78%, black);
+  max-width: 100%;
+  white-space: nowrap;
+}
+.t2-tag-pill.is-zalo-real {
+  /* Zalo Real: tinted strong hơn + ZaloBrandIcon prefix làm brand mark */
+  background: color-mix(in srgb, var(--tag-color) 14%, white);
+  border-color: color-mix(in srgb, var(--tag-color) 80%, white);
+  position: relative;
+}
+.t2-tag-pill.is-auto {
+  /* Auto-tag: tone-on-tone nhẹ hơn, font-weight cao hơn */
+  background: color-mix(in srgb, var(--tag-color) 10%, white);
+  border-color: color-mix(in srgb, var(--tag-color) 60%, white);
+  font-weight: 600;
+}
+.t2-pill-zalo-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.t2-pill-emoji { font-size: 14px; flex-shrink: 0; }
+.t2-pill-text { overflow: hidden; text-overflow: ellipsis; }
 
-.t2-slug { background: #eef0f3; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; color: #41454d; }
+.t2-slug {
+  background: #eef0f3; padding: 3px 8px; border-radius: 4px;
+  font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px; color: #41454d;
+  display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; vertical-align: middle;
+}
 
-.t2-cell-source { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.t2-cell-source { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; max-width: 100%; }
 .t2-source-chip {
   display: inline-block; padding: 2px 8px; border-radius: 10px;
-  color: white; font-size: 10px; font-weight: 500;
+  color: white; font-size: 10px; font-weight: 500; white-space: nowrap; flex-shrink: 0;
 }
-.t2-source-nick { font-size: 10px; color: #41454d; font-weight: 500; }
+.t2-source-nick {
+  font-size: 11px; color: #41454d; font-weight: 500;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
-.t2-cell-priority {  }
+.t2-cell-priority { text-align: center; }
 .t2-priority-badge {
   display: inline-block; min-width: 22px; text-align: center;
-  padding: 2px 6px; background: #181d26; color: white;
-  border-radius: 4px; font-size: 10px; font-weight: 700;
+  padding: 3px 7px; background: #181d26; color: white;
+  border-radius: 4px; font-size: 11px; font-weight: 700;
 }
 
+.t2-cell-usage { font-variant-numeric: tabular-nums; }
+
+.t2-cell-color { text-align: center; }
 .t2-color-swatch {
-  display: inline-block; width: 24px; height: 18px; border-radius: 4px; border: 1px solid #dddddd;
+  display: inline-block; width: 26px; height: 18px; border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.15); vertical-align: middle;
+}
+
+.t2-cell-action { padding-right: 10px; }
+.t2-action-group {
+  display: flex; gap: 4px; flex-wrap: nowrap;
 }
 
 .t2-empty { text-align: center; padding: 40px; color: #999; }
