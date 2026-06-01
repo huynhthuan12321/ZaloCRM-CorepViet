@@ -1,16 +1,24 @@
 /**
  * Auth service — handles setup, login, and profile operations.
  * Uses bcryptjs for password hashing and Fastify JWT for token signing.
+ *
+ * Phase Onboarding v1 2026-05-24 — login(identifier) accept cả email vừa phone.
+ * - Có '@' → tìm theo email (lowercase)
+ * - Toàn chữ số → tìm theo phone (normalize 84xxx)
+ * - Sale VN ít/không có email → admin tạo user chỉ với phone.
  */
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
+import { normalizePhone } from '../../shared/utils/phone.js';
 
 export interface JwtPayload {
   id: string;
   email: string;
   role: string;
   orgId: string;
+  // Phase Onboarding v1 2026-05-24 — token version, bump khi đổi password → revoke JWT cũ
+  tv: number;
 }
 
 // Check if any users exist — true means first-run setup is needed
@@ -53,47 +61,95 @@ export async function setup(
 
   return {
     id: result.user.id,
-    email: result.user.email,
+    // Setup là owner đầu tiên → luôn có email
+    email: result.user.email ?? result.user.id,
     role: result.user.role,
     orgId: result.org.id,
+    tv: result.user.jwtTokenVersion,
   };
 }
 
-// Verify credentials, return JWT payload
-export async function login(email: string, password: string): Promise<JwtPayload> {
-  const user = await prisma.user.findUnique({
-    where: { email: email.toLowerCase().trim() },
-  });
+// Verify credentials, return JWT payload.
+// identifier accept cả email vừa phone — auto-detect:
+//   - Có '@' → email lookup (lowercase)
+//   - Toàn chữ số / + → phone lookup (normalize 84xxx)
+//   - Đảm bảo phone match ≥ 9 chữ số để tránh nhầm số nhà
+export async function login(identifier: string, password: string): Promise<JwtPayload> {
+  const trimmed = (identifier || '').trim();
+  if (!trimmed) {
+    const err = new Error('Email hoặc SĐT không được để trống') as Error & { statusCode: number };
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let user: Awaited<ReturnType<typeof prisma.user.findUnique>> = null;
+
+  if (trimmed.includes('@')) {
+    user = await prisma.user.findUnique({
+      where: { email: trimmed.toLowerCase() },
+    });
+  } else {
+    // Thử parse phone
+    const normalized = normalizePhone(trimmed);
+    if (normalized) {
+      user = await prisma.user.findUnique({
+        where: { phone: normalized },
+      });
+    }
+    // Fallback: chuỗi nguyên gốc dạng email không '@' (vd 'admin') — tìm theo email
+    if (!user) {
+      user = await prisma.user.findUnique({ where: { email: trimmed.toLowerCase() } });
+    }
+  }
 
   if (!user || !user.isActive) {
-    const err = new Error('Invalid email or password') as Error & { statusCode: number };
+    const err = new Error('Email/SĐT hoặc mật khẩu không đúng') as Error & { statusCode: number };
     err.statusCode = 401;
     throw err;
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
-    const err = new Error('Invalid email or password') as Error & { statusCode: number };
+    const err = new Error('Email/SĐT hoặc mật khẩu không đúng') as Error & { statusCode: number };
     err.statusCode = 401;
     throw err;
   }
 
-  return { id: user.id, email: user.email, role: user.role, orgId: user.orgId };
+  // Phase status 4-state 2026-05-27 — set lastLoginAt async (fire-and-forget) cho status compute.
+  // KHÔNG block login response — nếu update fail thì im lặng (status compute sẽ thấy null vẫn OK).
+  prisma.user
+    .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+    .catch(() => {});
+
+  return {
+    id: user.id,
+    // Email có thể null cho sale chỉ có phone → fallback phone vào claim email cho legacy code đọc
+    email: user.email ?? user.phone ?? user.id,
+    role: user.role,
+    orgId: user.orgId,
+    tv: user.jwtTokenVersion,
+  };
 }
 
-// Return safe user profile (no password hash)
+// Return safe user profile (no password hash). Phase Onboarding v1 — expose
+// passwordChangedAt + onboardingDismissedAt để FE biết hiện force change pw modal
+// + checklist hay không.
 export async function getProfile(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       id: true,
       email: true,
+      phone: true,
       fullName: true,
       role: true,
       orgId: true,
       teamId: true,
       isActive: true,
       createdAt: true,
+      passwordChangedAt: true,
+      onboardingDismissedAt: true,
+      onboardingStepsCompleted: true,
       org: { select: { id: true, name: true, timezone: true } },
     },
   });

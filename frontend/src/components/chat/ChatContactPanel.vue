@@ -37,11 +37,11 @@
       </button>
       <button
         class="ip-tab"
-        :class="{ active: activeTab === 'relations' }"
-        @click="activeTab = 'relations'"
+        :class="{ active: activeTab === 'crm' }"
+        @click="activeTab = 'crm'"
       >
-        <span class="ic">🔗</span> Quan hệ
-        <span v-if="relationBadgeCount" class="tab-badge">{{ relationBadgeCount }}</span>
+        <span class="ic">🎯</span> CRM
+        <span v-if="crmBadgeCount" class="tab-badge">{{ crmBadgeCount }}</span>
       </button>
       <button
         class="ip-tab"
@@ -189,116 +189,194 @@
       </div>
 
       <!-- ══════ TAB 2: QUAN HỆ (per-nick) ══════ -->
-      <div v-show="activeTab === 'relations'" class="tab-pane">
-        <!-- Nick CRM chăm (= KH Con per nick) — real data từ /contacts/:id -->
-        <section v-if="relations.friends.length" class="ip-section">
-          <div class="ip-section-title">
-            <span class="accent" style="background: var(--smax-info)" />
-            💬 Nick CRM đang chăm ({{ relations.friends.length }})
-            <span class="scope-tag global">per-nick</span>
+      <div v-show="activeTab === 'crm'" class="tab-pane crm-tab">
+        <!-- Widget 1: Liên kết CRM (placeholder) -->
+        <section class="crm-widget crm-w-getfly">
+          <div class="crm-w-row">
+            <span class="crm-w-icon">🔗</span>
+            <span class="crm-w-title">Liên kết CRM</span>
           </div>
-          <div class="friends-list">
-            <div v-for="f in relations.friends" :key="f.id" class="friend-card">
-              <div class="friend-card-head">
-                <Avatar :src="f.zaloAccount.avatarUrl" :name="f.zaloAccount.displayName || 'Nick'" :size="32" :gradient-seed="f.id" platform="zalo" />
-                <div class="friend-card-title">
-                  <div class="friend-name">{{ f.zaloAccount.displayName || 'Nick' }}</div>
-                  <div class="friend-sub">
-                    <span v-if="f.zaloAccount.owner" class="sale-name">Sale: {{ f.zaloAccount.owner.fullName }}</span>
-                  </div>
-                </div>
-                <span :class="['status-pill', friendKindClass(f.relationshipKind)]" :title="'Trạng thái kết bạn Zalo'">
-                  {{ friendKindLabel(f.relationshipKind) }}
-                </span>
-                <span
-                  v-if="f.hasConversation"
-                  class="conv-badge conv-badge--on"
-                  title="Đã từng nhắn 1-1 với KH qua nick này"
-                >💬</span>
-                <span
-                  v-else
-                  class="conv-badge conv-badge--off"
-                  title="Chỉ kết bạn Zalo, chưa có hội thoại 1-1 nào"
-                >ø</span>
-              </div>
-              <!-- KH theo nick này: avatar + tên Zalo riêng cho identity này (KHÔNG dùng tên KH Cha) -->
-              <div class="friend-customer-row">
-                <Avatar
-                  :src="f.zaloAvatarUrl"
-                  :name="f.zaloDisplayName || `KH-${f.zaloUidInNick.slice(-4)}`"
-                  :size="28"
-                  :gradient-seed="f.zaloUidInNick"
+          <div class="crm-w-row crm-w-row-status">
+            <span v-if="cockpit?.getflyLink?.linked" class="getfly-pill ok">
+              ✅ GF-{{ cockpit.getflyLink.getflyId }}
+            </span>
+            <span v-else class="getfly-pill off">⚪ Chưa liên kết</span>
+            <button class="crm-btn-ghost" disabled title="Sẽ phát triển sau">Liên kết →</button>
+          </div>
+        </section>
+
+        <!-- Widget 2: Next Action — AI suggestion -->
+        <section class="crm-widget crm-w-suggest">
+          <div class="crm-w-row">
+            <span class="crm-w-icon">⚡</span>
+            <span class="crm-w-title">Hành động đề xuất</span>
+            <button class="crm-w-refresh" :disabled="suggestLoading" title="Đổi gợi ý" @click="onRefreshSuggest">↻</button>
+          </div>
+          <div v-if="suggestLoading" class="crm-w-loading">
+            <div class="crm-spinner" /><span>AI đang gợi ý...</span>
+          </div>
+          <div v-else-if="suggestText" class="crm-suggest-box">
+            <div class="crm-suggest-text">{{ suggestText }}</div>
+            <button class="crm-btn-primary" @click="onInsertSuggest">💬 Gửi ngay</button>
+          </div>
+          <div v-else class="crm-w-empty">Chưa có gợi ý. Nhấn ↻ để AI soạn.</div>
+        </section>
+
+        <!-- Widget 3: Nhiệt KH -->
+        <section class="crm-widget crm-w-heat">
+          <div class="crm-w-row">
+            <span class="crm-w-icon">📊</span>
+            <span class="crm-w-title">Nhiệt KH</span>
+          </div>
+          <div v-if="cockpit?.priorityScore != null" class="heat-stack">
+            <div class="heat-bar-row">
+              <div class="heat-bar">
+                <div
+                  class="heat-bar-fill"
+                  :style="{ width: cockpit.priorityScore + '%', background: priorityBarColor }"
                 />
-                <div class="friend-customer-info">
-                  <div class="friend-customer-name">{{ f.zaloDisplayName || `KH-${f.zaloUidInNick.slice(-4)}` }}</div>
-                  <code class="uid">UID: {{ f.zaloUidInNick }}</code>
+              </div>
+              <span class="heat-bar-num">{{ cockpit.priorityScore }}/100</span>
+            </div>
+            <div class="heat-meta">
+              <span class="heat-pattern">{{ patternIcon }} {{ patternLabel }}</span>
+              <span v-if="cockpit.engagementTrend != null" :class="['heat-trend', cockpit.engagementTrend > 0 ? 'up' : cockpit.engagementTrend < 0 ? 'down' : '']">
+                {{ cockpit.engagementTrend > 0 ? '↑' : cockpit.engagementTrend < 0 ? '↓' : '→' }}
+                {{ cockpit.engagementTrend > 0 ? '+' : '' }}{{ cockpit.engagementTrend }}% tuần
+              </span>
+            </div>
+            <div v-if="cockpit.stuckSinceAggregate" class="heat-stuck">
+              ⚠ Stuck {{ daysFrom(cockpit.stuckSinceAggregate) }} ngày qua mọi nick
+            </div>
+          </div>
+          <div v-else class="crm-w-empty">Chưa đủ dữ liệu nhiệt</div>
+        </section>
+
+        <!-- Widget 4: Timeline -->
+        <section class="crm-widget crm-w-timeline">
+          <div class="crm-w-row">
+            <span class="crm-w-icon">⏰</span>
+            <span class="crm-w-title">Timeline</span>
+          </div>
+          <div class="timeline-lines">
+            <div v-if="cockpit?.firstContactDate || cockpit?.source" class="tl-line">
+              <span v-if="cockpit.firstContactDate">📅 Quen {{ daysFrom(cockpit.firstContactDate) }} ngày</span>
+              <span v-if="cockpit.source" class="tl-sep">·</span>
+              <span v-if="cockpit.source">📞 {{ cockpit.source }}<span v-if="cockpit.sourceDate"> {{ shortDate(cockpit.sourceDate) }}</span></span>
+            </div>
+            <div v-if="cockpit?.lastInboundAt" class="tl-line">
+              🟢 KH chat cuối: {{ relativeTime(cockpit.lastInboundAt) }}
+            </div>
+            <div v-if="cockpit?.lastOutboundAt" class="tl-line">
+              🔵 Bạn chat cuối: {{ relativeTime(cockpit.lastOutboundAt) }}
+            </div>
+            <div v-if="cockpit?.nextAppointment" class="tl-line tl-appt">
+              📍 Lịch hẹn: {{ shortDateTime(cockpit.nextAppointment.at) }}
+              <span class="tl-appt-rel"> ({{ relativeFuture(cockpit.nextAppointment.at) }})</span>
+            </div>
+            <div v-if="!cockpit?.firstContactDate && !cockpit?.lastInboundAt && !cockpit?.lastOutboundAt && !cockpit?.nextAppointment" class="crm-w-empty">
+              Chưa có dữ liệu timeline
+            </div>
+          </div>
+        </section>
+
+        <!-- Widget 5: Sản phẩm quan tâm (placeholder) -->
+        <section class="crm-widget crm-w-interest">
+          <div class="crm-w-row">
+            <span class="crm-w-icon">🎯</span>
+            <span class="crm-w-title">Sản phẩm quan tâm</span>
+          </div>
+          <div class="crm-w-placeholder">
+            <span class="ph-icon">ⓘ</span>
+            <span class="ph-text">Chức năng đang phát triển — sẽ tự gom nhu cầu từ KH cha + các nick chăm cùng KH này</span>
+          </div>
+        </section>
+
+        <!-- M55 2026-05-30: Widget Cùng chăm theo ContactAccess (cover cả KH có Zalo
+             lẫn no-Zalo). Hiện luôn cả khi chỉ 1 sale chăm để minh bạch ai phụ trách. -->
+        <section v-if="cungChamList.length > 0" class="crm-widget crm-w-cung-cham">
+          <div class="crm-w-row">
+            <span class="crm-w-icon">👥</span>
+            <span class="crm-w-title">Sale đang/đã chăm KH ({{ cungChamList.length }})</span>
+          </div>
+          <div class="cung-cham-list">
+            <div v-for="acc in cungChamList" :key="acc.user?.id || acc.createdAt" class="cung-cham-row">
+              <div class="cc-avatar-circle" :style="{ background: ccAvatarColor(acc.user?.fullName || acc.user?.email || '') }">
+                {{ ccInitial(acc.user?.fullName || acc.user?.email || '?') }}
+              </div>
+              <div class="cc-info">
+                <div class="cc-name">
+                  {{ acc.user?.fullName || acc.user?.email || 'Sale' }}
+                  <span v-if="acc.role === 'primary'" class="cc-role-primary" title="Sale phụ trách chính">⭐ Chính</span>
+                  <span v-else class="cc-role-collab" title="Sale cùng chăm">🤝 Cùng chăm</span>
                 </div>
-              </div>
-              <div class="friend-card-row">
-                <span class="lbl">Trạng thái KH:</span>
-                <span
-                  v-if="f.statusRef"
-                  class="chip status-edit"
-                  :style="{ background: chipBg(f.statusRef.color), color: chipFg(f.statusRef.color) }"
-                >{{ f.statusRef.name }}</span>
-                <span v-else class="empty">— đặt —</span>
-                <span class="lbl ml-auto">Score:</span>
-                <strong>{{ f.leadScore ?? 0 }}</strong>
-              </div>
-              <div class="friend-card-row meta-line">
-                <span>📥 <strong>{{ f.totalInbound }}</strong></span>
-                <span>📤 <strong>{{ f.totalOutbound }}</strong></span>
-                <span v-if="f.becameFriendAt">KB: {{ relativeTime(f.becameFriendAt) }}</span>
-                <span v-if="f.lastInboundAt">Last: {{ relativeTime(f.lastInboundAt) }}</span>
-              </div>
-              <div class="friend-card-actions">
-                <button class="btn-sm-danger" :title="'Tách Con này thành KH Cha mới'" @click="onPromoteFriend(f)">
-                  ✂ Tách thành KH Cha riêng
-                </button>
+                <div class="cc-meta">{{ ccSourceLabel(acc.source) }} · {{ ccDateLabel(acc.createdAt) }}</div>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- Empty state -->
-        <div v-if="!relations.friends.length" class="tab-empty">
-          <p>KH này chưa có nick CRM nào chăm.</p>
-        </div>
-
-        <!-- Label Zalo native (per-nick) -->
-        <section class="ip-section">
-          <div class="ip-section-title">
-            <span class="accent" style="background: var(--smax-warning)" />
-            🔖 Label Zalo (native)
-            <span class="scope-tag pernick">per-nick</span>
+        <!-- Widget 6: Đồng đội chăm KH (chỉ hiện cho KH có Zalo — based on Friend nicks chăm) -->
+        <section v-if="teammatesFiltered.length > 0" class="crm-widget crm-w-team">
+          <div class="crm-w-row">
+            <span class="crm-w-icon">🤝</span>
+            <span class="crm-w-title">Nick CRM cùng chăm ({{ teammatesFiltered.length }})</span>
           </div>
-          <TagChipList
-            :model-value="zaloLabels"
-            chip-class="chip-zalo"
-            add-label="Sync từ Zalo"
-            :readonly="true"
-          />
-          <div v-if="!zaloLabels.length" class="empty-section">
-            Chưa có label nào — sync từ Zalo SDK
+          <div v-if="teammatesFiltered.length" class="team-banner">
+            💡 {{ teammatesFiltered.length }} sale khác cùng chăm KH này — phối hợp để win-win
           </div>
+          <div v-if="teammatesLoading" class="crm-w-loading">
+            <div class="crm-spinner" /><span>Đang tải...</span>
+          </div>
+          <div v-else-if="teammatesFiltered.length" class="team-list">
+            <div v-for="t in teammatesFiltered" :key="t.friendId" class="team-card">
+              <div class="team-card-head">
+                <Avatar :src="t.nick.avatarUrl" :name="t.nick.displayName || 'Nick'" :size="32" :gradient-seed="t.friendId" platform="zalo" />
+                <div class="team-card-info">
+                  <div class="team-name">{{ t.owner?.fullName || 'Sale chưa rõ' }}</div>
+                  <div class="team-sub">{{ t.nick.displayName || 'Nick' }} · <span :class="['team-status', teammateStatusClass(t)]">{{ teammateStatus(t) }}</span></div>
+                </div>
+              </div>
+              <div class="team-counts">
+                <span>📥 <strong>{{ t.totalInbound }}</strong></span>
+                <span>📤 <strong>{{ t.totalOutbound }}</strong></span>
+              </div>
+              <button
+                class="crm-btn-handoff"
+                :disabled="!t.owner"
+                :title="!t.owner ? 'Nick chưa gán cho sale nào' : ''"
+                @click="onOpenHandoff(t)"
+              >
+                ✨ AI nhắn {{ shortName(t.owner?.fullName) || 'sale' }} phối hợp
+              </button>
+            </div>
+          </div>
+          <div v-else-if="cungChamList.length === 0" class="crm-w-empty">Chỉ mình bạn đang chăm KH này</div>
         </section>
 
-        <!-- Tag riêng nick × KH (per-pair) -->
-        <section class="ip-section">
-          <div class="ip-section-title">
-            <span class="accent" style="background: var(--smax-warning)" />
-            🏷 Tag riêng nick × KH
-            <span class="scope-tag pernick">per-nick</span>
-          </div>
-          <TagChipList
-            v-model="perPairTags"
-            chip-class="chip-info"
-            add-label="Thêm"
-            @update:model-value="onPerPairTagsChange"
-          />
+        <!-- Widget 7: Push to Getfly (placeholder) -->
+        <section class="crm-widget crm-w-push">
+          <button class="crm-btn-push" disabled title="Sẽ phát triển sau">
+            📤 Đẩy thông tin KH lên Getfly CRM
+          </button>
+          <div class="crm-w-hint">Chức năng đang phát triển</div>
         </section>
-
       </div>
+
+      <!-- Sales handoff modal -->
+      <SalesHandoffModal
+        v-model="handoffOpen"
+        :contact-name="headerFullName"
+        :target-name="handoffContext.targetName"
+        :target-user-id="handoffContext.targetUserId"
+        :target-zalo-account-name="handoffContext.targetZaloAccountName"
+        :sender-zalo-account-id="props.activeZaloAccountId ?? null"
+        :sender-nick-name="senderNickName"
+        :initial-content="handoffContent"
+        :source="handoffSource"
+        :loading="handoffLoading"
+        @regenerate="onRegenerateHandoff"
+      />
 
       <!-- ══════ TAB 3: HOẠT ĐỘNG (AI + Automation + Lịch hẹn) ══════ -->
       <div v-show="activeTab === 'activity'" class="tab-pane">
@@ -365,7 +443,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onBeforeUnmount, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import type { Contact } from '@/composables/use-contacts';
 import type { AiSentiment } from '@/composables/use-chat';
@@ -374,7 +452,6 @@ import ChatAppointments from './ChatAppointments.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList, { type AutomationCard } from './AutomationCardList.vue';
-import TagChipList from '@/components/ui/TagChipList.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import CareStatusBadge from '@/components/ui/CareStatusBadge.vue';
 import type { CareStatusValue } from '@/constants/care-status';
@@ -385,12 +462,18 @@ import EngagementHeatmap from './EngagementHeatmap.vue';
 import ScoreBanner from './ScoreBanner.vue';
 import ScoreInlinePanel from '@/components/scoring/ScoreInlinePanel.vue';
 import ScoreHistoryModal from '@/components/scoring/ScoreHistoryModal.vue';
+import SalesHandoffModal from './SalesHandoffModal.vue';
+import { useContactCockpit, type Teammate } from '@/composables/use-contact-cockpit';
 
 const props = defineProps<{
   contactId: string | null;
   contact: Contact | null;
   // Nick CRM đang xem KH này — dùng để xác định Friend row "active" cho per-pair tag.
   activeZaloAccountId?: string | null;
+  // Tên hiển thị nick CRM đang online — hiển thị trong modal handoff ("Từ nick: ...")
+  activeZaloAccountName?: string | null;
+  // Conversation hiện tại — dùng cho /ai/suggest (gợi ý next action widget 2 tab CRM)
+  conversationId?: string | null;
   // Friend.id của cặp (contact × activeZaloAccount). Cần để fetch score breakdown per-pair.
   friendId?: string | null;
   // Friendship per-pair (nick × KH) — chứa aliasInNick để sync 2-way với Zalo Real.
@@ -406,6 +489,7 @@ const emit = defineEmits<{
   saved: [];
   'refresh-ai-summary': [];
   'refresh-ai-sentiment': [];
+  'insert-suggestion': [text: string];
 }>();
 
 const {
@@ -444,7 +528,7 @@ async function saveAlias() {
 }
 
 // ════════ Tab state (persist sang tab khác KH khác) ════════
-const activeTab = ref<'profile' | 'relations' | 'activity' | 'score'>('profile');
+const activeTab = ref<'profile' | 'crm' | 'activity' | 'score'>('profile');
 
 // ════════════════════════════════════════════════════════════════════════
 // Info section state machine — 3 modes, in-memory only (KHÔNG persist):
@@ -594,46 +678,6 @@ async function fetchRelations(contactId: string) {
   }
 }
 
-function chipBg(hex: string | null | undefined): string {
-  if (!hex) return 'rgba(90,100,120,0.10)';
-  const m = hex.match(/^#([0-9a-f]{6})$/i);
-  if (!m) return 'rgba(90,100,120,0.10)';
-  const n = parseInt(m[1], 16);
-  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},0.15)`;
-}
-function chipFg(hex: string | null | undefined): string { return hex || 'var(--smax-grey-700)'; }
-
-async function onPromoteFriend(f: FriendItem) {
-  const name = prompt(`Tên cho KH Cha mới (Nick "${f.zaloAccount.displayName}" × UID ${f.zaloUidInNick}):`, '');
-  if (name === null) return;  // cancelled
-  try {
-    const res = await api.post<{ newContact: { id: string; fullName: string }; movedConversations: number }>(
-      `/friends/${f.id}/promote-to-parent`,
-      { fullName: name.trim() || undefined },
-    );
-    toast.success(`Đã tạo KH Cha mới: ${res.data.newContact.fullName}. ${res.data.movedConversations} conversation đã chuyển.`);
-    if (props.contactId) await fetchRelations(props.contactId);
-    emit('saved');
-  } catch (err) {
-    const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error || 'Tách thất bại';
-    toast.error(msg);
-  }
-}
-
-function friendKindLabel(k: string): string {
-  if (k === 'friend') return '✓ Đã KB';
-  if (k === 'pending_friend') return '… Pending';
-  if (k === 'chatting_stranger') return '👥 Lạ';
-  if (k === 'ghost') return '🚫 Ngắt';
-  return k;
-}
-function friendKindClass(k: string): string {
-  if (k === 'friend') return 'pill-success';
-  if (k === 'pending_friend') return 'pill-warning';
-  if (k === 'chatting_stranger') return 'pill-info';
-  return 'pill-grey';
-}
-
 // ════════ Care status (dropdown qua CareStatusBadge — emit value mới) ════════
 function onChangeCareStatus(value: CareStatusValue) {
   form.status = value;
@@ -688,40 +732,20 @@ function openFullProfile() {
   router.push(`/contacts/${props.contact.id}/profile`);
 }
 
-// MOCK: zaloLabels (per-pair native labels) chưa expose qua API
-const zaloLabels = ref<string[]>([]);
-
-// Per-pair CRM tags: tags RIÊNG cho cặp (nick active × KH). KHÁC contact.tags
-// (cấp KH chung). Trigger PATCH /friends/:id để persist.
+// activeFriend dùng cho headerFullName fallback (zaloDisplayName cho KH stub).
 const activeFriend = computed<FriendItem | null>(() => {
   if (!props.activeZaloAccountId) return null;
   return relations.value.friends.find(f => f.zaloAccount.id === props.activeZaloAccountId) || null;
 });
-const perPairTags = computed<string[]>({
-  get: () => activeFriend.value?.crmTagsPerNick || [],
-  set: (v) => {
-    if (activeFriend.value) activeFriend.value.crmTagsPerNick = v;
-  },
-});
-async function onPerPairTagsChange(tags: string[]) {
-  if (!activeFriend.value) {
-    toast.warning('Chưa xác định nick CRM nào đang chăm KH này');
-    return;
-  }
-  try {
-    await api.patch(`/friends/${activeFriend.value.id}`, { crmTagsPerNick: tags });
-  } catch (err) {
-    console.error('[ChatContactPanel] save per-pair tags failed:', err);
-    toast.error('Lưu tag thất bại');
-  }
-}
 
-// MOCK: 3 nick khác cũng chăm — chờ /contacts/:id/friendships
-interface OtherNick { id: string; short: string; name: string; pillClass: string; pillLabel: string }
-const otherNicks = computed<OtherNick[]>(() => [] as OtherNick[]);
+// Tên nick CRM đang online (hiển thị trong modal handoff: "Từ nick: ...")
+// Ưu tiên prop activeZaloAccountName (từ ChatView pass xuống) → fallback activeFriend.
+const senderNickName = computed<string | null>(() =>
+  props.activeZaloAccountName || activeFriend.value?.zaloAccount?.displayName || null,
+);
 
 // ════════ Tab badges ════════
-const relationBadgeCount = computed(() => otherNicks.value.length || 0);
+const crmBadgeCount = computed(() => teammatesFiltered.value.length || 0);
 const activityBadgeCount = computed(() => {
   let n = 0;
   if (automationCards.value.length) n += automationCards.value.length;
@@ -748,6 +772,13 @@ watch(() => props.contactId, (id) => {
   startAutoCollapse();
   if (id) void fetchRelations(id);
   else relations.value = { friends: [] };
+  // Tab CRM cockpit data — fetch chỉ khi tab CRM được mở (xem watch(activeTab) bên dưới)
+  if (!id) {
+    cockpit.value = null;
+    teammates.value = [];
+  }
+  // Reset suggest text
+  suggestText.value = '';
 }, { immediate: true });
 
 function relativeTime(dateStr: string) {
@@ -756,6 +787,294 @@ function relativeTime(dateStr: string) {
   if (days === 0) return 'hôm nay';
   if (days === 1) return 'hôm qua';
   return `${days} ngày trước`;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Tab CRM (Mini CRM cockpit) — 7 widget, anh chốt design 2026-05-22
+// docs/designs/CHAT-COL4-CRM-TAB.md
+// ════════════════════════════════════════════════════════════════════════
+const { cockpit, teammates, loading: cockpitLoading, fetchCockpit, fetchTeammates, generateHandoffMessage } = useContactCockpit();
+
+// Fetch cockpit + teammates khi tab CRM được mở lần đầu (lazy load tiết kiệm request)
+const crmTabLoaded = ref(false);
+watch([activeTab, () => props.contactId], async ([tab, id]) => {
+  if (tab === 'crm' && id) {
+    crmTabLoaded.value = true;
+    await Promise.all([
+      fetchCockpit(id),
+      fetchTeammates(id, props.activeZaloAccountId || undefined),
+    ]);
+    // Auto-fetch AI suggestion nếu chưa có
+    if (!suggestText.value && props.conversationId) {
+      void runAiSuggest();
+    }
+  }
+}, { immediate: false });
+
+// Reload teammates khi đổi nick active
+watch(() => props.activeZaloAccountId, (zaloId) => {
+  if (activeTab.value === 'crm' && props.contactId) {
+    void fetchTeammates(props.contactId, zaloId || undefined);
+  }
+});
+
+// ─── Computed cho widgets ────────────────────────────────────────────────
+const teammatesFiltered = computed<Teammate[]>(() => {
+  const arr = teammates.value || [];
+  // Backend đã filter excludeZaloAccountId; thêm dedup theo owner user (1 sale có thể có nhiều nick)
+  const seen = new Set<string>();
+  const out: Teammate[] = [];
+  for (const t of arr) {
+    const key = t.owner?.id || `nick:${t.zaloAccountId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+});
+
+const teammatesLoading = computed(() => cockpitLoading.teammates);
+
+// M55 2026-05-30 — Cùng chăm theo ContactAccess (primary + collaborator).
+// Cover cả KH có Zalo (đã có teammatesFiltered từ Friend) + KH no-Zalo (Friend=[]).
+interface CungChamRow {
+  role: 'primary' | 'collaborator';
+  source: string;
+  createdAt: string;
+  user: { id?: string; fullName: string | null; email: string | null } | null;
+}
+const cungChamList = computed<CungChamRow[]>(() => {
+  const list = (props.contact as { contactAccess?: CungChamRow[] } | null | undefined)?.contactAccess;
+  return Array.isArray(list) ? list : [];
+});
+function ccInitial(name: string): string {
+  const t = (name || '').trim();
+  if (!t) return '?';
+  const parts = t.split(/\s+/);
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+const CC_AVATAR_COLORS = ['#0ea5e9', '#f97316', '#10b981', '#a855f7', '#ec4899', '#eab308', '#06b6d4', '#ef4444'];
+function ccAvatarColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < (seed || '').length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return CC_AVATAR_COLORS[Math.abs(h) % CC_AVATAR_COLORS.length];
+}
+const CC_SOURCE_LABELS: Record<string, string> = {
+  quick_add: 'Tạo KH nhanh',
+  quick_add_duplicate: 'Thêm KH trùng SĐT',
+  virtual_chat_open: 'Mở chat nội bộ',
+  virtual_chat_message: 'Gửi tin chat nội bộ',
+  auto_from_friend: 'Tự động qua Zalo Friend',
+  manual: 'Thủ công',
+};
+function ccSourceLabel(source: string): string {
+  return CC_SOURCE_LABELS[source] || source || 'Khác';
+}
+function ccDateLabel(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' });
+  } catch { return ''; }
+}
+
+const patternIcon = computed(() => {
+  const p = cockpit.value?.engagementPattern;
+  if (p === 'hot') return '🔥';
+  if (p === 'champion') return '👑';
+  if (p === 'stable') return '🟢';
+  if (p === 'cooling') return '🟡';
+  if (p === 'cold') return '🔵';
+  return '⚪';
+});
+
+const patternLabel = computed(() => {
+  const p = cockpit.value?.engagementPattern;
+  if (p === 'hot') return 'Nóng';
+  if (p === 'champion') return 'Champion';
+  if (p === 'stable') return 'Ổn định';
+  if (p === 'cooling') return 'Đang nguội';
+  if (p === 'cold') return 'Lạnh';
+  if (p === 'noise') return 'Chưa đủ data';
+  return '—';
+});
+
+const priorityBarColor = computed(() => {
+  const s = cockpit.value?.priorityScore;
+  if (s == null) return '#cbd5e1';
+  if (s < 30) return '#3b82f6'; // xanh dương
+  if (s < 60) return '#10b981'; // xanh lá
+  if (s < 80) return '#f59e0b'; // cam
+  return '#ef4444'; // đỏ
+});
+
+function daysFrom(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function shortDateTime(iso: string): string {
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm} ${hh}:${mi}`;
+}
+
+function relativeFuture(iso: string): string {
+  const diff = new Date(iso).getTime() - Date.now();
+  const days = Math.round(diff / 86400000);
+  if (days === 0) return 'hôm nay';
+  if (days === 1) return 'ngày mai';
+  if (days < 0) return `${-days} ngày trước`;
+  return `${days} ngày nữa`;
+}
+
+function teammateStatus(t: Teammate): string {
+  if (!t.lastInboundAt) return 'Chưa chat';
+  const diff = Date.now() - new Date(t.lastInboundAt).getTime();
+  const hours = diff / 3600000;
+  if (hours < 24) return `🟢 Active ${Math.max(1, Math.floor(hours))}h`;
+  const days = Math.floor(hours / 24);
+  if (days <= 7) return `🟡 Đang chăm ${days}d`;
+  return `🔵 Lạnh ${days}d`;
+}
+
+function teammateStatusClass(t: Teammate): string {
+  if (!t.lastInboundAt) return 'grey';
+  const hours = (Date.now() - new Date(t.lastInboundAt).getTime()) / 3600000;
+  if (hours < 24) return 'active';
+  if (hours / 24 <= 7) return 'warm';
+  return 'cold';
+}
+
+function shortName(full: string | null | undefined): string | null {
+  if (!full) return null;
+  const parts = full.trim().split(/\s+/);
+  return parts[parts.length - 1];
+}
+
+// ─── Widget 2: AI suggest ────────────────────────────────────────────────
+const suggestText = ref('');
+const suggestLoading = ref(false);
+
+async function runAiSuggest() {
+  if (!props.conversationId) {
+    toast.warning('Chưa có hội thoại để AI gợi ý');
+    return;
+  }
+  suggestLoading.value = true;
+  try {
+    const { data } = await api.post<{ content: string }>('/ai/suggest', { conversationId: props.conversationId });
+    suggestText.value = (data?.content || '').trim();
+  } catch (err) {
+    const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error || 'AI suggest thất bại';
+    toast.error(msg);
+  } finally {
+    suggestLoading.value = false;
+  }
+}
+
+function onRefreshSuggest() {
+  void runAiSuggest();
+}
+
+function onInsertSuggest() {
+  if (!suggestText.value) return;
+  emit('insert-suggestion', suggestText.value);
+  // Phát event toàn cục cho ChatComposer nghe (giảm prop drill)
+  window.dispatchEvent(new CustomEvent('chat:insert-suggestion', { detail: { text: suggestText.value } }));
+  toast.success('Đã chèn vào ô soạn tin');
+}
+
+// ─── Widget 6: Sales handoff modal ───────────────────────────────────────
+const handoffOpen = ref(false);
+const handoffLoading = ref(false);
+const handoffContent = ref('');
+const handoffSource = ref<'template' | 'ai' | 'fallback'>('template');
+const handoffContext = reactive<{
+  contactId: string | null;
+  targetUserId: string | null;
+  targetZaloAccountId: string | null;
+  targetName: string | null;
+  targetZaloUid: string | null;
+  targetZaloAccountName: string | null;
+}>({
+  contactId: null,
+  targetUserId: null,
+  targetZaloAccountId: null,
+  targetName: null,
+  targetZaloUid: null,
+  targetZaloAccountName: null,
+});
+
+async function onOpenHandoff(t: Teammate) {
+  // Guard: không re-fire khi đang loading hoặc modal đang mở
+  if (handoffLoading.value || handoffOpen.value) return;
+  if (!t.owner) {
+    toast.warning('Nick này chưa gán cho sale nào');
+    return;
+  }
+  if (!props.contactId) return;
+  handoffContext.contactId = props.contactId;
+  handoffContext.targetUserId = t.owner.id;
+  handoffContext.targetZaloAccountId = t.zaloAccountId;
+  handoffContext.targetName = t.owner.fullName;
+  handoffContext.targetZaloUid = null;            // sẽ set từ BE response
+  handoffContext.targetZaloAccountName = null;
+  handoffContent.value = '';
+  handoffSource.value = 'template';
+  handoffLoading.value = true;
+  handoffOpen.value = true;
+
+  try {
+    const res = await generateHandoffMessage({
+      contactId: handoffContext.contactId,
+      targetUserId: handoffContext.targetUserId,
+      targetZaloAccountId: handoffContext.targetZaloAccountId || undefined,
+    });
+    if (res) {
+      handoffContent.value = res.content;
+      handoffSource.value = res.source;
+      handoffContext.targetZaloUid = res.targetZaloUid;
+      handoffContext.targetZaloAccountName = res.targetZaloAccountName;
+    } else {
+      // BE fail → đóng modal + report rõ lỗi
+      handoffOpen.value = false;
+      toast.error('Không soạn được tin phối hợp — vui lòng thử lại');
+    }
+  } catch (e) {
+    handoffOpen.value = false;
+    console.error('[handoff] open failed:', e);
+    toast.error('Lỗi mạng khi soạn tin phối hợp');
+  } finally {
+    handoffLoading.value = false;
+  }
+}
+
+async function onRegenerateHandoff() {
+  if (!handoffContext.contactId || !handoffContext.targetUserId || handoffLoading.value) return;
+  handoffLoading.value = true;
+  try {
+    const res = await generateHandoffMessage({
+      contactId: handoffContext.contactId,
+      targetUserId: handoffContext.targetUserId,
+      targetZaloAccountId: handoffContext.targetZaloAccountId || undefined,
+    });
+    if (res) {
+      handoffContent.value = res.content;
+      handoffSource.value = res.source;
+      handoffContext.targetZaloUid = res.targetZaloUid;
+      handoffContext.targetZaloAccountName = res.targetZaloAccountName;
+    }
+  } finally {
+    handoffLoading.value = false;
+  }
 }
 </script>
 
@@ -1261,5 +1580,341 @@ function relativeTime(dateStr: string) {
 /* ════════ Notes section in Tab Hồ Sơ ════════ */
 .ip-notes-section {
   margin-top: 10px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Tab CRM (Mini cockpit, 7 widgets) — 2026-05-22
+   ════════════════════════════════════════════════════════════════════════ */
+.crm-tab {
+  padding: 10px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.crm-widget {
+  background: #fff;
+  border: 1px solid var(--smax-grey-200);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.crm-w-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.crm-w-row-status { justify-content: space-between; }
+.crm-w-icon { font-size: 15px; flex-shrink: 0; }
+.crm-w-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--smax-grey-800);
+  flex: 1;
+}
+.crm-w-refresh {
+  background: transparent;
+  border: 1px solid var(--smax-grey-300);
+  border-radius: 6px;
+  width: 24px; height: 22px;
+  font-size: 11.5px;
+  cursor: pointer;
+  color: var(--smax-grey-600);
+}
+.crm-w-refresh:hover:not(:disabled) { background: var(--smax-grey-100); }
+.crm-w-refresh:disabled { opacity: 0.5; cursor: wait; }
+
+.crm-w-loading {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0;
+  color: var(--smax-grey-600);
+  font-size: 12px;
+}
+.crm-spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--smax-grey-200);
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: crm-spin 700ms linear infinite;
+}
+@keyframes crm-spin {
+  to { transform: rotate(360deg); }
+}
+
+.crm-w-empty {
+  color: var(--smax-grey-500);
+  font-size: 11.5px;
+  padding: 4px 0;
+}
+
+/* ── Widget 1: Getfly link ── */
+.getfly-pill {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.getfly-pill.ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.getfly-pill.off { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+.crm-btn-ghost {
+  background: #fff;
+  border: 1px solid var(--smax-grey-300);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+  color: var(--smax-grey-700);
+}
+.crm-btn-ghost:hover:not(:disabled) { background: var(--smax-grey-100); }
+.crm-btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Widget 2: AI suggest ── */
+.crm-suggest-box {
+  background: linear-gradient(180deg, #faf5ff, #f5f3ff);
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.crm-suggest-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #312e81;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.crm-btn-primary {
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.crm-btn-primary:hover { background: #4338ca; }
+
+/* ── Widget 3: Nhiệt KH ── */
+.heat-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.heat-bar-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.heat-bar {
+  flex: 1;
+  height: 10px;
+  background: var(--smax-grey-200);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.heat-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 300ms ease, background-color 300ms ease;
+}
+.heat-bar-num {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--smax-grey-700);
+  min-width: 54px;
+  text-align: right;
+}
+.heat-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 11.5px;
+}
+.heat-pattern { font-weight: 600; color: var(--smax-grey-800); }
+.heat-trend { font-weight: 600; color: var(--smax-grey-600); }
+.heat-trend.up { color: #15803d; }
+.heat-trend.down { color: #b91c1c; }
+.heat-stuck {
+  font-size: 11px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  border-radius: 6px;
+  padding: 3px 7px;
+}
+
+/* ── Widget 4: Timeline ── */
+.timeline-lines {
+  display: flex; flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--smax-grey-700);
+}
+.tl-line { line-height: 1.4; }
+.tl-sep { margin: 0 5px; color: var(--smax-grey-400); }
+.tl-appt { color: #065f46; font-weight: 600; }
+.tl-appt-rel { font-weight: 500; color: var(--smax-grey-600); }
+
+/* ── Widget 5: Placeholder interest ── */
+.crm-w-placeholder {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11.5px;
+  color: var(--smax-grey-600);
+  background: var(--smax-grey-100);
+  border-radius: 7px;
+  padding: 7px 9px;
+  line-height: 1.45;
+}
+.ph-icon { font-style: italic; color: var(--smax-grey-500); flex-shrink: 0; }
+
+/* ── Widget 6: Đồng đội ── */
+.team-banner {
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  color: #155e75;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 7px;
+}
+.team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* M55 2026-05-30 — Cùng chăm theo ContactAccess */
+.cung-cham-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cung-cham-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #fafbfc;
+  border: 1px solid var(--smax-grey-200);
+  border-radius: 6px;
+}
+.cc-avatar-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.cc-info { flex: 1; min-width: 0; }
+.cc-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--smax-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cc-role-primary {
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid #fcd34d;
+}
+.cc-role-collab {
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid #93c5fd;
+}
+.cc-meta {
+  font-size: 10px;
+  color: var(--smax-grey-700);
+  margin-top: 1px;
+}
+.team-card {
+  border: 1px solid var(--smax-grey-200);
+  border-radius: 8px;
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: #fafafa;
+}
+.team-card-head {
+  display: flex; align-items: center; gap: 8px;
+}
+.team-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.team-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--smax-grey-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-sub {
+  font-size: 11px;
+  color: var(--smax-grey-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-status.active { color: #15803d; }
+.team-status.warm { color: #b45309; }
+.team-status.cold { color: #1d4ed8; }
+.team-status.grey { color: var(--smax-grey-500); }
+.team-counts {
+  display: flex; gap: 12px;
+  font-size: 11.5px;
+  color: var(--smax-grey-700);
+}
+.crm-btn-handoff {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+.crm-btn-handoff:hover:not(:disabled) { filter: brightness(1.05); }
+.crm-btn-handoff:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Widget 7: Push Getfly ── */
+.crm-btn-push {
+  background: #f8fafc;
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  color: var(--smax-grey-600);
+  cursor: not-allowed;
+  width: 100%;
+}
+.crm-w-hint {
+  font-size: 10.5px;
+  color: var(--smax-grey-500);
+  text-align: center;
+  font-style: italic;
 }
 </style>

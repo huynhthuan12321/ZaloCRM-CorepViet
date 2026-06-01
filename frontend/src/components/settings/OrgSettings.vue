@@ -81,6 +81,7 @@ const saving = ref(false);
 const error = ref('');
 const saved = ref(false);
 
+
 // Tick mỗi giây để preview "Bây giờ tại tổ chức" cập nhật theo offset chọn.
 const nowTick = ref(Date.now());
 let tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -101,11 +102,15 @@ async function fetchOrg() {
     const res = await api.get('/organization');
     orgName.value = res.data.name ?? '';
     timezone.value = res.data.timezone ?? '+07:00';
-    original.value = { name: orgName.value, timezone: timezone.value };
+    original.value = {
+      name: orgName.value,
+      timezone: timezone.value,
+    };
   } catch {
     // endpoint có thể chưa tồn tại lần đầu — giữ default +07:00
   }
 }
+
 
 async function handleSave() {
   saving.value = true;

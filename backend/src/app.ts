@@ -3,12 +3,20 @@
  * Bootstraps Fastify server with all plugins, Socket.IO, and route handlers.
  * The process never exits — all errors are caught and logged.
  */
+
+// BigInt → string khi JSON.stringify (Fastify response serializer).
+// Cần thiết cho Message.zaloMsgIdNum (Prisma trả BigInt, JSON native fail without this).
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
+  return this.toString();
+};
+
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyMultipart from '@fastify/multipart';
+import fastifyFormbody from '@fastify/formbody';
 import { Server } from 'socket.io';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +35,7 @@ import { chatAttachmentRoutes } from './modules/chat/chat-attachment-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
 import { statusRoutes } from './modules/contacts/status-routes.js';
 import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
+import { cockpitRoutes } from './modules/contacts/cockpit-routes.js';
 import { appointmentRoutes } from './modules/contacts/appointment-routes.js';
 import { notesRoutes } from './modules/contacts/notes-routes.js';
 import { startInteractionCron } from './modules/contacts/interaction-cron.js';
@@ -39,6 +48,7 @@ import { zaloLabelsRoutes, startLabelsBackgroundSync } from './modules/zalo/zalo
 import { startAppointmentReminder } from './modules/contacts/appointment-reminder.js';
 import { zinstantProxyRoutes } from './modules/contacts/zinstant-proxy-routes.js';
 import { dashboardRoutes } from './modules/dashboard/dashboard-routes.js';
+import { dashboardActionHubRoutes } from './modules/dashboard/dashboard-action-hub-routes.js';
 import { reportRoutes } from './modules/dashboard/report-routes.js';
 import { userRoutes } from './modules/auth/user-routes.js';
 import { teamRoutes } from './modules/auth/team-routes.js';
@@ -64,6 +74,10 @@ import { blockRoutes } from './modules/automation/blocks/block-routes.js';
 import { blockFolderRoutes } from './modules/automation/blocks/block-folder-routes.js';
 import { sequenceRoutes } from './modules/automation/sequences/sequence-routes.js';
 import { triggerRoutes } from './modules/automation/triggers/trigger-routes.js';
+import { friendInviteRoutes } from './modules/automation/friend-invite/friend-invite-routes.js';
+import { startFriendInviteSweepers, stopFriendInviteSweepers } from './modules/automation/friend-invite/sweepers.js';
+import { startWelcomeProbeWorker, stopWelcomeProbeWorker } from './modules/automation/friend-invite/welcome-probe-worker.js';
+import { bootstrapFriendInviteWorkers, stopAllNickWorkers } from './modules/automation/friend-invite/nick-worker.js';
 import { broadcastRoutes } from './modules/automation/broadcasts/broadcast-routes.js';
 import { webhookRoutes as automationWebhookRoutes } from './modules/automation/webhooks/webhook-routes.js';
 // Tệp khách hàng (CustomerList) — Phase 7 audience layer
@@ -79,6 +93,15 @@ import { friendRoutes } from './modules/zalo/friend-routes.js';
 import { profileRoutes } from './modules/zalo/profile-routes.js';
 import { credentialRoutes } from './modules/zalo/credential-routes.js';
 import { eventBuffer } from './shared/event-buffer.js';
+import { systemNotifyRoutes } from './modules/system-notifications/system-notify-routes.js';
+import { userCreateWithZaloRoutes } from './modules/system-notifications/user-create-with-zalo-routes.js';
+import { leadPoolRoutes } from './modules/lead-pool/lead-pool-routes.js';
+import { startLeadPoolCron } from './modules/lead-pool/lead-pool-service.js';
+// Phase Multi-Source Lead Ads 2026-05-27 — FB adapter + outbox worker
+import { fbLeadAdsRoutes } from './modules/integrations/facebook-leadads/fb-routes.js';
+import { fbIntegrationRoutes } from './modules/integrations/facebook-leadads/fb-oauth.js';
+import { processFbWebhookLog } from './modules/integrations/facebook-leadads/fb-adapter.js';
+import { startOutboxWorker, registerLogProcessor } from './modules/integrations/_shared/outbox-worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -109,6 +132,8 @@ async function bootstrap() {
       files: 10,
     },
   });
+
+  await app.register(fastifyFormbody);
 
   // Serve compiled frontend assets in production
   if (config.isProduction) {
@@ -158,19 +183,37 @@ async function bootstrap() {
   await app.register(contactRoutes);
   await app.register(statusRoutes);
   await app.register(contactSubResourceRoutes);
+  await app.register(cockpitRoutes);
   await app.register(appointmentRoutes);
   await app.register(notesRoutes);
   await app.register(crmTagRoutes);
   await app.register(crmTagGroupRoutes);
+  // Tag Taxonomy v2 — Wave 3 /plan-eng-review M57 2026-05-31
+  // Mount 3 prefix: /api/v1/tags (definitions), /api/v1/friends/:id/tags, /api/v1/contacts/:id/crm-tags
+  const { registerTagRoutes, registerFriendTagRoutes, registerContactCrmTagRoutes } = await import('./modules/tags/tag-routes.js');
+  await app.register(registerTagRoutes, { prefix: '/api/v1/tags' });
+  await app.register(registerFriendTagRoutes, { prefix: '/api/v1/friends' });
+  await app.register(registerContactCrmTagRoutes, { prefix: '/api/v1/contacts' });
   await app.register(userPreferenceRoutes);
   await app.register(timelineRoutes);
   await app.register(scoringRoutes);
   // Phase 8 — Engagement heatmap timeline + admin recompute/backfill
   const { registerEngagementRoutes } = await import('./modules/engagement/engagement-routes.js');
   await registerEngagementRoutes(app);
+  // RBAC Phase Phân Quyền 2026-05-21 — Department + PermissionGroup (M2 Getfly Clone)
+  const { registerDepartmentRoutes } = await import('./modules/rbac/department-routes.js');
+  await registerDepartmentRoutes(app);
+  const { registerPermissionGroupRoutes } = await import('./modules/rbac/permission-group-routes.js');
+  await registerPermissionGroupRoutes(app);
+  const { registerUserAssignmentRoutes } = await import('./modules/rbac/user-assignment-routes.js');
+  await registerUserAssignmentRoutes(app);
+  // Phase Riêng Tư 2026-05-22 — PIN-gated visual privacy
+  const { registerPrivacyRoutes } = await import('./modules/privacy/privacy-routes.js');
+  await registerPrivacyRoutes(app);
   await app.register(zaloLabelsRoutes);
   await app.register(zinstantProxyRoutes);
   await app.register(dashboardRoutes);
+  await app.register(dashboardActionHubRoutes);
   await app.register(reportRoutes);
   await app.register(userRoutes);
   await app.register(teamRoutes);
@@ -179,6 +222,12 @@ async function bootstrap() {
   await app.register(zaloSyncRoutes);
   await app.register(zaloDashboardRoutes);
   await app.register(notificationRoutes);
+  await app.register(systemNotifyRoutes);
+  await app.register(userCreateWithZaloRoutes);
+  await app.register(leadPoolRoutes);
+  // Phase Multi-Source Lead Ads 2026-05-27 — FB Lead Ads webhook + OAuth/status
+  await app.register(fbLeadAdsRoutes);
+  await app.register(fbIntegrationRoutes);
   await app.register(searchRoutes);
   await app.register(publicApiRoutes);
   await app.register(webhookSettingsRoutes);
@@ -192,6 +241,7 @@ async function bootstrap() {
   await app.register(blockFolderRoutes);
   await app.register(sequenceRoutes);
   await app.register(triggerRoutes);
+  await app.register(friendInviteRoutes);
   await app.register(broadcastRoutes);
   await app.register(automationWebhookRoutes);
   // Tệp khách hàng — CustomerList CRUD + entries + enrichment + event handlers
@@ -260,9 +310,38 @@ async function bootstrap() {
     // native app mà friend_event listener không bắt được (xem friend-sync-cron.ts)
     const { startFriendSyncCron } = await import('./modules/zalo/friend-sync-cron.js');
     startFriendSyncCron(io);
+    // Phase ZaloAccounts redesign 2026-05-22 — status log: backfill open records 1
+    // lần lúc startup (idempotent), rồi start checkpoint cron (*/5 min) reconcile
+    // orphan records sau crash. Uptime accuracy = 5p resolution.
+    const { backfillStatusLog } = await import('./modules/zalo/status-log-backfill.js');
+    backfillStatusLog().catch((err) => logger.error('[status-log-backfill] failed:', err));
+    const { startStatusLogCheckpointCron } = await import('./modules/zalo/status-log-checkpoint-cron.js');
+    startStatusLogCheckpointCron();
     // Phase 6 — Lead Scoring background jobs (decay hourly + stuck detection 6am daily)
     const { startScoringScheduler } = await import('./modules/scoring/scoring-scheduler.js');
     startScoringScheduler({ enabled: config.nodeEnv !== 'test' });
+    // Tag Taxonomy v2 — Wave 3 /plan-eng-review M57 (Issue 6A)
+    // Cron 5 phút batch UPDATE Contact.autoTags từ Redis dirty set.
+    // Wave 5 Slim drop Contact.autoTags → bỏ luôn cron.
+    if (config.nodeEnv !== 'test') {
+      const { startAutoTagsAggregateCron } = await import('./modules/tags/contact-autotags-dirty.js');
+      startAutoTagsAggregateCron();
+    }
+    // Phase Internal Contact 2-method 2026-05-23 — cleanup pending handshake > 7 ngày (3am daily)
+    const { startInternalContactCleanupCron } = await import('./modules/system-notifications/internal-contact-service.js');
+    startInternalContactCleanupCron();
+    // Phase Lead Pool 2026-05-24 — auto-return expired leads 2am daily
+    startLeadPoolCron();
+    // Phase Multi-Source Lead Ads 2026-05-27 — outbox worker (LISTEN/NOTIFY + 30s poll)
+    // dispatch fb webhook logs → Graph API fetch → normalize → route → insert entry.
+    registerLogProcessor('fb-leadads', processFbWebhookLog);
+    startOutboxWorker().catch((err) => logger.error('[outbox-worker] startup failed:', err));
+    // Phase FB Pull 2026-05-30 — kéo lead chủ động bằng System User token (chính chủ,
+    // không App Review). Chỉ chạy thật khi có Org bật fbPullEnabled. Skip lúc test.
+    if (config.nodeEnv !== 'test') {
+      const { startFbPullWorker } = await import('./modules/integrations/facebook-leadads/fb-pull-worker.js');
+      startFbPullWorker();
+    }
     await eventBuffer.start(io);
     // Phase 7 — Automation engine (event bus + materializer + task worker + 3 action handlers)
     if (config.nodeEnv !== 'test') {
@@ -274,6 +353,17 @@ async function bootstrap() {
       // Tệp khách hàng — enrichment worker + reverse-update event handlers
       startListEnrichmentWorker();
       registerCustomerListEventHandlers();
+      // Phase Friend Invite Queue 2026-05-28 — sweepers + per-nick workers
+      startFriendInviteSweepers();
+      // Wave 2 Welcome Probe 2026-05-29 — poll WELCOME_PROBE outbox rows
+      startWelcomeProbeWorker();
+      // bootstrap workers — guard with try/catch để container không restart loop
+      // nếu DB chưa migrate đủ cột (đang phát triển feature)
+      try {
+        await bootstrapFriendInviteWorkers();
+      } catch (err) {
+        logger.error('[friend-invite] bootstrap workers failed (non-fatal):', err);
+      }
     }
   } catch (err) {
     logger.error('Failed to start server:', err);

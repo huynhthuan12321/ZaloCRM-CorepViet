@@ -4,6 +4,8 @@
  * All routes require JWT auth and are scoped to user's org.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { randomUUID } from 'node:crypto';
+import type { Server } from 'socket.io';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
@@ -13,7 +15,9 @@ import { backfillGlobalId, backfillOrphanFriends } from './backfill-global-id.js
 import { backfillMissingFriends } from './backfill-missing-friends.js';
 import { backfillFriendDisplayName } from './backfill-friend-display-name.js';
 import { migrateStatusTable } from './status-migration.js';
-import { computeAggregateDisplay, AGGREGATE_INCLUDE } from './contact-aggregate-display.js';
+import { computeAggregateDisplay, computeViewerPreview, AGGREGATE_INCLUDE } from './contact-aggregate-display.js';
+import { getContactScope, assertContactVisible, attachContactCollaboratorByUser, assertContactEditable } from './contact-scope.js';
+import { getZaloScope } from '../zalo/zalo-scope.js';
 import { runAutomationRules } from '../automation/automation-service.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { logActivity, computeDiff } from '../activity/activity-logger.js';
@@ -47,6 +51,12 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       } = request.query as QueryParams;
 
       const where: any = { orgId: user.orgId, mergedInto: null };
+      // Phase Contact Scope Hybrid 2026-05-27: filter theo ContactAccess (primary + collaborator).
+      // Sale chỉ thấy KH mình primary/collab; manager thấy KH của subordinate; admin/owner thấy all.
+      const cScope = await getContactScope(user.id, user.orgId, user.role);
+      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+        where.id = { in: cScope.accessibleContactIds };
+      }
       // Model B: mỗi Contact tự nó là "KH Cha"; con = Friend rows. KHÔNG filter parentContactId.
       if (source) where.source = source;
       if (status) where.status = status;
@@ -128,6 +138,13 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         prisma.contact.count({ where }),
       ]);
 
+      // Phase Contact Scope Hybrid 2026-05-27: per-viewer preview + aggregate.
+      // Sale chỉ thấy preview/score/status từ Friend rows của nick mình; admin/owner giữ aggregate global.
+      const zScope = cScope.isOrgAdmin
+        ? null
+        : await getZaloScope(user.id, user.orgId, user.role);
+      const visibleZaloIds: Set<string> | null = zScope ? new Set(zScope.accessibleIds) : null;
+
       // Aggregate + multiNick post-filter (childrenCount requires friends count after load)
       const multiNickOnly = multiNick === 'true';
       const enriched = contacts
@@ -136,8 +153,21 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           for (const f of c.friends ?? []) {
             nicksByKind[f.relationshipKind] = (nicksByKind[f.relationshipKind] || 0) + 1;
           }
-          const display = computeAggregateDisplay(c);
-          return { ...c, nicksByKind, ...display };
+          // Per-viewer: filter friends visible cho viewer cho aggregate display.
+          const visibleFriends = visibleZaloIds
+            ? (c.friends ?? []).filter((f: any) => visibleZaloIds.has(f.zaloAccountId))
+            : undefined;
+          const display = computeAggregateDisplay(c, visibleFriends as any);
+          const preview = computeViewerPreview(c as any, visibleZaloIds);
+          const isPrimary = cScope.primaryContactIds.has(c.id);
+          return {
+            ...c,
+            ...(preview ?? {}),
+            nicksByKind,
+            ...display,
+            // Phase Contact Scope Hybrid: badge UI render — "Phụ trách chính" vs "Đồng đội cùng chăm"
+            viewerRole: cScope.isOrgAdmin ? 'admin' : (isPrimary ? 'primary' : 'collaborator'),
+          };
         })
         .filter((c) => !multiNickOnly || (c.childrenCount ?? 0) > 1);
 
@@ -154,7 +184,12 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/contacts/stats', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
-      const base = { orgId: user.orgId, mergedInto: null };
+      // Phase Contact Scope Hybrid 2026-05-27: stats theo scope của viewer
+      const cScope = await getContactScope(user.id, user.orgId, user.role);
+      const base: any = { orgId: user.orgId, mergedInto: null };
+      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+        base.id = { in: cScope.accessibleContactIds };
+      }
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
@@ -218,10 +253,16 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     try {
       const user = request.user!;
       const orgId = user.orgId;
+      // Phase Contact Scope Hybrid 2026-05-27
+      const cScope = await getContactScope(user.id, user.orgId, user.role);
+      const scopeWhere: any = { orgId, status: { not: null }, mergedInto: null };
+      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+        scopeWhere.id = { in: cScope.accessibleContactIds };
+      }
 
       const pipeline = await prisma.contact.groupBy({
         by: ['status'],
-        where: { orgId, status: { not: null }, mergedInto: null },
+        where: scopeWhere,
         _count: true,
       });
 
@@ -232,6 +273,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       await Promise.all(
         statuses.map(async (st) => {
           const where: any = { orgId, status: st ?? null, mergedInto: null };
+          if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+            where.id = { in: cScope.accessibleContactIds };
+          }
           const contacts = await prisma.contact.findMany({
             where,
             select: {
@@ -267,10 +311,23 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /api/v1/contacts/:id — detail + friends (per nick) + appointments ──
   // Model B: KH Con = Friend row. Cha aggregate displayStatus/displayLeadScore/
   // displayHasZalo từ friends (xem contact-aggregate-display.ts).
-  app.get('/api/v1/contacts/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/v1/contacts/:id', {
+    // Privacy phase integration: Contact PII (name, phone, avatar) sẽ redact nếu requester
+    // không own bất kỳ main-nick conv nào với contact này. Score/engagement metadata vẫn lộ.
+    config: { contentClass: 'mixed' as const, rbacResource: 'contact' as const, rbacAction: 'access' as const },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
       const { id } = request.params as { id: string };
+
+      // Phase Contact Scope Hybrid 2026-05-27: assert access trước khi load detail
+      const visible = await assertContactVisible({
+        userId: user.id,
+        orgId: user.orgId,
+        legacyRole: user.role,
+        contactId: id,
+      });
+      if (!visible) return reply.status(404).send({ error: 'Contact not found' });
 
       const contact = await prisma.contact.findFirst({
         where: { id, orgId: user.orgId },
@@ -284,8 +341,26 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
 
       if (!contact) return reply.status(404).send({ error: 'Contact not found' });
 
-      const display = computeAggregateDisplay(contact);
-      return { ...contact, ...display };
+      // Per-viewer aggregate + preview: sale chỉ thấy data từ Friend rows visible cho mình.
+      const isAdmin = user.role === 'owner' || user.role === 'admin';
+      const zScope = isAdmin ? null : await getZaloScope(user.id, user.orgId, user.role);
+      const visibleZaloIds: Set<string> | null = zScope ? new Set(zScope.accessibleIds) : null;
+      const visibleFriends = visibleZaloIds
+        ? (contact.friends ?? []).filter((f: any) => visibleZaloIds.has(f.zaloAccountId))
+        : undefined;
+      const display = computeAggregateDisplay(contact, visibleFriends as any);
+      const preview = computeViewerPreview(contact as any, visibleZaloIds);
+      const cScope = await getContactScope(user.id, user.orgId, user.role);
+      const viewerRole = cScope.isOrgAdmin
+        ? 'admin'
+        : (cScope.primaryContactIds.has(contact.id) ? 'primary' : 'collaborator');
+
+      // Phase Riêng Tư 2026-05-22: blur PII nếu contact có friend row thuộc main-nick non-owned (Q4 lock)
+      const { buildPrivacyContext, shouldRedactContactPii, redactContact } = await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
+      const shouldRedact = await shouldRedactContactPii(contact.id, privacyCtx);
+      const merged = { ...contact, ...(preview ?? {}), ...display, viewerRole };
+      return shouldRedact ? redactContact(merged as any, privacyCtx) : merged;
     } catch (err) {
       logger.error('[contacts] Detail error:', err);
       return reply.status(500).send({ error: 'Failed to fetch contact' });
@@ -317,6 +392,35 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           metadata: body.metadata ?? {},
         },
       });
+
+      // Phase Contact Scope Hybrid 2026-05-27: nếu set assignedUserId → primary;
+      // creator user → collaborator (nếu chưa primary).
+      if (contact.assignedUserId) {
+        await prisma.contactAccess.upsert({
+          where: { contactId_userId: { contactId: contact.id, userId: contact.assignedUserId } },
+          update: { role: 'primary' },
+          create: {
+            orgId: user.orgId,
+            contactId: contact.id,
+            userId: contact.assignedUserId,
+            role: 'primary',
+            source: 'auto_from_assignment',
+          },
+        });
+      }
+      if (user.id !== contact.assignedUserId) {
+        await prisma.contactAccess.upsert({
+          where: { contactId_userId: { contactId: contact.id, userId: user.id } },
+          update: {},
+          create: {
+            orgId: user.orgId,
+            contactId: contact.id,
+            userId: user.id,
+            role: contact.assignedUserId ? 'collaborator' : 'primary',
+            source: 'manual',
+          },
+        });
+      }
 
       const org = await prisma.organization.findUnique({
         where: { id: user.orgId },
@@ -364,6 +468,316 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // ── POST /api/v1/contacts/quick-create — Wedge A KH-chặn-Zalo 2026-05-28 ──
+  // Sale add KH no-Zalo nhanh (chỉ Họ tên + SĐT) từ Contacts FAB hoặc Chat FAB.
+  // Behavior:
+  //  - Normalize phone (84xxx canonical) + reject nếu format không hợp lệ
+  //  - Dedup check theo phoneNormalized + phone variants
+  //  - Trùng → return {exists:true, contact:{...meta}} status 200 (FE hiện warning inline)
+  //  - Chưa → create Contact với hasZalo=null, source='quick_add', ContactAccess primary cho creator
+  app.post('/api/v1/contacts/quick-create', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const body = request.body as { fullName?: string; phone?: string; leadSource?: string };
+
+      const fullName = (body.fullName ?? '').trim();
+      const rawPhone = (body.phone ?? '').trim();
+      if (!fullName) return reply.status(400).send({ error: 'fullName required' });
+      if (!rawPhone) return reply.status(400).send({ error: 'phone required' });
+
+      const phoneNormalized = normalizePhone(rawPhone);
+      if (!phoneNormalized) {
+        return reply.status(400).send({ error: 'invalid_phone', message: 'SĐT không hợp lệ' });
+      }
+
+      // Dedup: search theo phoneNormalized exact + phone variants (legacy rows)
+      const phoneVariants = [
+        phoneNormalized,
+        '+' + phoneNormalized,
+        '0' + phoneNormalized.slice(2),
+      ];
+      const existing = await prisma.contact.findFirst({
+        where: {
+          orgId: user.orgId,
+          OR: [
+            { phoneNormalized },
+            { phone: { in: phoneVariants } },
+            { phone2: { in: phoneVariants } },
+            { phone3: { in: phoneVariants } },
+          ],
+        },
+        select: {
+          id: true, fullName: true, crmName: true, phone: true,
+          hasZalo: true, assignedUserId: true,
+          assignedUser: { select: { id: true, fullName: true } },
+        },
+      });
+
+      if (existing) {
+        // M55 2026-05-30: Sale B add trùng SĐT KH của sale A → auto-attach
+        // ContactAccess.collaborator để counter "Cùng chăm" tăng + sale B
+        // thấy KH trong list của mình (không bị ẩn). Idempotent + best-effort.
+        await attachContactCollaboratorByUser({
+          orgId: user.orgId,
+          contactId: existing.id,
+          userId: user.id,
+          source: 'quick_add_duplicate',
+        });
+
+        // M55.2 2026-05-30: lastNoteAt cho dialog warning — sale biết KH đã
+        // được chăm gần nhất bao giờ (chỉ ngày, không nội dung — privacy + compact).
+        const lastNote = await prisma.note.findFirst({
+          where: { orgId: user.orgId, contactId: existing.id },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        });
+
+        return reply.status(200).send({
+          exists: true,
+          contact: {
+            id: existing.id,
+            fullName: existing.crmName || existing.fullName,
+            phone: existing.phone,
+            hasZalo: existing.hasZalo,
+            ownerUserId: existing.assignedUserId,
+            ownerName: existing.assignedUser?.fullName ?? null,
+            lastNoteAt: lastNote?.createdAt?.toISOString() ?? null,
+          },
+        });
+      }
+
+      const leadSource = (body.leadSource ?? 'quick_add').trim() || 'quick_add';
+      const contact = await prisma.contact.create({
+        data: {
+          orgId: user.orgId,
+          fullName,
+          phone: rawPhone,
+          phoneNormalized,
+          source: leadSource,
+          status: 'new',
+          hasZalo: null, // chưa search Zalo
+          assignedUserId: user.id,
+          tags: [],
+          metadata: {},
+        },
+        select: {
+          id: true, fullName: true, crmName: true, phone: true,
+          hasZalo: true, source: true, assignedUserId: true, createdAt: true,
+        },
+      });
+
+      // ContactAccess primary cho sale tạo
+      await prisma.contactAccess.upsert({
+        where: { contactId_userId: { contactId: contact.id, userId: user.id } },
+        update: { role: 'primary' },
+        create: {
+          orgId: user.orgId,
+          contactId: contact.id,
+          userId: user.id,
+          role: 'primary',
+          source: 'quick_add',
+        },
+      });
+
+      // Fire automation trigger (best-effort, không throw)
+      void (async () => {
+        try {
+          const org = await prisma.organization.findUnique({
+            where: { id: user.orgId },
+            select: { id: true, name: true },
+          });
+          await runAutomationRules({
+            trigger: 'contact_created',
+            orgId: user.orgId,
+            org,
+            contact: {
+              id: contact.id,
+              fullName: contact.fullName,
+              phone: contact.phone,
+              status: 'new',
+              source: contact.source,
+              assignedUserId: contact.assignedUserId,
+            },
+          });
+        } catch {
+          // silent
+        }
+      })();
+
+      return reply.status(201).send({ exists: false, contact });
+    } catch (err) {
+      logger.error('[contacts] quick-create error:', err);
+      return reply.status(500).send({ error: 'Failed to create contact' });
+    }
+  });
+
+  // ── POST /api/v1/contacts/:id/virtual-conversation — M53 2026-05-30 ──────
+  // Anh chốt Approach A: KH no-Zalo có conversation ảo trong /chat để sale ghi nhật ký + AI trợ lý.
+  // Idempotent: nếu virtual conv đã tồn tại cho cặp (contact, nick mặc định của sale) thì return luôn.
+  // externalThreadId synthetic: `virtual:{contactId}:{nickId}` để né unique constraint.
+  app.post('/api/v1/contacts/:id/virtual-conversation', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { id: contactId } = request.params as { id: string };
+
+      // 1. Verify contact thuộc org + visible
+      const contact = await prisma.contact.findFirst({
+        where: { id: contactId, orgId: user.orgId },
+        select: { id: true, fullName: true, crmName: true, phone: true, hasZalo: true, assignedUserId: true },
+      });
+      if (!contact) return reply.status(404).send({ error: 'Contact không tồn tại' });
+      await assertContactVisible({
+        userId: user.id,
+        orgId: user.orgId,
+        legacyRole: user.role,
+        contactId,
+      });
+
+      // 2. Pick nick — M55 2026-05-30: ưu tiên nick mình sở hữu, fallback nick org
+      // (sale mới chưa có nick Zalo vẫn mở được virtual chat — vì virtual ko gửi SDK,
+      // chỉ cần 1 zaloAccountId hợp lệ trong org để satisfy schema FK).
+      const scope = await getZaloScope(user.id, user.orgId, user.role);
+      let myNickId: string | null =
+        scope.accessibleIds.find((id) => scope.ownedIds.has(id)) ?? scope.accessibleIds[0] ?? null;
+
+      if (!myNickId) {
+        // Fallback: pick bất kỳ ZaloAccount nào trong org (virtual chat ko cần nick thật)
+        const anyNick = await prisma.zaloAccount.findFirst({
+          where: { orgId: user.orgId },
+          select: { id: true },
+        });
+        myNickId = anyNick?.id ?? null;
+      }
+
+      if (!myNickId) {
+        return reply.status(400).send({
+          error: 'no_nick',
+          message: 'Tổ chức chưa có nick Zalo nào. Vui lòng kết nối ít nhất 1 nick để dùng chat nội bộ.',
+        });
+      }
+
+      // 3. Idempotent: tìm virtual conv đã có cho cặp (contact, nick) chưa
+      const externalThreadId = `virtual:${contactId}:${myNickId}`;
+      const existing = await prisma.conversation.findFirst({
+        where: {
+          orgId: user.orgId,
+          contactId,
+          zaloAccountId: myNickId,
+          isVirtual: true,
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        // M55: idempotent — sale touch virtual conv → attach collaborator
+        await attachContactCollaboratorByUser({
+          orgId: user.orgId,
+          contactId,
+          userId: user.id,
+          source: 'virtual_chat_open',
+        });
+        // M55.3 2026-05-30: trigger AI dup-alert message nếu chưa từng gửi (idempotent)
+        void sendDuplicateAlertMessage(existing.id, contactId, user.orgId, contact, myNickId, (app as any).io);
+        return reply.status(200).send({ conversationId: existing.id, created: false });
+      }
+
+      // 4. Create virtual conv mới
+      const created = await prisma.conversation.create({
+        data: {
+          orgId: user.orgId,
+          zaloAccountId: myNickId,
+          contactId,
+          threadType: 'user',
+          externalThreadId,
+          isVirtual: true,
+          lastMessageAt: new Date(),
+          tab: 'main',
+        },
+        select: { id: true },
+      });
+
+      // M55 2026-05-30: Sale vừa mở virtual chat → auto-attach collaborator.
+      // Đảm bảo counter "Cùng chăm" tự tăng, KH hiện trong list của sale.
+      await attachContactCollaboratorByUser({
+        orgId: user.orgId,
+        contactId,
+        userId: user.id,
+        source: 'virtual_chat_open',
+      });
+
+      // 5. M53.1 2026-05-30: Welcome AI message lần đầu — hardcode (KHÔNG gọi Gemini)
+      // Anh chốt: khi sale tạo KH mới chưa có Zalo, AI Trợ Lý chào ngay + hướng dẫn
+      // sale chat vào để lưu thông tin bổ sung. Không tốn token Gemini.
+      const khName = contact.crmName || contact.fullName || 'KH';
+      const khPhone = contact.phone || 'chưa có SĐT';
+      const welcomeContent =
+        `Chào anh/chị! Em vừa tạo khách hàng **${khName}** (SĐT ${khPhone}) — KH này chưa có Zalo công khai.\n\n` +
+        `Anh/chị có thể chat vào đây để ghi nhật ký chăm sóc + bổ sung thông tin KH. ` +
+        `Mỗi tin anh/chị gõ, em sẽ tự động gợi ý câu hỏi khai thác và đề xuất cập nhật thông tin lên hệ thống.\n\n` +
+        `Để bắt đầu, anh/chị thử gõ vài thông tin đã biết về KH ${khName} (vd: tuổi, nghề nghiệp, khu vực muốn mua, ngân sách...) để em hỗ trợ nhé!`;
+
+      const welcomeLocalId = `local:${randomUUID()}`;
+      const welcomeMessage = await prisma.message.create({
+        data: {
+          id: randomUUID(),
+          conversationId: created.id,
+          zaloMsgId: welcomeLocalId,
+          zaloMsgIdNum: null,
+          senderType: 'ai_assistant',
+          senderUid: 'ai:virtual-chat',
+          senderName: 'Trợ lý',
+          content: welcomeContent,
+          contentType: 'text',
+          sentAt: new Date(),
+          isLocal: true,
+          sentVia: 'system',
+        },
+      });
+
+      // Update conversation lastMessageAt + preview
+      await prisma.conversation.update({
+        where: { id: created.id },
+        data: { lastMessageAt: new Date() },
+      });
+
+      // Emit socket cho realtime (nếu sale đang mở /chat)
+      const io = (app as any).io as Server | undefined;
+      io?.emit('chat:message', {
+        accountId: myNickId,
+        message: { ...welcomeMessage, zaloMsgIdNum: null as string | null },
+        conversationId: created.id,
+        _virtual: true,
+        _aiAssistant: true,
+        _welcome: true,
+      });
+
+      // M55.3 2026-05-30: AI message #2 — Cảnh báo KH duplicate sau welcome 2.5s.
+      // Detect duplicate: collaborator count > 1 HOẶC có note cũ. Fire-and-forget.
+      void sendDuplicateAlertMessage(created.id, contactId, user.orgId, contact, myNickId, io);
+
+      // 6. Audit log (fire-and-forget)
+      logActivity({
+        orgId: user.orgId,
+        userId: user.id,
+        category: 'system',
+        action: 'virtual_conversation_created',
+        entityType: 'contact',
+        entityId: contactId,
+        details: {
+          conversationId: created.id,
+          nickId: myNickId,
+          contactHasZalo: contact.hasZalo,
+          welcomeMessageId: welcomeMessage.id,
+        },
+      });
+
+      return reply.status(201).send({ conversationId: created.id, created: true });
+    } catch (err) {
+      logger.error('[contacts] virtual-conversation error:', err);
+      return reply.status(500).send({ error: 'Failed to create virtual conversation' });
+    }
+  });
+
   // ── PUT /api/v1/contacts/:id — update CRM fields ─────────────────────────
   app.put('/api/v1/contacts/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -374,12 +788,57 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const existing = await prisma.contact.findFirst({
         where: { id, orgId: user.orgId },
         select: {
-          id: true, status: true, fullName: true, phone: true, source: true,
+          id: true, status: true, statusId: true, fullName: true, phone: true, source: true,
           assignedUserId: true, crmName: true, email: true, gender: true,
           birthDate: true, leadScore: true, addressLine: true, occupation: true,
         },
       });
       if (!existing) return reply.status(404).send({ error: 'Contact not found' });
+
+      // M55 2026-05-30: Gate edit theo ContactAccess (RBAC hole trước đây — ai
+      // trong org cũng PUT được). Bây giờ chỉ owner/admin + primary/collaborator
+      // mới sửa được. Sale khác → 403 "KH không thuộc danh sách chăm của bạn".
+      try {
+        await assertContactEditable({
+          userId: user.id,
+          orgId: user.orgId,
+          legacyRole: user.role,
+          contactId: id,
+        });
+      } catch (permErr: any) {
+        const code = permErr?.statusCode ?? 403;
+        return reply.status(code).send({
+          error: permErr?.code || 'CONTACT_EDIT_FORBIDDEN',
+          message: permErr?.message || 'Không có quyền sửa KH này',
+        });
+      }
+
+      // ── Ngày 1 open issue: PUT contacts accept statusId ─────────────────────
+      // body.statusId truyền string / null / undefined.
+      //   undefined → KHÔNG đụng statusId (giữ nguyên DB).
+      //   null      → clear statusId (đặt về null) — workflow "tháo trạng thái".
+      //   string    → verify Status row exists trong cùng orgId trước khi update.
+      let statusIdPatch: string | null | undefined;
+      if (body.statusId !== undefined) {
+        if (body.statusId === null) {
+          statusIdPatch = null;
+        } else if (typeof body.statusId === 'string' && body.statusId.trim()) {
+          const trimmed = body.statusId.trim();
+          const statusRow = await prisma.status.findFirst({
+            where: { id: trimmed, orgId: user.orgId },
+            select: { id: true },
+          });
+          if (!statusRow) {
+            return reply.status(400).send({
+              error: 'status_not_found',
+              hint: 'statusId không thuộc org hoặc không tồn tại',
+            });
+          }
+          statusIdPatch = trimmed;
+        } else {
+          return reply.status(400).send({ error: 'statusId_invalid' });
+        }
+      }
 
       const updateData: any = {
         fullName: body.fullName,
@@ -396,6 +855,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         tags: body.tags,
         metadata: body.metadata,
       };
+      if (statusIdPatch !== undefined) {
+        updateData.statusId = statusIdPatch;
+      }
       if (body.firstContactDate !== undefined) {
         updateData.firstContactDate = body.firstContactDate ? new Date(body.firstContactDate) : null;
       }
@@ -430,6 +892,31 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // Ngày 1 fix: trigger automation rule cho contact_status_changed khi statusId (dynamic) đổi.
+      // Legacy `status` enum đã fire 'status_changed' ở trên — đây là trigger MỚI cho Status table.
+      if (existing.statusId !== updated.statusId) {
+        const org = await prisma.organization.findUnique({
+          where: { id: user.orgId },
+          select: { id: true, name: true },
+        });
+        void runAutomationRules({
+          trigger: 'contact_status_changed',
+          orgId: user.orgId,
+          org,
+          contact: {
+            id: updated.id,
+            fullName: updated.fullName,
+            phone: updated.phone,
+            status: updated.status,
+            source: updated.source,
+            assignedUserId: updated.assignedUserId,
+            // Truyền statusId mới + cũ để rule filter
+            statusId: updated.statusId,
+            previousStatusId: existing.statusId,
+          } as any,
+        });
+      }
+
       // ── ACTIVITY LOG — diff với existing để log đúng action types ─────────
       // Tách action-specific logs (status, score) vs bulk customer_update.
       // Status change ưu tiên (workflow critical), score change track delta.
@@ -441,6 +928,18 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           entityType: 'contact',
           entityId: updated.id,
           details: { old: existing.status, new: updated.status },
+        });
+      }
+      // Ngày 1 fix: log status_id diff song song với legacy status enum.
+      // Khi sale đổi trạng thái dynamic (Status table) → activity feed phải show.
+      if (existing.statusId !== updated.statusId) {
+        logActivity({
+          orgId: user.orgId,
+          userId: user.id,
+          action: 'status_change',
+          entityType: 'contact',
+          entityId: updated.id,
+          details: { oldStatusId: existing.statusId, newStatusId: updated.statusId },
         });
       }
       if (existing.leadScore !== updated.leadScore) {
@@ -484,6 +983,35 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             leadScore: updated.leadScore,
           },
         });
+
+        // M55 2026-05-30: Emit socket cho collaborator để FE toast "Sale X
+        // vừa sửa SDT KH Y lúc HH:mm" — đồng bộ realtime giữa các sale cùng chăm.
+        const io = (app as any).io as Server | undefined;
+        if (io) {
+          // Lấy tên sale + list collaborator userIds
+          const [actor, accesses] = await Promise.all([
+            prisma.user.findUnique({
+              where: { id: user.id },
+              select: { fullName: true, email: true },
+            }),
+            prisma.contactAccess.findMany({
+              where: { contactId: updated.id, orgId: user.orgId },
+              select: { userId: true },
+            }),
+          ]);
+          io.emit('contact:updated', {
+            contactId: updated.id,
+            contactName: updated.crmName || updated.fullName,
+            changedBy: {
+              userId: user.id,
+              fullName: actor?.fullName || actor?.email || 'Sale',
+            },
+            changedFields: Object.keys(infoDiff),
+            changes: infoDiff,
+            notifyUserIds: accesses.map((a) => a.userId).filter((uid) => uid !== user.id),
+            at: new Date().toISOString(),
+          });
+        }
       }
 
       return updated;
@@ -510,12 +1038,65 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const existing = await prisma.contact.findFirst({ where: { id, orgId: user.orgId }, select: { id: true, tags: true } });
       if (!existing) return reply.status(404).send({ error: 'Contact not found' });
 
+      // M55 2026-05-30: Gate edit theo ContactAccess (cùng pattern PUT /contacts/:id)
+      try {
+        await assertContactEditable({
+          userId: user.id,
+          orgId: user.orgId,
+          legacyRole: user.role,
+          contactId: id,
+        });
+      } catch (permErr: any) {
+        const code = permErr?.statusCode ?? 403;
+        return reply.status(code).send({
+          error: permErr?.code || 'CONTACT_EDIT_FORBIDDEN',
+          message: permErr?.message || 'Không có quyền sửa tags KH này',
+        });
+      }
+
       const oldTags = Array.isArray(existing.tags) ? (existing.tags as string[]) : [];
-      const updated = await prisma.contact.update({ where: { id }, data: { tags: filteredTags } });
+
+      // Wave 3 M57 /plan-eng-review: route qua tag-service để dual-write junction + legacy.
+      // Diff old vs new → call addCrmTag/removeCrmTag để mỗi op atomic transaction.
+      const { addCrmTag, removeCrmTag } = await import('../tags/tag-service.js');
+      const added = filteredTags.filter((t) => !oldTags.includes(t));
+      const removed = oldTags.filter((t) => !filteredTags.includes(t));
+
+      for (const tagName of added) {
+        try {
+          await addCrmTag({
+            contactId: id,
+            tagName,
+            source: 'manual_crm',
+            addedBy: user.id,
+            autoCreate: true,
+          });
+        } catch (err) {
+          logger.warn('[PUT /contacts/:id/tags] addCrmTag fail %s: %s', tagName, (err as Error).message);
+        }
+      }
+      for (const tagName of removed) {
+        try {
+          // Lookup Tag.id qua slug
+          const { slugifyTag } = await import('../../shared/tag-slug.js');
+          const slug = slugifyTag(tagName);
+          const tag = await prisma.tag.findFirst({
+            where: { orgId: user.orgId, scope: 'crm', slug, zaloAccountId: null },
+          });
+          if (tag) {
+            await removeCrmTag({ contactId: id, tagId: tag.id, removedBy: user.id });
+          }
+        } catch (err) {
+          logger.warn('[PUT /contacts/:id/tags] removeCrmTag fail %s: %s', tagName, (err as Error).message);
+        }
+      }
+
+      // dual-write đã ghi Contact.tags qua service, đọc lại để return latest
+      const updated = await prisma.contact.findUnique({ where: { id } });
+      if (!updated) return reply.status(404).send({ error: 'Contact not found after update' });
 
       // ── ACTIVITY LOG — diff tags added/removed (so với filteredTags vì đó là DB state mới)
-      const added = filteredTags.filter(t => !oldTags.includes(t));
-      const removed = oldTags.filter(t => !filteredTags.includes(t));
+      // (added/removed đã compute ở trên cho dual-write)
       for (const t of added) {
         logActivity({
           orgId: user.orgId,
@@ -551,7 +1132,14 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── DELETE /api/v1/contacts/:id ───────────────────────────────────────────
-  app.delete('/api/v1/contacts/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+  // RBAC Phase Phân Quyền 2026-05-21: require contact.delete grant
+  app.delete('/api/v1/contacts/:id', {
+    preHandler: async (request, reply) => {
+      const { requireGrant } = await import('../rbac/rbac-middleware.js');
+      return requireGrant('contact', 'delete')(request, reply);
+    },
+    config: { contentClass: 'mixed', rbacResource: 'contact', rbacAction: 'delete' },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
       const { id } = request.params as { id: string };
@@ -939,7 +1527,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           contactId: friend.contactId,
           threadType: 'user',
           externalThreadId: friend.zaloUidInNick,
-          lastMessageAt: new Date(),
+          // 2026-05-28: NULL cho conv vừa tạo từ ensure-conversation (Lead Pool /
+          // Friend click "Bắt đầu chat") — KHÔNG set new Date() vì conv chưa có
+          // message thật → bug pin-top vĩnh viễn nếu set timestamp.
+          lastMessageAt: null,
           unreadCount: 0,
           isReplied: false,
         },
@@ -989,7 +1580,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           contactId: null,
           threadType: 'group',
           externalThreadId: groupId,
-          lastMessageAt: new Date(),
+          // 2026-05-28: NULL cho conv vừa tạo từ ensure-conversation (Lead Pool /
+          // Friend click "Bắt đầu chat") — KHÔNG set new Date() vì conv chưa có
+          // message thật → bug pin-top vĩnh viễn nếu set timestamp.
+          lastMessageAt: null,
           unreadCount: 0,
           isReplied: false,
         },
@@ -1226,7 +1820,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           contactId: linkedContactId,
           threadType: 'user',
           externalThreadId: body.uid,
-          lastMessageAt: new Date(),
+          // 2026-05-28: NULL cho conv vừa tạo từ ensure-conversation (Lead Pool /
+          // Friend click "Bắt đầu chat") — KHÔNG set new Date() vì conv chưa có
+          // message thật → bug pin-top vĩnh viễn nếu set timestamp.
+          lastMessageAt: null,
           unreadCount: 0,
           isReplied: false,
         },
@@ -1600,4 +2197,105 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ error: 'Backfill failed', detail: String(err) });
     }
   });
+}
+
+// M55.3 2026-05-30 — AI dup-alert message #2 cho virtual chat.
+// Trigger sau welcome ~2.5s khi KH đã có sale chăm (collaborator >= 2) hoặc có note cũ.
+// Idempotent: chỉ gửi 1 lần / conv (guard bằng count AI message senderUid='ai:virtual-chat').
+// Hardcode content tiếng Việt, KHÔNG gọi Gemini (tiết kiệm token).
+async function sendDuplicateAlertMessage(
+  conversationId: string,
+  contactId: string,
+  orgId: string,
+  contact: { fullName: string | null; crmName: string | null; phone: string | null; assignedUserId: string | null },
+  myNickId: string,
+  io: Server | undefined,
+): Promise<void> {
+  try {
+    // Detect duplicate
+    const [collabCount, lastNote, primarySale] = await Promise.all([
+      prisma.contactAccess.count({
+        where: { contactId, role: { in: ['primary', 'collaborator'] } },
+      }),
+      prisma.note.findFirst({
+        where: { orgId, contactId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          body: true,
+          createdAt: true,
+          author: { select: { fullName: true, email: true } },
+        },
+      }),
+      contact.assignedUserId
+        ? prisma.user.findUnique({
+            where: { id: contact.assignedUserId },
+            select: { fullName: true, email: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const isDuplicate = collabCount > 1 || !!lastNote;
+    if (!isDuplicate) return;
+
+    // Guard idempotent: chỉ gửi 1 dup-alert / conv
+    const alertCount = await prisma.message.count({
+      where: {
+        conversationId,
+        senderUid: 'ai:virtual-chat',
+        // Hash key: dup-alert có prefix "📌 **Lưu ý:**" trong content
+        content: { startsWith: '📌 **Lưu ý:**' },
+      },
+    });
+    if (alertCount > 0) return;
+
+    const khName = contact.crmName || contact.fullName || 'KH';
+    const saleName = primarySale?.fullName || primarySale?.email || 'sale khác';
+    const noteSnippet = lastNote
+      ? `📝 Note gần nhất từ **${lastNote.author?.fullName || lastNote.author?.email || '—'}** (${new Date(lastNote.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' })}):\n> "${(lastNote.body || '').slice(0, 120)}${(lastNote.body || '').length > 120 ? '…' : ''}"`
+      : 'Chưa có note nào.';
+
+    const dupContent =
+      `📌 **Lưu ý:** KH **${khName}** đã có trong hệ thống — sale **${saleName}** đang phụ trách chính.\n\n` +
+      `Tổng ${collabCount} sale đang/đã chăm KH này.\n\n` +
+      `${noteSnippet}\n\n` +
+      `Anh/chị check kỹ trước khi tư vấn để tránh trùng/đụng nhau nhé!`;
+
+    // Delay 2.5s rồi insert + emit
+    setTimeout(async () => {
+      try {
+        const dupMsg = await prisma.message.create({
+          data: {
+            id: randomUUID(),
+            conversationId,
+            zaloMsgId: `local:${randomUUID()}`,
+            zaloMsgIdNum: null,
+            senderType: 'ai_assistant',
+            senderUid: 'ai:virtual-chat',
+            senderName: 'Trợ lý',
+            content: dupContent,
+            contentType: 'text',
+            sentAt: new Date(),
+            isLocal: true,
+            sentVia: 'system',
+          },
+        });
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: { lastMessageAt: new Date() },
+        });
+        io?.emit('chat:message', {
+          accountId: myNickId,
+          message: { ...dupMsg, zaloMsgIdNum: null as string | null },
+          conversationId,
+          _virtual: true,
+          _aiAssistant: true,
+          _dupAlert: true,
+        });
+      } catch (err) {
+        logger.warn(`[virtual-conv] dup-alert send failed: ${String(err)}`);
+      }
+    }, 2500);
+  } catch (err) {
+    logger.warn(`[virtual-conv] dup-alert detect failed: ${String(err)}`);
+  }
 }

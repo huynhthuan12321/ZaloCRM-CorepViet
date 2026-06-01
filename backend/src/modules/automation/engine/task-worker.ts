@@ -27,6 +27,8 @@ import {
   checkCrossNickRecency,
   checkBlockArchived,
   checkRuleEnabled,
+  checkFrequencyCapPerContact,
+  extractFrequencyCap,
 } from './gate-evaluator.js';
 import { dispatchAction } from './action-dispatcher.js';
 import { pickNickForTask } from './nick-selector.js';
@@ -136,12 +138,13 @@ async function processTask(taskId: string): Promise<void> {
       campaign: {
         select: {
           id: true, state: true, sequenceId: true,
+          triggerId: true, // SECONDARY FIX 2026-05-29 — used to load nick whitelist
           rulesSnapshot: true,
           sequence: { select: { id: true, enabled: true, steps: true } },
         },
       },
       contact: { select: { id: true, acceptedNicksCount: true, lastInboundAt: true, lastOutboundAt: true } },
-      block: { select: { id: true, archivedAt: true, actionType: true } },
+      block: { select: { id: true, archivedAt: true, actionType: true, content: true } },
     },
   });
   if (!task || !task.campaign || !task.block) {
@@ -190,6 +193,28 @@ async function processTask(taskId: string): Promise<void> {
     }
   }
 
+  // 4.5. Wave 1 #3.1 — Frequency cap per KH on Khối
+  //      Check trước nick assignment vì cap là per-contact-per-block, không phụ thuộc nick.
+  //      Cap config trong block.content.frequencyCapPerContact: { max, windowDays }.
+  const freqCap = extractFrequencyCap(task.block.content);
+  if (freqCap) {
+    const windowStart = new Date(now.getTime() - freqCap.windowDays * 24 * 60 * 60 * 1000);
+    const doneCount = await prisma.automationTask.count({
+      where: {
+        contactId: task.contact.id,
+        currentBlockId: task.block.id,
+        state: TASK_STATES.DONE,
+        executedAt: { gte: windowStart },
+        id: { not: taskId }, // không đếm chính task này
+      },
+    });
+    const freqCheck = checkFrequencyCapPerContact(doneCount, freqCap);
+    if (!freqCheck.passed) {
+      await markSkipped(taskId, freqCheck.failedGate!, freqCheck.detail);
+      return;
+    }
+  }
+
   // 5. Cross-nick recency — query latest activity from OTHER nicks for this contact
   if ((rules.crossNickRecencyDays ?? 0) > 0) {
     // Use Contact.lastInboundAt as a proxy for "any nick had recent activity".
@@ -209,16 +234,56 @@ async function processTask(taskId: string): Promise<void> {
   //      - send_message: must find existing Friend (accepted/pending)
   //      - request_friend: round-robin across connected nicks, dedup attempts, cap-aware
   let assignedNickId = task.assignedNickId;
+  // SECONDARY FIX 2026-05-29 — load trigger.segmentSpec.nickIds whitelist
+  // for friend_invite_to_list triggers so selector can't pick outside the
+  // configured nick set. Other trigger types pass null (no filter).
+  // Hoisted above the nick-pick branch so the disconnect/disallow guard
+  // below can reuse it when re-picking a pinned nick that went stale.
+  let allowedNickIds: string[] | null = null;
+  if ((actionType === 'request_friend' || actionType === 'send_message') && task.campaign.triggerId) {
+    const trigger = await prisma.automationTrigger.findUnique({
+      where: { id: task.campaign.triggerId },
+      select: { eventType: true, segmentSpec: true },
+    });
+    if (trigger?.eventType === 'friend_invite_to_list') {
+      const spec = trigger.segmentSpec as { nickIds?: string[] } | null;
+      if (spec?.nickIds && Array.isArray(spec.nickIds) && spec.nickIds.length > 0) {
+        allowedNickIds = spec.nickIds;
+      }
+    }
+  }
+
+  // 2026-05-29 disconnect/disallow guard — if task has a pinned nick, verify
+  // it's still connected AND still in the whitelist. Otherwise clear pin and
+  // fall through to pickNickForTask so a healthy nick can pick up the task.
+  if (assignedNickId && (actionType === 'request_friend' || actionType === 'send_message')) {
+    const pinnedNick = await prisma.zaloAccount.findFirst({
+      where: { id: assignedNickId, orgId: task.orgId },
+      select: { status: true },
+    });
+    if (!pinnedNick || pinnedNick.status !== 'connected' || (allowedNickIds && !allowedNickIds.includes(assignedNickId))) {
+      logger.warn(`[task-worker] task ${taskId} pinned nick disconnected/disallowed — re-picking`);
+      await prisma.automationTask.update({
+        where: { id: task.id },
+        data: { assignedNickId: null },
+      });
+      assignedNickId = null;
+    }
+  }
+
   if (!assignedNickId && (actionType === 'request_friend' || actionType === 'send_message')) {
     const pick = await pickNickForTask({
       orgId: task.orgId,
       contactId: task.contact.id,
       actionType,
+      allowedNickIds,
     });
     if (!pick) {
       const reason = actionType === 'send_message'
         ? 'no_friend_nick'
-        : 'all_nicks_capped_or_attempted';
+        : allowedNickIds
+          ? 'nick_not_in_whitelist'
+          : 'all_nicks_capped_or_attempted';
       await markSkipped(taskId, reason, 'pickNickForTask returned null');
       return;
     }
@@ -279,6 +344,9 @@ async function processTask(taskId: string): Promise<void> {
     blockSnapshot: task.blockSnapshot as Record<string, unknown>,
     actionType,
     attemptCount: task.attemptCount,
+    // Phase Friend Invite 2026-05-28 — pass campaign rulesSnapshot to handlers
+    // for handler-level overrides (vd: allowStrangerMessage bypass FRIENDSHIP check).
+    rulesSnapshot: task.campaign.rulesSnapshot as Record<string, unknown> | undefined,
   };
 
   const result = await dispatchAction(ctx);
@@ -386,6 +454,61 @@ async function markDoneAndAdvance(
     });
   }
 
+  // ── Phase Friend Invite 2026-05-28 — Post-execute successor sequence hook ──
+  // When request_friend task succeeds AND parent trigger has successorSequenceId,
+  // INSERT FriendRequestOutbox row (atomic with task DONE state) for drainer.
+  // Drainer cron picks outbox WHERE sendStatus='success' AND sequenceMaterializedAt IS NULL
+  // → calls materializeSequenceForContact() → updates sequenceMaterializedAt.
+  if (
+    actionType === 'request_friend' &&
+    nickId &&
+    outcomeData &&
+    typeof outcomeData === 'object' &&
+    'ok' in outcomeData &&
+    (outcomeData as Record<string, unknown>).ok === true
+  ) {
+    try {
+      const campaign = await prisma.automationCampaign.findUnique({
+        where: { id: task.campaignId },
+        select: { triggerId: true },
+      });
+      if (campaign?.triggerId) {
+        const trigger = await prisma.automationTrigger.findUnique({
+          where: { id: campaign.triggerId },
+          select: { successorSequenceId: true, eventType: true },
+        });
+        if (trigger?.successorSequenceId && trigger.eventType === 'friend_invite_to_list') {
+          const sequence = await prisma.automationSequence.findUnique({
+            where: { id: trigger.successorSequenceId },
+            select: { steps: true, runtimeRules: true },
+          });
+          await prisma.friendRequestOutbox.create({
+            data: {
+              id: randomUUID(),
+              customerListEntryId: task.id, // reuse task id as outbox dedup key
+              triggerId: campaign.triggerId,
+              nickId,
+              contactId: task.contactId,
+              successorSequenceId: trigger.successorSequenceId,
+              sequenceVersionSnapshot: sequence?.steps ?? undefined,
+              sendStatus: 'success',
+            },
+          });
+          logger.info(
+            `[task-worker] friend-invite outbox row created for task=${task.id} contact=${task.contactId} → drainer will materialize sequence ${trigger.successorSequenceId}`,
+          );
+        }
+      }
+    } catch (err) {
+      // Outbox row creation failure must NOT block task DONE state.
+      // Log error; admin can manual replay via outbox UI.
+      logger.error(
+        `[task-worker] friend-invite outbox insert failed for task=${task.id}:`,
+        err,
+      );
+    }
+  }
+
   // Sequence advance — schedule next step if any
   const steps = Array.isArray(task.campaign.sequence?.steps)
     ? (task.campaign.sequence!.steps as unknown as SequenceStep[])
@@ -425,6 +548,11 @@ async function markDoneAndAdvance(
   const jitter = jitterMin + Math.random() * Math.max(0, jitterMax - jitterMin);
   const scheduledAt = new Date(now.getTime() + nextStep.delayMinutes * 60 * 1000 + jitter);
 
+  // PRIMARY FIX 2026-05-29 — Nick continuity across sequence steps.
+  // Pin assignedNickId to the nick that just executed step (currentStepIdx) so
+  // step N+1 reuses the SAME nick. Previously omitted → worker re-ran
+  // pickNickForTask at next execution, which could pick a different nick for
+  // the same KH. Mirrors materializeSequenceForContact() carry-over pattern.
   await prisma.automationTask.create({
     data: {
       id: randomUUID(),
@@ -435,6 +563,7 @@ async function markDoneAndAdvance(
       currentStepIdx: nextIdx,
       currentBlockId: block.id,
       blockSnapshot: block.content as object,
+      assignedNickId: nickId, // inherit nick from previous step (pin once at step 1)
       scheduledAt,
       state: TASK_STATES.QUEUED,
     },

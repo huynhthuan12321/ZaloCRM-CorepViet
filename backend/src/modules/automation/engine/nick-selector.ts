@@ -26,8 +26,20 @@ export async function pickNickForTask(args: {
   orgId: string;
   contactId: string;
   actionType: BlockActionType;
+  /**
+   * SECONDARY FIX 2026-05-29 — whitelist of nick ids allowed for this trigger.
+   * Sourced from trigger.segmentSpec.nickIds (friend_invite_to_list only).
+   * When provided + non-empty, selector filters pool by these ids; if no
+   * candidate survives, returns null (worker marks task skipped with
+   * 'nick_not_in_whitelist'). When undefined/empty array, no filter applied.
+   */
+  allowedNickIds?: string[] | null;
 }): Promise<NickSelection | null> {
   const { orgId, contactId, actionType } = args;
+  const allowedNickIds =
+    args.allowedNickIds && args.allowedNickIds.length > 0
+      ? new Set(args.allowedNickIds)
+      : null;
 
   // ── send_message: prefer accepted friend; fallback to pending_sent ONLY if conversation exists ─
   // FIX A5: previously returned pending_sent/pending_received nicks blindly,
@@ -47,10 +59,13 @@ export async function pickNickForTask(args: {
       select: { zaloAccountId: true, friendshipStatus: true, lastInboundAt: true },
       orderBy: [{ lastInboundAt: 'desc' }],
     });
-    if (friends.length === 0) return null;
-    const accepted = friends.find((f) => f.friendshipStatus === 'accepted');
+    const filteredFriends = allowedNickIds
+      ? friends.filter((f) => allowedNickIds.has(f.zaloAccountId))
+      : friends;
+    if (filteredFriends.length === 0) return null;
+    const accepted = filteredFriends.find((f) => f.friendshipStatus === 'accepted');
     if (accepted) return { nickId: accepted.zaloAccountId, reason: 'existing_friend' };
-    return { nickId: friends[0].zaloAccountId, reason: 'existing_friend' };
+    return { nickId: filteredFriends[0].zaloAccountId, reason: 'existing_friend' };
   }
 
   // ── request_friend: pick any connected nick not already attempted ──────
@@ -63,12 +78,25 @@ export async function pickNickForTask(args: {
     const excludedNickIds = new Set(priorAttempts.map((a) => a.zaloAccountId));
 
     // Get connected nicks ordered by last activity (round-robin: oldest first
-    // so load spreads across nicks instead of hammering one)
+    // so load spreads across nicks instead of hammering one).
+    // SECONDARY FIX 2026-05-29 — enforce trigger.segmentSpec.nickIds whitelist
+    // here so trigger-config "chỉ dùng nick X,Y" is honored at selection time.
+    const nickWhere: Record<string, unknown> = {
+      orgId,
+      status: 'connected',
+      id: { notIn: Array.from(excludedNickIds) },
+    };
+    if (allowedNickIds) {
+      nickWhere.id = {
+        notIn: Array.from(excludedNickIds),
+        in: Array.from(allowedNickIds),
+      };
+    }
     const nicks = await prisma.zaloAccount.findMany({
-      where: {
-        orgId,
-        status: 'connected',
-        id: { notIn: Array.from(excludedNickIds) },
+      where: nickWhere as {
+        orgId: string;
+        status: string;
+        id: { notIn: string[]; in?: string[] };
       },
       select: {
         id: true,

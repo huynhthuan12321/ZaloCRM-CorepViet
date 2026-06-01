@@ -88,15 +88,28 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
   // friends; cold-message via 'none' should use request_friend action instead.
   // Exception: 'pending_sent' with hasConversation=true (KH đã reply qua stranger
   // window) — Zalo allows that path. Worker check below.
+  //
+  // Phase Friend Invite 2026-05-28 — `allowStrangerMessage` flag in rulesSnapshot
+  // bypass FRIENDSHIP_NOT_ACCEPTED check cho friend-invite sequences (KH reject vẫn
+  // bám đuổi vào tin nhắn lạ). Anh chốt SKIP safeguard, cap 300 tin lạ/nick/ngày.
+  const allowStranger =
+    (ctx.rulesSnapshot as { allowStrangerMessage?: boolean } | undefined)?.allowStrangerMessage ===
+    true;
+
   if (friend.friendshipStatus !== 'accepted') {
-    if (friend.friendshipStatus === 'pending_sent' && friend.hasConversation) {
+    if (allowStranger) {
+      logger.info(
+        `[send-message] stranger mode: friend.status='${friend.friendshipStatus}' allowed by sequence rules for contact=${ctx.contactId}`,
+      );
+      // proceed — tin sẽ vào "Tin nhắn từ người lạ" của KH
+    } else if (friend.friendshipStatus === 'pending_sent' && friend.hasConversation) {
       // Allow: KH replied while friend req pending — Zalo allows continued chat
       logger.info(`[send-message] proceeding with pending_sent + hasConversation for contact=${ctx.contactId}`);
     } else {
       return {
         outcome: 'failure',
         errorCode: 'FRIENDSHIP_NOT_ACCEPTED',
-        errorMessage: `Friend status '${friend.friendshipStatus}' không cho phép gửi tin (cần 'accepted')`,
+        errorMessage: `Friend status '${friend.friendshipStatus}' không cho phép gửi tin (cần 'accepted' hoặc bật allowStrangerMessage)`,
         retryable: false,
       };
     }
@@ -104,6 +117,10 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
 
   const threadId = friend.zaloUidInNick;
   const threadType = 0; // 0 = user, 1 = group (only user supported)
+
+  // Step 1.5: Render template variables {gender} {name} {sale}
+  // (chuẩn anh chốt 2026-05-28: gender từ Zalo profile, name=last word KH, sale=last word user.fullName)
+  const renderedText = await renderTemplate(text, ctx.contactId, ctx.assignedNickId);
 
   // Step 2: get-or-create Conversation
   let conversation = await prisma.conversation.findUnique({
@@ -132,7 +149,7 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
     if (attachments.length > 0) {
       const first = attachments[0];
       const url = first.url;
-      const caption = first.caption || text;
+      const caption = first.caption || renderedText;
       let raw: unknown;
       if (first.kind === 'image') {
         // zaloOps.sendImage expects attachment object array
@@ -155,11 +172,11 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
         raw = await zaloOps.sendLink(ctx.assignedNickId, threadId, threadType, { href: url, title: caption, desc: text });
       } else {
         // Unknown kind: fall back to text-only with URL appended
-        raw = await zaloOps.sendMessage(ctx.assignedNickId, threadId, threadType, { msg: `${text}\n${url}` });
+        raw = await zaloOps.sendMessage(ctx.assignedNickId, threadId, threadType, { msg: `${renderedText}\n${url}` });
       }
       sdkResult = (raw as Record<string, unknown>) || {};
     } else {
-      const raw = await zaloOps.sendMessage(ctx.assignedNickId, threadId, threadType, { msg: text });
+      const raw = await zaloOps.sendMessage(ctx.assignedNickId, threadId, threadType, { msg: renderedText });
       sdkResult = (raw as Record<string, unknown>) || {};
     }
   } catch (err: any) {
@@ -194,8 +211,8 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
        : 'text')
     : 'text';
   const persistContent = attachments.length > 0
-    ? JSON.stringify({ text, attachments })
-    : text;
+    ? JSON.stringify({ text: renderedText, attachments })
+    : renderedText;
 
   let messageRow: { id: string; content: string | null; contentType: string; sentAt: Date };
   try {
@@ -204,12 +221,15 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
         id: randomUUID(),
         conversationId: conversation.id,
         zaloMsgId: zaloMsgId || null,
+        zaloMsgIdNum: zaloMsgId && /^\d+$/.test(zaloMsgId) ? BigInt(zaloMsgId) : null,
         senderType: 'self',
         senderUid: '',
         senderName: 'Bot-Auto',
         content: persistContent,
         contentType: persistContentType,
         sentAt: new Date(),
+        // Phase metrics 2026-05-22: bot gửi
+        sentVia: 'automation',
       },
       select: { id: true, content: true, contentType: true, sentAt: true },
     });
@@ -220,6 +240,22 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
       outcome: 'success',
       data: { zaloMsgId, textUsed: text, persistenceFailed: true },
     };
+  }
+
+  // Step 5.5: update Conversation aggregate (lastMessageAt + isReplied) so chat
+  // list sorts conversation lên đầu — pattern y hệt chat/message-handler.ts.
+  // Bot tự gửi → coi như đã reply (isReplied=true), unread reset 0.
+  try {
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastMessageAt: messageRow.sentAt,
+        isReplied: true,
+        unreadCount: 0,
+      },
+    });
+  } catch (err) {
+    logger.warn(`[send-message] conversation aggregate update failed (conv=${conversation.id}):`, err);
   }
 
   // Step 6: apply aggregates (Contact + Friend lastOutbound counters)
@@ -242,9 +278,44 @@ export async function sendMessageHandler(ctx: ActionContext): Promise<ActionResu
     outcome: 'success',
     data: {
       zaloMsgId,
-      textUsed: text,
+      textUsed: renderedText,
       conversationId: conversation.id,
       messageId: messageRow.id,
     },
   };
+}
+
+/**
+ * Render template variables theo chuẩn anh chốt 2026-05-28:
+ *   {gender} — "Anh"/"Chị"/"Anh Chị" lấy từ Contact.gender (fallback "Anh Chị")
+ *   {name}   — last word của Contact.fullName (VN convention)
+ *   {sale}   — last word của user.fullName (chủ nick được assigned)
+ */
+async function renderTemplate(
+  raw: string,
+  contactId: string,
+  assignedNickId: string,
+): Promise<string> {
+  if (!raw.includes('{')) return raw;
+
+  const [contact, ownerUser] = await Promise.all([
+    prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { fullName: true, gender: true },
+    }),
+    prisma.user.findFirst({
+      where: { zaloAccounts: { some: { id: assignedNickId } } },
+      select: { fullName: true },
+    }),
+  ]);
+
+  const genderStr =
+    contact?.gender === 'female' ? 'Chị' : contact?.gender === 'male' ? 'Anh' : 'Anh Chị';
+  const name = (contact?.fullName ?? '').trim().split(/\s+/).pop() ?? 'Anh Chị';
+  const sale = (ownerUser?.fullName ?? 'em').trim().split(/\s+/).pop() ?? 'em';
+
+  return raw
+    .replaceAll('{gender}', genderStr)
+    .replaceAll('{name}', name)
+    .replaceAll('{sale}', sale);
 }

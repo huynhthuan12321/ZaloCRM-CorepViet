@@ -4,8 +4,8 @@
       <div>
         <h1 class="at-page-title">📂 Tệp khách hàng</h1>
         <p class="at-page-subtitle">
-          Paste hoặc upload danh sách SĐT → tạo Tệp KH với counter có/không Zalo, dedup tự động.
-          Tệp KH làm <b>audience source</b> cho Sequence / Broadcast / Campaign sau này.
+          Paste / Excel / Lead Ads (FB · TikTok · Google · Zalo) đổ về tệp tự động theo <b>#mã</b> trong tên chiến dịch.
+          Tệp KH làm <b>audience source</b> cho Sequence / Broadcast / Campaign.
         </p>
       </div>
       <button class="at-btn at-btn--primary" @click="showCreate = true">
@@ -13,6 +13,30 @@
         Tạo tệp mới
       </button>
     </header>
+
+    <!-- Phase Multi-Source Lead Ads 2026-05-27 — Stats row -->
+    <div class="stats-row">
+      <button class="stat-card" :class="{ active: platformFilter === 'all' }" @click="onPlatformFilter('all')">
+        <div class="stat-num">{{ stats.totalLists.toLocaleString('vi-VN') }}</div>
+        <div class="stat-label">Tổng tệp</div>
+      </button>
+      <button class="stat-card" :class="{ active: platformFilter === 'leadads' }" @click="onPlatformFilter('leadads')">
+        <div class="stat-num">{{ stats.leadAdsLists.toLocaleString('vi-VN') }}</div>
+        <div class="stat-label">📣 Lead Ads</div>
+      </button>
+      <button class="stat-card" :class="{ active: platformFilter === 'paste' }" @click="onPlatformFilter('paste')">
+        <div class="stat-num">{{ stats.pasteLists.toLocaleString('vi-VN') }}</div>
+        <div class="stat-label">📋 Paste / File</div>
+      </button>
+      <div class="stat-card stat-card-readonly">
+        <div class="stat-num">{{ stats.totalEntries.toLocaleString('vi-VN') }}</div>
+        <div class="stat-label">SĐT trong các tệp</div>
+      </div>
+      <div class="stat-card stat-card-readonly">
+        <div class="stat-num">{{ stats.totalHasZalo.toLocaleString('vi-VN') }}</div>
+        <div class="stat-label">SĐT có Zalo</div>
+      </div>
+    </div>
 
     <!-- Status tabs: Đang dùng / Lưu trữ -->
     <div class="status-tabs">
@@ -72,12 +96,12 @@
         <thead>
           <tr>
             <th>Tên tệp</th>
-            <th>Ngày tạo</th>
-            <th>Người tạo</th>
             <th>Nguồn</th>
+            <th>Mã đồng bộ</th>
+            <th>Chia sẻ</th>
+            <th>Ngày tạo</th>
             <th class="right">Tổng</th>
             <th class="right">Hợp lệ</th>
-            <th class="right">Lỗi</th>
             <th class="right">Trùng</th>
             <th class="right">Có Zalo</th>
             <th>Tiến độ</th>
@@ -87,7 +111,7 @@
         </thead>
         <tbody>
           <tr
-            v-for="list in lists"
+            v-for="list in filteredLists"
             :key="list.id"
             class="row-clickable"
             @click="goToDetail(list.id)"
@@ -97,23 +121,31 @@
                 <span class="icon-em">{{ list.iconEmoji || '📂' }}</span>
                 <div>
                   <div class="nm">{{ list.name }}</div>
-                  <div class="sub">{{ list.totalEntries.toLocaleString('vi-VN') }} SĐT</div>
+                  <div class="sub">{{ list.totalEntries.toLocaleString('vi-VN') }} SĐT · {{ list.createdBy?.fullName ?? list.createdBy?.email ?? '—' }}</div>
                 </div>
               </div>
             </td>
-            <td class="date">{{ formatDate(list.createdAt) }}</td>
             <td>
-              <span class="author-cell">
-                <span class="av" :style="avatarStyle(list.createdBy?.fullName ?? list.createdBy?.email ?? '?')">
-                  {{ initials(list.createdBy?.fullName ?? list.createdBy?.email ?? '?') }}
-                </span>
-                {{ list.createdBy?.fullName ?? list.createdBy?.email ?? '—' }}
-              </span>
+              <span class="source-chip" :class="sourceClass(list.sourceType)">{{ sourceLabel(list.sourceType) }}</span>
             </td>
-            <td><span class="source-chip">{{ sourceLabel(list.sourceType) }}</span></td>
+            <td>
+              <span v-if="list.integrationKey === '__UNROUTED__'" class="key-chip unrouted" title="Lead chảy về tệp này vì không khớp #mã nào — anh nên đổi tên chiến dịch hoặc tạo tệp mới có mã đó.">
+                🚨 UNROUTED
+              </span>
+              <span v-else-if="list.integrationKey" class="key-chip" :title="`Đặt tên chiến dịch FB/TikTok kèm #${list.integrationKey} để lead chảy về tệp này`">
+                #{{ list.integrationKey }}
+              </span>
+              <span v-else class="muted">—</span>
+            </td>
+            <td>
+              <span v-if="list.shareableToPool" class="share-chip" title="Tệp này đã chia sẻ vào Lead Pool — sale có quyền có thể nhận lead">
+                <v-icon size="11">mdi-account-multiple</v-icon> Pool
+              </span>
+              <span v-else class="muted">—</span>
+            </td>
+            <td class="date">{{ formatDate(list.createdAt) }}</td>
             <td class="num-cell">{{ list.totalEntries.toLocaleString('vi-VN') }}</td>
             <td class="num-cell green">{{ list.validEntries.toLocaleString('vi-VN') }}</td>
-            <td class="num-cell" :class="list.invalidEntries > 0 ? 'red' : 'muted'">{{ list.invalidEntries.toLocaleString('vi-VN') }}</td>
             <td class="num-cell" :class="dupTotal(list) > 0 ? 'amber' : 'muted'">{{ dupTotal(list).toLocaleString('vi-VN') }}</td>
             <td class="num-cell" :class="list.hasZaloEntries > 0 ? 'blue' : 'muted'">
               <template v-if="list.status === 'processing' && list.pendingLookupEntries > 0">
@@ -189,12 +221,20 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCustomerLists, type CustomerListSummary, type ListStatusFilter } from '@/composables/use-customer-lists';
 import { formatInOrgTz } from '@/composables/use-org-timezone';
 import CreateListModal from '@/components/automation/lists/CreateListModal.vue';
 import '@/components/automation/phase7/airtable.css';
+
+// Phase Multi-Source Lead Ads 2026-05-27 — platform filter
+type PlatformFilter = 'all' | 'leadads' | 'paste';
+const platformFilter = ref<PlatformFilter>('all');
+
+function onPlatformFilter(p: PlatformFilter) {
+  platformFilter.value = p;
+}
 
 const router = useRouter();
 const {
@@ -226,12 +266,12 @@ function debouncedFetch() {
 }
 
 function goToDetail(id: string) {
-  router.push(`/automation/bot/lists/${id}`);
+  router.push(`/marketing/lists/${id}`);
 }
 
 function onCreated(payload: { id: string }) {
   // Navigate to detail of newly created list
-  router.push(`/automation/bot/lists/${payload.id}`);
+  router.push(`/marketing/lists/${payload.id}`);
 }
 
 async function onArchive(id: string) {
@@ -262,13 +302,49 @@ function formatDate(iso: string): string {
 
 function sourceLabel(s: string): string {
   switch (s) {
-    case 'paste': return 'Paste';
-    case 'csv': return 'CSV';
-    case 'excel': return 'Excel';
-    case 'api': return 'API';
+    case 'paste': return '📋 Paste';
+    case 'csv': return '📄 CSV';
+    case 'excel': return '📊 Excel';
+    case 'leadads': return '📣 Lead Ads';
+    case 'api': return '🔌 API';
     default: return s;
   }
 }
+
+// Phase Multi-Source Lead Ads 2026-05-27 — pill color theo source kind
+function sourceClass(s: string): string {
+  if (s === 'leadads' || s === 'api') return 'source-leadads';
+  return 'source-import';
+}
+
+const filteredLists = computed(() => {
+  if (platformFilter.value === 'all') return lists.value;
+  if (platformFilter.value === 'leadads') {
+    return lists.value.filter((l) => l.sourceType === 'leadads' || l.sourceType === 'api');
+  }
+  if (platformFilter.value === 'paste') {
+    return lists.value.filter((l) => l.sourceType === 'paste' || l.sourceType === 'csv' || l.sourceType === 'excel');
+  }
+  return lists.value;
+});
+
+const stats = computed(() => {
+  let leadAdsLists = 0, pasteLists = 0;
+  let totalEntries = 0, totalHasZalo = 0;
+  for (const l of lists.value) {
+    if (l.sourceType === 'leadads' || l.sourceType === 'api') leadAdsLists++;
+    else pasteLists++;
+    totalEntries += l.totalEntries;
+    totalHasZalo += l.hasZaloEntries;
+  }
+  return {
+    totalLists: lists.value.length,
+    leadAdsLists,
+    pasteLists,
+    totalEntries,
+    totalHasZalo,
+  };
+});
 
 function dupTotal(l: CustomerListSummary): number {
   return l.dupInListEntries + l.dupCrossListEntries + l.dupWithContactEntries;
@@ -308,6 +384,7 @@ function avatarStyle(name: string): Record<string, string> {
   const [c1, c2] = GRADIENTS[hashIdx(name || '?', GRADIENTS.length)];
   return { background: `linear-gradient(135deg, ${c1}, ${c2})` };
 }
+void initials; void avatarStyle; // legacy helpers kept for ref after table refactor
 </script>
 
 <style scoped>
@@ -443,4 +520,46 @@ function avatarStyle(name: string): Record<string, string> {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .icon-btn:hover { background: #F4F5F8; color: #111827; }
+
+/* ───── Phase Multi-Source Lead Ads 2026-05-27 ───── */
+.stats-row {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+  margin-bottom: 12px;
+}
+.stat-card {
+  background: #fff; border: 1px solid #E5E7EB; border-radius: 10px;
+  padding: 12px 14px; text-align: left; cursor: pointer;
+  font-family: inherit; transition: all 120ms;
+}
+.stat-card:hover { border-color: #C7D2FE; }
+.stat-card.active { border-color: #4F46E5; background: #EEF2FF; }
+.stat-card-readonly { cursor: default; }
+.stat-card-readonly:hover { border-color: #E5E7EB; }
+.stat-num {
+  font-size: 22px; font-weight: 700; color: #111827;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.stat-label { font-size: 11px; color: #6B7280; margin-top: 4px; }
+
+.source-chip.source-leadads {
+  background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;
+}
+.source-chip.source-import {
+  background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD;
+}
+.key-chip {
+  display: inline-flex; align-items: center; padding: 2px 8px;
+  font-family: 'Courier New', monospace; font-weight: 600;
+  font-size: 11px; background: #F3F4F6; color: #1F2937;
+  border-radius: 4px; letter-spacing: .5px;
+}
+.key-chip.unrouted {
+  background: #FEE2E2; color: #B91C1C;
+}
+.share-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; padding: 2px 7px; border-radius: 99px;
+  background: #DCFCE7; color: #166534; font-weight: 500;
+}
+.muted { color: #9CA3AF; font-size: 12px; }
 </style>

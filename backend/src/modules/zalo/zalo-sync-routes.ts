@@ -10,6 +10,7 @@ import { zaloPool } from './zalo-pool.js';
 import { logger } from '../../shared/utils/logger.js';
 import { randomUUID } from 'node:crypto';
 import { backfillAccountHistory } from './zalo-history-backfill.js';
+import { resolveOrCreateContact } from '../contacts/resolve-contact.js';
 
 export async function zaloSyncRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
@@ -36,34 +37,24 @@ export async function zaloSyncRoutes(app: FastifyInstance) {
           const zaloName = friend.zaloName || friend.zalo_name || friend.displayName || friend.display_name || '';
           const avatar = friend.avatar || '';
           const phone = friend.phoneNumber || '';
+          const globalId = friend.globalId || '';
+          const username = friend.username || '';
 
-          const existing = await prisma.contact.findFirst({
-            where: { zaloUid: uid, orgId: user.orgId },
+          // Wave 1.5-B (B7 fix): dùng central resolver thay vì Contact.zaloUid only dedup
+          // (vi phạm rule per-account UID — cùng KH 2 nick có 2 zaloUid khác nhau → tạo dup).
+          const resolved = await resolveOrCreateContact({
+            orgId: user.orgId,
+            zaloAccountId: id,
+            zaloUidInNick: uid,
+            zaloGlobalId: globalId || null,
+            zaloUsername: username || null,
+            phone: phone || null,
+            fallbackFullName: zaloName || null,
+            fallbackAvatarUrl: avatar || null,
+            enrichViaGetUserInfo: false,
           });
-
-          if (existing) {
-            await prisma.contact.update({
-              where: { id: existing.id },
-              data: {
-                fullName: zaloName || existing.fullName,
-                avatarUrl: avatar || existing.avatarUrl,
-                phone: phone || existing.phone,
-              },
-            });
-            updated++;
-          } else {
-            await prisma.contact.create({
-              data: {
-                id: randomUUID(),
-                orgId: user.orgId,
-                zaloUid: uid,
-                fullName: zaloName || 'Unknown',
-                avatarUrl: avatar || null,
-                phone: phone || null,
-              },
-            });
-            created++;
-          }
+          if (resolved.created) created++;
+          else updated++;
         }
 
         // Backfill: link orphaned conversations (contactId is null) to contacts

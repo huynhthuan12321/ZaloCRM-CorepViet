@@ -42,14 +42,14 @@ async function handleZaloReaction(accountId: string, io: Server | null, reaction
     // Tìm conversation theo externalThreadId + accountId
     const conversation = await prisma.conversation.findFirst({
       where: { zaloAccountId: accountId, externalThreadId: threadId },
-      select: { id: true, contactId: true, orgId: true },
+      select: { id: true, contactId: true, orgId: true, threadType: true },
     });
     if (!conversation) return;
 
     // Tìm Message theo zaloMsgId
     const message = await prisma.message.findFirst({
       where: { conversationId: conversation.id, zaloMsgId: targetZaloMsgId },
-      select: { id: true, senderType: true },
+      select: { id: true, senderType: true, zaloMsgId: true, seenAt: true, createdAt: true },
     });
     if (!message) return;
 
@@ -93,6 +93,16 @@ async function handleZaloReaction(accountId: string, io: Server | null, reaction
       });
     }
 
+    // ANTI-DRIFT FIX 2026-05-22: emit authoritative totalCount từ DB sau upsert/delete.
+    // Trước fix: Zalo gửi 10 reaction events liên tiếp → 10 socket emits với action='add'
+    // → FE increment +1 mỗi event → count=10 realtime. Refresh page → REST trả 1 (DB chỉ
+    // 1 row do composite key msg×reactor×emoji) → UI "rollback" về 1 → drift confused user.
+    // Fix: query messageReaction.count({where: msg×emoji}) → emit totalCount. FE set thay
+    // vì increment → realtime count = persisted count luôn.
+    const newCount = await prisma.messageReaction.count({
+      where: { messageId: message.id, emoji: displayEmoji },
+    });
+
     io?.emit('chat:reactions', {
       conversationId: conversation.id,
       messageId: message.id,
@@ -103,6 +113,7 @@ async function handleZaloReaction(accountId: string, io: Server | null, reaction
         reaction: displayEmoji,
         action: (!rawIcon || rType < 0) ? 'remove' : 'add',
         source: 'zalo',
+        totalCount: newCount, // authoritative count post-mutation
       }],
     });
 
@@ -122,6 +133,44 @@ async function handleZaloReaction(accountId: string, io: Server | null, reaction
           // silent — engagement best-effort
         }
       })();
+    }
+
+    // Phase v3 2026-05-29 (anh chốt sau workflow audit): KH thả tim self message → đã đọc.
+    // SWEEP-TO-MSGID: KH react msg N → KH đã đọc CẢ msg ≤ N (Zalo native behavior).
+    // Guard seenAt:null + createdAt ≤ message.createdAt chống ghi đè timestamp cũ + chỉ
+    // sweep msg trước đó trong cùng conv.
+    if (isAddAction
+        && message.senderType === 'self'
+        && conversation.threadType === 'user'
+        && !message.seenAt
+    ) {
+      const seenAt = new Date();
+      const seenUpdate = await prisma.message.updateMany({
+        where: {
+          conversationId: conversation.id,
+          senderType: 'self',
+          seenAt: null,
+          createdAt: { lte: message.createdAt },
+        },
+        data: { seenAt, deliveredAt: seenAt },
+      });
+      if (seenUpdate.count > 0) {
+        const rows = await prisma.message.findMany({
+          where: { conversationId: conversation.id, senderType: 'self', seenAt },
+          select: { id: true, conversationId: true, zaloMsgId: true, deliveredAt: true, seenAt: true },
+        });
+        logger.info(`[zalo:${accountId}] 💚 REACTION→SEEN swept ${seenUpdate.count} msg(s) ≤ anchor=${message.id} (KH ${reactorZaloUid} react ${displayEmoji})`);
+        for (const r of rows) {
+          io?.emit('zalo:message-status', {
+            accountId,
+            conversationId: r.conversationId,
+            messageId: r.id,
+            zaloMsgId: r.zaloMsgId,
+            deliveredAt: r.deliveredAt,
+            seenAt: r.seenAt,
+          });
+        }
+      }
     }
   } catch (err) {
     logger.warn(`[zalo:${accountId}] reaction handler error:`, err);
@@ -221,6 +270,205 @@ export function attachZaloListener(ctx: ListenerContext): void {
     logger.info(`[zalo:${accountId}] Listener connected`);
   });
 
+  // DEBUG 2026-05-22: catch-all log để verify ListenerEvents nào fire trong thực tế.
+  // Wrap listener.emit để intercept TẤT CẢ event names. Bỏ sau khi xác minh xong.
+  const _origEmit = (listener as any).emit?.bind(listener);
+  if (_origEmit) {
+    (listener as any).emit = function (eventName: string, ...args: any[]) {
+      if (eventName !== 'message' && eventName !== 'old_messages' && eventName !== 'connected') {
+        try {
+          logger.info(`[zalo:${accountId}] 🎯 SDK emit '${eventName}' — args[0]=`, JSON.stringify(args[0])?.slice(0, 300));
+        } catch { /* ignore log error */ }
+      }
+      return _origEmit(eventName, ...args);
+    };
+  }
+
+  // ─── WAVE 1+2 (2026-05-21) — typing / seen / delivered / disconnected ───────
+  // Trước đây SDK fire 4 events này mà code không subscribe → bỏ phí payload.
+  // Mục đích: bubble status icon (sent/delivered/seen) + typing dots realtime.
+
+  // KH đang gõ tin nhắn (chỉ user threads, không group). Auto-clear FE sau 5s
+  // không có event mới. SDK fire mỗi ~2s khi KH còn gõ.
+  listener.on('typing', (typing: any) => {
+    try {
+      // DEBUG 2026-05-22: log raw payload để verify SDK fire event đúng shape.
+      // Anh đã test 2026-05-22 không thấy typing dots — cần xác minh event arrival.
+      logger.info(`[zalo:${accountId}] 🔵 TYPING event:`, JSON.stringify({
+        threadId: typing?.threadId, type: typing?.type, data: typing?.data, isSelf: typing?.isSelf,
+      }));
+      io?.emit('zalo:typing', {
+        accountId,
+        threadId: typing?.threadId || '',
+        threadType: typing?.type === 1 ? 'group' : 'user',
+        ts: typing?.data?.ts ? Number(typing.data.ts) : Date.now(),
+      });
+    } catch (err) {
+      logger.warn(`[zalo:${accountId}] typing event error:`, err);
+    }
+  });
+
+  // KH đã đọc tin → set seen_at + emit socket bubble update.
+  // Payload: SeenMessage[] — mỗi item {msgId, idTo} cho user threads (verified zca-js 2.1.2).
+  // KH đọc tới msg N → tất cả msg ≤ N của ta đều được đánh dấu seen (Zalo behavior).
+  // v3 2026-05-29 (workflow audit anh chốt): SWEEP-TO-MSGID — Zalo CHỈ fire seen_messages
+  // cho msg cuối cùng KH đọc tới (anchor). BE phải tự sweep các msg cũ hơn trong cùng conv.
+  listener.on('seen_messages', async (messages: any[]) => {
+    try {
+      logger.info(`[zalo:${accountId}] 🟢 SEEN_MESSAGES event:`, JSON.stringify(
+        (messages || []).slice(0, 3).map(m => ({ threadId: m?.threadId, type: m?.type, data: m?.data })),
+      ));
+      if (!messages?.length) return;
+      const now = new Date();
+      // Sweep per anchor msg — resolve conversation từ anchor → mark all self msg ≤ anchor.createdAt
+      for (const m of messages) {
+        const anchorMsgId = String(m?.data?.msgId || '');
+        if (!anchorMsgId) continue;
+        const anchor = await prisma.message.findFirst({
+          where: { zaloMsgId: anchorMsgId, senderType: 'self' },
+          select: { id: true, conversationId: true, createdAt: true },
+        });
+        if (!anchor) {
+          logger.info(`[zalo:${accountId}] 🟢 SEEN anchor not found msgId=${anchorMsgId} threadId=${m?.threadId}`);
+          continue;
+        }
+        const updated = await prisma.message.updateMany({
+          where: {
+            conversationId: anchor.conversationId,
+            senderType: 'self',
+            seenAt: null,
+            createdAt: { lte: anchor.createdAt },
+          },
+          data: { seenAt: now, deliveredAt: now },
+        });
+        if (updated.count > 0) {
+          // Lấy chính xác các msg vừa được sweep (filter seenAt=now để khớp atomic update)
+          const rows = await prisma.message.findMany({
+            where: {
+              conversationId: anchor.conversationId,
+              senderType: 'self',
+              seenAt: now,
+            },
+            select: { id: true, conversationId: true, zaloMsgId: true, deliveredAt: true, seenAt: true },
+          });
+          logger.info(`[zalo:${accountId}] 🟢 SEEN swept ${updated.count} msg(s) ≤ anchor=${anchorMsgId} conv=${anchor.conversationId}`);
+          for (const r of rows) {
+            io?.emit('zalo:message-status', {
+              accountId,
+              conversationId: r.conversationId,
+              messageId: r.id,
+              zaloMsgId: r.zaloMsgId,
+              deliveredAt: r.deliveredAt,
+              seenAt: r.seenAt,
+            });
+          }
+        } else {
+          logger.info(`[zalo:${accountId}] 🟢 SEEN anchor=${anchorMsgId} updated=0 (already seen or stale)`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[zalo:${accountId}] seen_messages error:`, err);
+    }
+  });
+
+  // KH device nhận packet (chưa đọc). Set delivered_at nếu chưa seen.
+  // 2026-05-29 v2 (anh báo case tin "123"): Zalo SDK đôi khi merge "delivered + seen"
+  // thành 1 event delivered_messages{seen=1, seenUids=[KH]} thay vì fire seen_messages riêng.
+  // → BE phải parse flag seen=1 trong delivered payload để set seenAt cho kịp.
+  listener.on('delivered_messages', async (messages: any[]) => {
+    try {
+      // DEBUG 2026-05-22: log raw payload
+      logger.info(`[zalo:${accountId}] 🟡 DELIVERED_MESSAGES event:`, JSON.stringify(
+        (messages || []).slice(0, 3).map(m => ({ threadId: m?.threadId, type: m?.type, data: m?.data })),
+      ));
+      const deliveredIds: string[] = [];
+      const seenIds: string[] = [];
+      for (const m of messages || []) {
+        const msgId = String(m?.data?.msgId || '');
+        if (!msgId) continue;
+        deliveredIds.push(msgId);
+        // Detect Zalo merged 'delivered + seen' event: data.seen=1 hoặc seenUids non-empty.
+        const hasSeenFlag = m?.data?.seen === 1
+          || m?.data?.seen === true
+          || (Array.isArray(m?.data?.seenUids) && m.data.seenUids.length > 0);
+        if (hasSeenFlag) seenIds.push(msgId);
+      }
+      if (!deliveredIds.length) return;
+      const now = new Date();
+      // Nhánh 1: nếu payload có seen=1 → set seenAt + deliveredAt + SWEEP các msg cũ.
+      // v3 2026-05-29: workflow audit confirm field 'seen' + 'seenUids' có thật nhưng raw log
+      // 4/4 sample đều seen=0/seenUids=[] → nhánh này hiếm khi trigger, nhưng vẫn xử lý đúng.
+      if (seenIds.length > 0) {
+        for (const anchorMsgId of seenIds) {
+          const anchor = await prisma.message.findFirst({
+            where: { zaloMsgId: anchorMsgId, senderType: 'self' },
+            select: { id: true, conversationId: true, createdAt: true },
+          });
+          if (!anchor) continue;
+          const updatedSeen = await prisma.message.updateMany({
+            where: {
+              conversationId: anchor.conversationId,
+              senderType: 'self',
+              seenAt: null,
+              createdAt: { lte: anchor.createdAt },
+            },
+            data: { seenAt: now, deliveredAt: now },
+          });
+          if (updatedSeen.count > 0) {
+            const rows = await prisma.message.findMany({
+              where: { conversationId: anchor.conversationId, senderType: 'self', seenAt: now },
+              select: { id: true, conversationId: true, zaloMsgId: true, deliveredAt: true, seenAt: true },
+            });
+            logger.info(`[zalo:${accountId}] 🟢 DELIVERED→SEEN merged swept ${updatedSeen.count} ≤ anchor=${anchorMsgId}`);
+            for (const r of rows) {
+              io?.emit('zalo:message-status', {
+                accountId, conversationId: r.conversationId, messageId: r.id,
+                zaloMsgId: r.zaloMsgId, deliveredAt: r.deliveredAt, seenAt: r.seenAt,
+              });
+            }
+          }
+        }
+      }
+      // Nhánh 2: msgId chưa seen (hoặc seen=0) → chỉ set deliveredAt.
+      const deliveryOnlyIds = deliveredIds.filter((id) => !seenIds.includes(id));
+      if (deliveryOnlyIds.length > 0) {
+        const updated = await prisma.message.updateMany({
+          where: {
+            zaloMsgId: { in: deliveryOnlyIds },
+            senderType: 'self',
+            deliveredAt: null,
+            seenAt: null,
+          },
+          data: { deliveredAt: now },
+        });
+        if (updated.count > 0) {
+          const rows = await prisma.message.findMany({
+            where: { zaloMsgId: { in: deliveryOnlyIds }, senderType: 'self' },
+            select: { id: true, conversationId: true, zaloMsgId: true, deliveredAt: true, seenAt: true },
+          });
+          logger.info(`[zalo:${accountId}] 🟡 DELIVERED → updated=${updated.count}, emit ${rows.length} row(s), io=${!!io}`);
+          for (const r of rows) {
+            io?.emit('zalo:message-status', {
+              accountId, conversationId: r.conversationId, messageId: r.id,
+              zaloMsgId: r.zaloMsgId, deliveredAt: r.deliveredAt, seenAt: r.seenAt,
+            });
+          }
+        } else if (seenIds.length === 0) {
+          logger.info(`[zalo:${accountId}] 🟡 DELIVERED → updateMany count=0 (ids=${deliveryOnlyIds.join(',')})`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[zalo:${accountId}] delivered_messages error:`, err);
+    }
+  });
+
+  // Sớm hơn `closed` ~vài giây. Hiện chỉ log; reconnect logic vẫn ở `closed`.
+  // Nếu cần buffer outgoing messages giữa disconnected → reconnected, mở rộng ở đây.
+  listener.on('disconnected', (code: number, reason: string) => {
+    logger.warn(`[zalo:${accountId}] Listener disconnected (early): ${code} ${reason}`);
+    io?.emit('zalo:disconnected', { accountId, code, reason, phase: 'early' });
+  });
+
   listener.on('message', async (message: any) => {
     try {
       // ThreadType in zca-js: 0 = User, 1 = Group
@@ -282,7 +530,7 @@ export function attachZaloListener(ctx: ListenerContext): void {
         msgId: String(message.data?.msgId || ''),
         // FIX 2026-05-21: capture cliMsgId — bắt buộc cho api.undo (zalo server check cả 2).
         // Tin cũ trước fix này có cliMsgId=null → undo trả 400.
-        cliMsgId: message.data?.cliMsgId ? String(message.data.cliMsgId) : undefined,
+        ...(message.data?.cliMsgId ? { cliMsgId: String(message.data.cliMsgId) } : {}) as any,
         timestamp: parseInt(message.data?.ts || String(Date.now())),
         isSelf: message.isSelf || false,
         threadId: message.threadId || '',
@@ -303,10 +551,19 @@ export function attachZaloListener(ctx: ListenerContext): void {
       });
 
       if (result) {
+        // PRIVACY 2026-05-22: kèm _privacyMeta để FE non-owner blur ngay realtime
+        const accInfo = await prisma.zaloAccount.findUnique({
+          where: { id: accountId },
+          select: { privacyMode: true, ownerUserId: true },
+        });
         io?.emit('chat:message', {
           accountId,
           message: result.message,
           conversationId: result.conversationId,
+          _privacyMeta: accInfo ? {
+            privacyMode: accInfo.privacyMode,
+            ownerUserId: accInfo.ownerUserId,
+          } : undefined,
         });
       }
     } catch (err) {
@@ -327,10 +584,10 @@ export function attachZaloListener(ctx: ListenerContext): void {
       logger.warn(`[zalo:${accountId}] Undo event missing globalMsgId/cliMsgId`, undoContent);
       return;
     }
-    const updatedIds = await handleMessageUndo(accountId, {
+    const updatedIds = (await (handleMessageUndo as any)(accountId, {
       globalMsgIdNum: globalMsgId ? BigInt(globalMsgId) : null,
       cliMsgIdNum: cliMsgIdNum ? BigInt(cliMsgIdNum) : null,
-    });
+    })) as string[] | undefined ?? [];
     // FIX B1 round-2: emit MULTIPLE messageId nếu match nhiều rows (event broadcast tới mọi nick).
     // FE composable matches by zaloMsgId/messageId → update isDeleted live ở cột 3.
     const zaloMsgIdStr = globalMsgId ? String(globalMsgId) : (cliMsgIdNum ? String(cliMsgIdNum) : null);

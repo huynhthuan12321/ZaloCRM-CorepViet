@@ -115,6 +115,7 @@ import {
   type AppointmentEx as Appointment,
 } from '@/composables/appointment-helpers';
 import type { OrgUser } from '@/composables/use-users';
+import { orgDayKey, getOrgParts } from '@/composables/use-org-timezone';
 
 const props = defineProps<{
   scope: 'me' | 'team' | 'all';
@@ -174,7 +175,12 @@ const sourceOptions = [
   { value: 'manual' as const, label: 'Thủ công' },
 ];
 
-const miniMonthLabel = computed(() => `${VN_MONTHS[props.visibleMonth.getMonth()]}, ${props.visibleMonth.getFullYear()}`);
+// 2026-05-21 Phase B-3: header "tháng X, năm Y" + mini-cells theo org TZ.
+const miniMonthLabel = computed(() => {
+  const p = getOrgParts(props.visibleMonth);
+  if (!p) return '';
+  return `${VN_MONTHS[p.month - 1]}, ${p.year}`;
+});
 
 function shiftMonth(delta: number) {
   const d = new Date(props.visibleMonth);
@@ -183,7 +189,7 @@ function shiftMonth(delta: number) {
 }
 
 function isoDay(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return orgDayKey(d);
 }
 
 const selectedIso = computed(() => isoDay(props.selectedDate));
@@ -198,23 +204,28 @@ const apptByDay = computed(() => {
 });
 
 const miniCells = computed(() => {
-  const year = props.visibleMonth.getFullYear();
-  const month = props.visibleMonth.getMonth();
-  const firstOfMonth = new Date(year, month, 1);
+  // Phase B-3: lấy năm/tháng đang xem theo ORG TZ, build 6×7 cells (42 ô)
+  // bắt đầu từ thứ Hai của tuần chứa ngày 1.
+  const visibleParts = getOrgParts(props.visibleMonth);
+  if (!visibleParts) return [];
+  const year = visibleParts.year;
+  const month = visibleParts.month; // 1-12
+  const firstOfMonth = new Date(year, month - 1, 1);
   const offset = (firstOfMonth.getDay() + 6) % 7;
-  const start = new Date(year, month, 1 - offset);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(year, month - 1, 1 - offset);
+  const todayKey = orgDayKey(new Date());
   const cells: { date: Date; iso: string; day: number; muted: boolean; isToday: boolean; count: number }[] = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const iso = isoDay(d);
+    const dParts = getOrgParts(d);
     cells.push({
       date: d,
       iso,
-      day: d.getDate(),
-      muted: d.getMonth() !== month,
-      isToday: d.getTime() === today.getTime(),
+      day: dParts?.day ?? d.getDate(),
+      muted: (dParts?.month ?? d.getMonth() + 1) !== month,
+      isToday: iso === todayKey,
       count: apptByDay.value[iso] || 0,
     });
   }
@@ -234,8 +245,9 @@ const upcomingPreview = computed(() => {
 });
 
 function fmtTime(a: Appointment): string {
-  const d = appointmentStart(a);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const p = getOrgParts(appointmentStart(a));
+  if (!p) return '';
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
 }
 </script>
 

@@ -22,6 +22,9 @@ import {
   type SystemMessage,
 } from './list-system-messages.js';
 import { randomUUID } from 'node:crypto';
+import { getOwnerScope, applyOwnerScope } from '../../rbac/owner-scope.js';
+import { onPhoneUidResolved } from './list-event-handlers.js';
+import { zaloOps } from '../../../shared/zalo-operations.js';
 
 type EntryStatusTab =
   | 'all'
@@ -46,9 +49,14 @@ export async function customerListEntryRoutes(app: FastifyInstance): Promise<voi
     const { id } = request.params;
     const { tab = 'all', page = '1', limit = '50', search = '' } = request.query;
 
-    // Verify list belongs to org
+    // Phase Marketing Scope 2026-05-27: scope list theo owner trước khi tải entries
+    const ownerScope = await getOwnerScope({
+      userId: user.id, orgId: user.orgId, legacyRole: user.role, resource: 'customer_list',
+    });
+    const lWhere: any = { id, orgId: user.orgId };
+    Object.assign(lWhere, applyOwnerScope(ownerScope));
     const list = await prisma.customerList.findFirst({
-      where: { id, orgId: user.orgId },
+      where: lWhere,
       select: { id: true },
     });
     if (!list) return reply.status(404).send({ error: 'list_not_found' });
@@ -163,8 +171,13 @@ export async function customerListEntryRoutes(app: FastifyInstance): Promise<voi
       return reply.status(400).send({ error: 'entryIds_required' });
     }
 
+    const _ownerScope = await getOwnerScope({
+      userId: user.id, orgId: user.orgId, legacyRole: user.role, resource: 'customer_list',
+    });
+    const _lWhere: any = { id, orgId: user.orgId };
+    Object.assign(_lWhere, applyOwnerScope(_ownerScope));
     const list = await prisma.customerList.findFirst({
-      where: { id, orgId: user.orgId },
+      where: _lWhere,
       select: { id: true },
     });
     if (!list) return reply.status(404).send({ error: 'list_not_found' });
@@ -455,6 +468,9 @@ export async function customerListEntryRoutes(app: FastifyInstance): Promise<voi
           dupWithListId,
           dupWithListEntryId,
           dupWithContactId,
+          // Wave 1.5-B (B5 fix): link entry.contactId ngay khi import phát hiện dup_with_crm.
+          // Tránh downstream nick-worker re-resolve qua phone (có thể tạo stub tách rời Contact cha).
+          contactId: dupWithContactId,
           hasZalo: null,
           multiNickCount: 0,
           systemMessages: fullMsgs,
@@ -517,6 +533,188 @@ export async function customerListEntryRoutes(app: FastifyInstance): Promise<voi
         return reply.status(204).send();
       } catch (err) {
         logger.error({ err, id, entryId }, '[list-entries] delete failed');
+        return reply.status(500).send({ error: 'internal_error' });
+      }
+    },
+  );
+
+  // ─── POST /customer-lists/:id/entries/:entryId/find-zalo ───
+  // Phase 2026-05-30 — Sale bấm "Tìm Zalo" thủ công cho 1 lead bằng nick chọn từ popup.
+  // HỢP LỆ (thủ công 1 KH/1 click, KHÔNG vi phạm cấm auto-quét). Tìm ra → update entry
+  // qua onPhoneUidResolved. Không ra → đánh dấu hasZalo=false (anh chốt 2026-05-30).
+  app.post<{ Params: { id: string; entryId: string }; Body: { zaloAccountId?: string } }>(
+    '/api/v1/customer-lists/:id/entries/:entryId/find-zalo',
+    async (request, reply) => {
+      const user = request.user!;
+      const { id, entryId } = request.params;
+      const { zaloAccountId } = request.body ?? {};
+      if (!zaloAccountId) return reply.status(400).send({ error: 'zaloAccountId required' });
+
+      const entry = await prisma.customerListEntry.findFirst({
+        where: { id: entryId, customerListId: id, customerList: { orgId: user.orgId } },
+        select: { id: true, phoneE164: true, phoneRaw: true, phoneValid: true },
+      });
+      if (!entry) return reply.status(404).send({ error: 'entry_not_found' });
+      if (!entry.phoneValid || !entry.phoneE164) {
+        return reply.status(400).send({ error: 'phone_invalid', detail: 'SĐT chưa hợp lệ, sửa số trước khi tìm Zalo' });
+      }
+
+      // Check quyền nick: nick phải thuộc org user (zaloOps.findUser tự verify connect)
+      const nick = await prisma.zaloAccount.findFirst({
+        where: { id: zaloAccountId, orgId: user.orgId },
+        select: { id: true },
+      });
+      if (!nick) return reply.status(403).send({ error: 'nick_not_allowed', detail: 'Bạn không có quyền dùng nick này' });
+
+      const phone = entry.phoneE164.replace(/[^\d]/g, ''); // "84xxx"
+      try {
+        const result = await zaloOps.findUser(zaloAccountId, phone);
+        const u = (result as Record<string, unknown>) || {};
+        const uid = String(u.uid || u.userId || '') || null;
+
+        if (!uid) {
+          // Không ra Zalo → đánh dấu hasZalo=false (anh chốt). Chỉ entry này + status.
+          await prisma.customerListEntry.updateMany({
+            where: { id: entryId, customerListId: id },
+            data: { hasZalo: false, status: 'enriched', enrichedAt: new Date() },
+          });
+          await recomputeListCounters(id);
+          return reply.send({ found: false, reason: 'no_zalo', detail: 'SĐT này không có Zalo' });
+        }
+
+        // Tìm ra → update tất cả entry cùng SĐT qua handler có sẵn (idempotent)
+        await onPhoneUidResolved({
+          orgId: user.orgId,
+          phoneNormalized: phone,
+          zaloUidInNick: uid,
+          zaloAccountId,
+          zaloGlobalId: String(u.globalId || '') || null,
+          zaloDisplayName: String(u.zaloName || u.displayName || u.display_name || '') || null,
+        });
+        return reply.send({
+          found: true,
+          uid,
+          zaloName: String(u.zaloName || u.displayName || '') || null,
+          avatar: String(u.avatar || '') || null,
+        });
+      } catch (err: unknown) {
+        const e = err as { code?: string; message?: string };
+        if (e?.code === 'NOT_CONNECTED' || e?.code === 'RATE_LIMITED') {
+          const isNotConnected = e.code === 'NOT_CONNECTED';
+          return reply.status(503).send({
+            error: e.code,
+            detail: isNotConnected
+              ? 'Nick Zalo chưa kết nối. Vào "Quản lý nick" kết nối lại.'
+              : 'Đã đạt giới hạn tra cứu Zalo, thử lại sau vài phút.',
+            userFriendly: isNotConnected ? 'Nick Zalo chưa kết nối' : 'Đã đạt giới hạn tra cứu Zalo',
+          });
+        }
+        // Lỗi khác = coi như không tìm thấy
+        logger.warn({ err, entryId, zaloAccountId }, '[find-zalo] lookup failed');
+        return reply.send({ found: false, reason: 'lookup_failed', detail: String(e?.message || err) });
+      }
+    },
+  );
+
+  // ─── GET /customer-list-entries/:entryId/lead-detail ───
+  // Phase Multi-Source Lead Ads Phase 2 2026-05-27 — full Lead detail panel.
+  // Trả về entry + list + webhookLog (timing) + campaignStats. Adaptive: section
+  // nào không có data → frontend skip render (LeadDetailPanel v-if).
+  app.get<{ Params: { entryId: string } }>(
+    '/api/v1/customer-list-entries/:entryId/lead-detail',
+    async (request, reply) => {
+      const user = request.user!;
+      const { entryId } = request.params;
+      try {
+        const entry = await prisma.customerListEntry.findUnique({
+          where: { id: entryId },
+          include: { customerList: { select: { id: true, orgId: true, name: true, integrationKey: true, sourceType: true } } },
+        });
+        if (!entry || entry.customerList.orgId !== user.orgId) {
+          return reply.status(404).send({ error: 'entry_not_found' });
+        }
+
+        // sourceMeta.externalLeadId → join WebhookLog cho timing
+        const externalLeadId =
+          entry.sourceMeta && typeof entry.sourceMeta === 'object'
+            ? ((entry.sourceMeta as Record<string, unknown>).externalLeadId as string | undefined)
+            : undefined;
+
+        const webhookLog = externalLeadId
+          ? await prisma.webhookLog.findUnique({
+              where: { externalLeadId },
+              select: {
+                id: true,
+                source: true,
+                status: true,
+                attempts: true,
+                signature: true,
+                processingSteps: true,
+                createdAt: true,
+                processedAt: true,
+                errorMessage: true,
+              },
+            })
+          : null;
+
+        // Campaign stats: bao nhiêu lead khác cùng campaignId vào CRM. JSON match
+        // dùng raw SQL (Prisma Json @> filter giới hạn).
+        const campaignId =
+          entry.sourceMeta && typeof entry.sourceMeta === 'object'
+            ? ((entry.sourceMeta as Record<string, unknown>).campaignId as string | undefined)
+            : undefined;
+
+        let campaignStats: { totalLeads: number; routedLeads: number; unroutedLeads: number } | null = null;
+        if (campaignId) {
+          const rows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+            `SELECT COUNT(*)::bigint AS count
+             FROM customer_list_entries
+             WHERE source_meta->>'campaignId' = $1`,
+            campaignId,
+          );
+          const total = Number(rows[0]?.count ?? 0n);
+          // routed = entry trong list có integrationKey không phải __UNROUTED__
+          const routedRows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+            `SELECT COUNT(*)::bigint AS count
+             FROM customer_list_entries e
+             JOIN customer_lists l ON l.id = e.customer_list_id
+             WHERE e.source_meta->>'campaignId' = $1
+               AND l.integration_key IS NOT NULL
+               AND l.integration_key <> '__UNROUTED__'`,
+            campaignId,
+          );
+          const routed = Number(routedRows[0]?.count ?? 0n);
+          campaignStats = { totalLeads: total, routedLeads: routed, unroutedLeads: total - routed };
+        }
+
+        return {
+          entry: {
+            id: entry.id,
+            rowIndex: entry.rowIndex,
+            phoneRaw: entry.phoneRaw,
+            nameRaw: entry.nameRaw,
+            phoneE164: entry.phoneE164,
+            phoneLocal: entry.phoneLocal,
+            phoneValid: entry.phoneValid,
+            personalNote: entry.personalNote,
+            customFields: entry.customFields,
+            sourceMeta: entry.sourceMeta,
+            status: entry.status,
+            hasZalo: entry.hasZalo,
+            zaloUid: entry.zaloUid,
+            zaloName: entry.zaloName,
+            zaloGlobalId: entry.zaloGlobalId,
+            resolvedByNickId: entry.resolvedByNickId,
+            contactId: entry.contactId,
+            createdAt: entry.createdAt,
+            enrichedAt: entry.enrichedAt,
+          },
+          list: entry.customerList,
+          webhookLog,
+          campaignStats,
+        };
+      } catch (err) {
+        logger.error({ err, entryId }, '[list-entries] lead-detail failed');
         return reply.status(500).send({ error: 'internal_error' });
       }
     },

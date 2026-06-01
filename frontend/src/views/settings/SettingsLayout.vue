@@ -31,7 +31,7 @@
             :key="`sr-${item.route}`"
             :to="item.route"
             class="sl-item"
-            :class="{ active: $route.path === item.route }"
+            :class="{ active: isItemActive(item.route) }"
           >
             <span class="sl-item-icon">{{ item.icon }}</span>
             <span class="sl-item-label">{{ item.label }}</span>
@@ -58,7 +58,7 @@
                 :key="item.route"
                 :to="item.route"
                 class="sl-item"
-                :class="{ active: $route.path === item.route }"
+                :class="{ active: isItemActive(item.route) }"
               >
                 <span class="sl-item-icon">{{ item.icon }}</span>
                 <span class="sl-item-label">{{ item.label }}</span>
@@ -94,6 +94,20 @@ import { useSettingsNav } from '@/composables/use-settings-nav';
 const route = useRoute();
 const router = useRouter();
 const { visibleGroups, activeItem, searchItems, defaultRoute } = useSettingsNav();
+
+// Active class check — support query param (vd /settings/channels/zalo?tab=internal-contact
+// active KHÁC /settings/channels/zalo plain — 2 entry trỏ cùng path nhưng tab khác).
+function isItemActive(itemRoute: string): boolean {
+  const [itemPath, itemQuery] = itemRoute.split('?');
+  if (itemPath !== route.path) return false;
+  if (!itemQuery) {
+    // Item không query → active chỉ khi current cũng không match query của entry khác
+    const currentTab = route.query.tab as string | undefined;
+    return !currentTab;
+  }
+  const expected = new URLSearchParams(itemQuery).get('tab');
+  return expected === (route.query.tab as string | undefined);
+}
 
 const searchQuery = ref('');
 

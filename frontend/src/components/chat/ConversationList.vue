@@ -6,15 +6,35 @@
         <input
           class="cl-search"
           name="conv-list-search"
+          ref="searchInputEl"
           autocomplete="off"
           :value="search"
+          :class="{ 'cl-search--flash': searchFlash }"
           placeholder="Tìm theo tên, SĐT, nội dung tin nhắn…"
           @input="onSearchInput"
+          @animationend="searchFlash = false"
         />
-        <button class="cl-new-msg" title="Bắt đầu cuộc trò chuyện mới" @click="newMsgOpen = true">
+        <button
+          class="cl-new-msg"
+          ref="newMsgBtnEl"
+          data-nick-picker-trigger
+          title="Bắt đầu cuộc trò chuyện mới"
+          @click="onClickNewMessage"
+        >
           <v-icon size="18">mdi-message-plus</v-icon>
           <span>Tin nhắn mới</span>
+          <span v-if="newMsgPickerOpen" class="cl-new-msg-caret">▴</span>
         </button>
+
+        <!-- Wedge A 2026-05-28: NickPickerPopup xổ từ nút Tin nhắn mới
+             Chỉ mở khi search có SĐT (>= 9 digits) -->
+        <NickPickerPopup
+          v-model="newMsgPickerOpen"
+          :accounts="composeAccounts as any"
+          :trigger-el="newMsgBtnEl"
+          title="📤 Chọn nick gửi tin nhắn"
+          @pick="onPickNickForNewMsg"
+        />
       </div>
 
       <!-- Label chip bar (filter theo tag CRM) — SINGLE-SELECT.
@@ -60,24 +80,51 @@
           active: conv.id === selectedId,
           unread: conv.unreadCount > 0 && conv.id !== selectedId,
           'is-group': conv.threadType === 'group',
+          'is-virtual': conv.isVirtual,
         }"
         @click="$emit('select', conv.id)"
         @contextmenu.prevent="openContextMenu($event, conv)"
       >
-        <Avatar
-          :src="avatarSrcOf(conv)"
-          :name="displayName(conv)"
-          :size="41"
-          :is-group="conv.threadType === 'group'"
-          :platform="conv.threadType === 'user' ? 'zalo' : null"
-          :gradient-seed="conv.id"
-        />
+        <div class="ci-avatar-wrap">
+          <Avatar
+            :src="avatarSrcOf(conv)"
+            :name="displayName(conv)"
+            :size="41"
+            :is-group="conv.threadType === 'group'"
+            :platform="conv.threadType === 'user' ? 'zalo' : null"
+            :gradient-seed="conv.id"
+          />
+          <!-- Mini nick avatar — góc dưới-trái cho biết conv thuộc nick Zalo nào.
+               Anh chốt 2026-05-28: tránh phải click vào conv mới biết nick. -->
+          <img
+            v-if="conv.zaloAccount?.avatarUrl"
+            :src="conv.zaloAccount.avatarUrl"
+            :alt="conv.zaloAccount.displayName || ''"
+            :title="conv.zaloAccount.displayName ? `Nick: ${conv.zaloAccount.displayName}` : 'Nick Zalo'"
+            class="ci-nick-mini"
+          />
+          <span
+            v-else-if="conv.zaloAccount?.displayName"
+            class="ci-nick-mini ci-nick-mini--initial"
+            :title="`Nick: ${conv.zaloAccount.displayName}`"
+          >{{ (conv.zaloAccount.displayName || '?').charAt(0).toUpperCase() }}</span>
+
+          <!-- M55 2026-05-30: Badge cùng chăm — góc trên-phải avatar KH.
+               Chỉ hiện khi có >=2 sale chăm KH này (avoid noise khi chỉ 1 sale).
+               Tooltip = list collaborators. Click conv để vào panel chi tiết. -->
+          <span
+            v-if="cungChamCount(conv) >= 2"
+            class="ci-cung-cham-badge"
+            :title="cungChamTooltip(conv)"
+          >🤝 {{ cungChamCount(conv) }}</span>
+        </div>
 
 
         <div class="ci-body">
           <div class="ci-name-row">
             <div class="ci-name">
               <span v-if="conv.threadType === 'group'" class="group-icon">👥</span>
+              <span v-if="conv.isVirtual" class="virtual-chip" title="Chat nội bộ — KH chưa có Zalo, tin nhắn KHÔNG gửi đi">🔒</span>
               {{ displayName(conv) }}
             </div>
             <div class="ci-meta-right">
@@ -99,7 +146,12 @@
             </div>
           </div>
 
-          <div class="ci-preview" :class="`tone-${lastMessagePreviewTone(conv) ?? 'normal'}`">{{ lastMessagePreview(conv) }}</div>
+          <div class="ci-preview" :class="`tone-${lastMessagePreviewTone(conv) ?? 'normal'}`">
+            <!-- Privacy: click blur preview KHÔNG redirect (tránh nhầm khi click chuyển hội thoại).
+                 Blur thuần visual, không bắt event riêng. -->
+            <PrivateBlur v-if="privacyVisibility.shouldBlurConv(conv)" :redacted="true" mode="inline" />
+            <template v-else>{{ lastMessagePreview(conv) }}</template>
+          </div>
 
           <!-- Tag row luôn render (kể cả rỗng) để giữ layout cố định.
                Merge Contact.tags + Friend.crmTagsPerNick (Zalo-mirrored 🔵 X).
@@ -177,11 +229,12 @@
       </v-list>
     </v-menu>
 
-    <!-- Compose new message dialog -->
+    <!-- Compose new message dialog — chỉ mở SAU khi chọn nick từ NickPickerPopup -->
     <NewMessageDialog
       v-model="newMsgOpen"
       :accounts="composeAccounts"
       :default-account-id="composeDefaultAccountId"
+      :initial-query="newMsgInitialQuery"
       @opened="onComposeOpened"
     />
 
@@ -213,21 +266,39 @@ import { api } from '@/api/index';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import NewMessageDialog from '@/components/chat/NewMessageDialog.vue';
+import NickPickerPopup from '@/components/zalo-accounts/NickPickerPopup.vue';
 import ZaloBrandIcon from '@/components/icons/ZaloBrandIcon.vue';
 import { loadTagDefs, isZaloManaged, cleanTagName, tagColor } from '@/composables/use-crm-tag-defs';
+import { getOrgParts } from '@/composables/use-org-timezone';
+import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
+import { usePrivacyVisibility } from '@/composables/use-privacy-visibility';
+
+const privacyVisibility = usePrivacyVisibility();
 
 const props = defineProps<{
   conversations: Conversation[];
   selectedId: string | null;
   loading: boolean;
   search: string;
-  accounts?: { id: string; displayName: string | null }[];
+  accounts?: Array<{
+    id: string;
+    displayName: string | null;
+    avatarUrl?: string | null;
+    ownerUserId?: string | null;
+    privacyMode?: string | null;
+    isOwnedByMe?: boolean;
+    owner?: { id: string; fullName: string | null } | null;
+    zaloUid?: string | null;
+  }>;
   selectedAccountIds?: string[];
   /** Phase A perf (2026-05-21) — tab key (personal/group/main/other). Dùng làm
    *  :key cho TransitionGroup → tab switch tạo instance MỚI → bỏ qua FLIP
    *  animation cross-tab. Reorder trong cùng tab (tin mới đến) vẫn animate.
    *  Không bắt buộc; nếu missing thì TransitionGroup hoạt động như trước. */
   activeTabKey?: string;
+  /** Phase 2026-05-30 — SĐT từ lead Facebook (/chat?compose=SĐT). Khi có giá trị →
+   *  tự mở "Tin nhắn mới" + điền sẵn SĐT để dialog lookup Zalo + tạo hội thoại. */
+  autoComposePhone?: string;
 }>();
 
 const emit = defineEmits<{
@@ -241,17 +312,71 @@ const emit = defineEmits<{
 }>();
 
 // ── Compose new message ─────────────────────────────────────────────────────
+// Wedge A 2026-05-28 (anh chốt): nút "Tin nhắn mới" hành xử theo 2 state.
+//  - Search empty → flash đỏ cam viền search + focus, KHÔNG mở dialog.
+//  - Search có nội dung → mở NickPickerPopup xổ từ nút này (Teleport + anchored).
+//  - Pick nick từ popup → đóng popup + mở NewMessageDialog với
+//    defaultAccountId + initialQuery=search box.
 const newMsgOpen = ref(false);
+const newMsgPickerOpen = ref(false);
+const newMsgBtnEl = ref<HTMLElement | null>(null);
+const searchInputEl = ref<HTMLInputElement | null>(null);
+const searchFlash = ref(false);
+const newMsgInitialQuery = ref('');
+const newMsgPickedAccountId = ref<string | null>(null);
+
 const composeAccounts = computed(() => props.accounts || []);
 const composeDefaultAccountId = computed<string | null>(() => {
+  // Sau khi chọn nick từ popup → ưu tiên dùng cái đó
+  if (newMsgPickedAccountId.value) return newMsgPickedAccountId.value;
   const ids = props.selectedAccountIds || [];
   if (ids.length === 1) return ids[0];
   if (composeAccounts.value.length === 1) return composeAccounts.value[0].id;
   return null;
 });
-function onComposeOpened(conversationId: string) {
-  emit('compose-opened', conversationId);
+
+function onClickNewMessage() {
+  const q = (props.search || '').trim();
+  if (!q) {
+    // State A: hint sale nhập SĐT vào search trước
+    searchFlash.value = true;
+    nextTick(() => searchInputEl.value?.focus());
+    return;
+  }
+  // State B: mở NickPickerPopup xổ từ button "Tin nhắn mới"
+  newMsgPickerOpen.value = !newMsgPickerOpen.value;
 }
+
+function onPickNickForNewMsg(nick: { id: string }) {
+  newMsgPickedAccountId.value = nick.id;
+  newMsgInitialQuery.value = (props.search || '').trim();
+  newMsgPickerOpen.value = false;
+  newMsgOpen.value = true;
+}
+
+function onComposeOpened(conversationId: string) {
+  // M55.3 2026-05-30: đóng dialog NewMessageDialog NGAY khi opened — defensive,
+  // tránh sale phải bấm X thủ công nếu child dialog quên emit update:modelValue.
+  newMsgOpen.value = false;
+  emit('compose-opened', conversationId);
+  // Reset picked state sau khi dialog đã open + emit (dùng cho lần next)
+  newMsgPickedAccountId.value = null;
+  // Wedge A 2026-05-28 anh chốt: clear search SĐT sau khi mở chat thành công.
+  // Trước fix: sale gõ SĐT vào search → chọn nick → mở chat → conv mở nhưng
+  // conv list vẫn filter SĐT → conv mới biến mất → phải xoá search thủ công.
+  emit('update:search', '');
+}
+
+// Phase 2026-05-30 — Mở chat từ lead Facebook: khi có autoComposePhone → tự mở
+// "Tin nhắn mới" + điền sẵn SĐT. Dialog tự lookup Zalo + tạo hội thoại.
+function triggerAutoCompose(phone: string) {
+  if (!phone) return;
+  newMsgInitialQuery.value = phone.trim();
+  newMsgPickedAccountId.value = null; // sale chọn nick trong dialog
+  newMsgOpen.value = true;
+}
+watch(() => props.autoComposePhone, (p) => { if (p) triggerAutoCompose(p); });
+onMounted(() => { if (props.autoComposePhone) triggerAutoCompose(props.autoComposePhone); });
 
 // ── Tab state ──────────────────────────────────────────────────────────────
 const activeTab = ref<'main' | 'other'>('main');
@@ -327,6 +452,23 @@ function mergedTags(conv: Conversation): string[] {
 function isUsableName(s: string | null | undefined): s is string {
   return !!s && s.trim().length > 0 && s.trim().toLowerCase() !== 'unknown';
 }
+// M55 2026-05-30 — Cùng chăm counter cho ConversationList badge
+function cungChamCount(conv: Conversation): number {
+  return (conv.contact as { contactAccess?: unknown[] } | null | undefined)?.contactAccess?.length ?? 0;
+}
+function cungChamTooltip(conv: Conversation): string {
+  const list = ((conv.contact as { contactAccess?: Array<{
+    role: string;
+    user: { fullName: string | null; email: string | null } | null;
+  }> } | null | undefined)?.contactAccess) ?? [];
+  if (!list.length) return '';
+  const names = list.map((a) => {
+    const n = a.user?.fullName || a.user?.email || 'Sale';
+    return a.role === 'primary' ? `⭐ ${n} (chính)` : `🤝 ${n}`;
+  });
+  return `${list.length} sale đang/đã chăm KH này:\n${names.join('\n')}`;
+}
+
 function displayName(conv: Conversation): string {
   if (conv.threadType === 'group') {
     const groupName = (conv as Conversation & { groupName?: string }).groupName;
@@ -650,23 +792,22 @@ function formatTime(dateStr: string | null): string {
   if (diffMins < 1) return 'Vừa xong';
   if (diffMins < 60) return `${diffMins}p`;
   const diffHours = Math.floor(diffMins / 60);
+  // 2026-05-21 Phase B-5: hour/date/year đọc theo org TZ thay vì browser local.
+  // diffMs/diffMins/diffHours/diffDays là delta UTC → TZ-agnostic, OK giữ nguyên.
+  const p = getOrgParts(date);
+  const nowP = getOrgParts(now);
+  if (!p || !nowP) return '';
   if (diffHours < 24) {
-    const hh = date.getHours().toString().padStart(2, '0');
-    const mm = date.getMinutes().toString().padStart(2, '0');
-    return `${hh}:${mm}`;
+    return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
   }
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays === 1) return 'Hôm qua';
   if (diffDays < 7) return `${diffDays}d`;
-  // ≥ 7 ngày — phân biệt cùng năm vs năm cũ
-  const dd = date.getDate().toString().padStart(2, '0');
-  const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-  if (date.getFullYear() === now.getFullYear()) {
-    // Cùng năm: "DD/MM" (vd "12/05")
-    return `${dd}/${mm}`;
-  }
-  // Khác năm: "MM/YYYY" (vd "11/2025") — bỏ ngày, hiện tháng+năm
-  return `${mm}/${date.getFullYear()}`;
+  // ≥ 7 ngày — phân biệt cùng năm vs năm cũ (so theo org TZ)
+  const dd = String(p.day).padStart(2, '0');
+  const mm = String(p.month).padStart(2, '0');
+  if (p.year === nowP.year) return `${dd}/${mm}`;
+  return `${mm}/${p.year}`;
 }
 
 // ─── Phase 8 — Engagement pattern badge ──────────────────
@@ -778,6 +919,7 @@ function onPatternLeave() {
 }
 .cl-search-row {
   display: flex; gap: 6px; align-items: center;
+  position: relative; /* anchor cho NickPickerPopup */
 }
 .cl-search {
   flex: 1; min-width: 0;
@@ -790,6 +932,23 @@ function onPatternLeave() {
   font-family: inherit;
 }
 .cl-search:focus { border-color: var(--smax-primary); }
+
+/* Wedge A 2026-05-28: flash đỏ cam khi sale click "Tin nhắn mới" mà search trống */
+.cl-search--flash {
+  animation: cl-search-flash 1.1s ease-in-out 1;
+}
+@keyframes cl-search-flash {
+  0%   { border-color: #d97706; box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.55); background-color: #fffaf0; }
+  35%  { border-color: #ea580c; box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.18); background-color: #fff5e6; }
+  70%  { border-color: #d97706; box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.0); background-color: #fffaf0; }
+  100% { border-color: var(--smax-grey-200); box-shadow: none; background-color: var(--smax-bg); }
+}
+
+.cl-new-msg-caret {
+  font-size: 11px;
+  margin-left: 2px;
+  line-height: 1;
+}
 .cl-new-msg {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 8px 10px;
@@ -928,6 +1087,55 @@ function onPatternLeave() {
 }
 /* Avatar dịch xuống nhẹ để canh giữa với name + preview (bỏ qua tag row) */
 .conv-item :deep(.smax-av) { margin-top: 2px; flex-shrink: 0; }
+
+/* Wrapper để position mini avatar nick Zalo overlay góc dưới-trái */
+.ci-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* M55 2026-05-30 — Cùng chăm badge góc trên-phải avatar KH */
+.ci-cung-cham-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 9px;
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+  cursor: help;
+  z-index: 2;
+  line-height: 1.2;
+}
+.ci-nick-mini {
+  position: absolute;
+  bottom: -2px;
+  left: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--smax-grey-100, #f3f4f6);
+  object-fit: cover;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  z-index: 1;
+}
+.ci-nick-mini--initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2962ff, #6366f1);
+}
+.conv-item.active .ci-nick-mini { border-color: var(--smax-primary-soft, #e3f2fd); }
 .conv-item:hover { background: var(--smax-grey-50); }
 .conv-item.unread .ci-name { font-weight: 700; }
 /* Active: nền xanh nhạt đồng nhất + bo góc + viền xanh nhẹ */
@@ -942,6 +1150,32 @@ function onPatternLeave() {
 .conv-item.active:hover,
 .conv-item.is-group.active:hover {
   background: var(--smax-primary-soft) !important;
+}
+
+/* M53 2026-05-30: Virtual conversation — nền cam nhạt + chip 🔒 */
+.conv-item.is-virtual {
+  background: #fff7ed;
+  border-left: 3px solid #fb923c;
+  padding-left: calc(var(--ci-padding-x, 9px) - 3px);
+}
+.conv-item.is-virtual:hover { background: #ffedd5; }
+.conv-item.is-virtual.active {
+  background: #ffedd5 !important;
+  box-shadow: inset 0 0 0 1.5px #f97316 !important;
+}
+.virtual-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffedd5;
+  color: #c2410c;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-weight: 700;
+  margin-right: 4px;
+  line-height: 16px;
+  height: 16px;
 }
 
 /* Unread count badge — pill xám mờ dưới timestamp */

@@ -54,7 +54,17 @@ export function startAutomationEngine(): void {
     }
   })();
 
-  logger.info('[automation.engine] started — event bus + 3 action handlers + worker + cron');
+  // 5. Start engagement sweeper (Wave 1 #12 seen_no_reply + #13 silent_x_days)
+  void (async () => {
+    try {
+      const { startEngagementSweeper } = await import('./engagement-trigger-sweeper.js');
+      startEngagementSweeper();
+    } catch (err) {
+      logger.error('[automation.engine] engagement sweeper boot failed:', err);
+    }
+  })();
+
+  logger.info('[automation.engine] started — event bus + 3 action handlers + worker + cron + engagement-sweeper');
 }
 
 export { automationEventBus } from './event-bus.js';

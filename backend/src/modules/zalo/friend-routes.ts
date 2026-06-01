@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { resolveAccount, checkAccess, handleError, getAccessibleZaloAccountIds } from './zalo-route-helpers.js';
+import { getZaloScope } from './zalo-scope.js';
 import { markFriendRequestSent } from './friend-event-handler.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
@@ -14,6 +15,12 @@ import { FRIEND_INCLUDE_WITH_CONTACT, toFriendDto } from '../../shared/friend-se
 import { syncAccountFully } from './friend-sync-service.js';
 import { zaloPool } from './zalo-pool.js';
 import { logger } from '../../shared/utils/logger.js';
+import { createHash } from 'node:crypto';
+
+// Phase metrics layer 2026-05-22: hash SĐT trước khi log để privacy + dedup.
+function hashPhone(phone: string): string {
+  return createHash('sha256').update(phone.trim()).digest('hex');
+}
 
 const BASE = '/api/v1/zalo-accounts/:accountId/friends';
 
@@ -108,14 +115,11 @@ export async function friendRoutes(app: FastifyInstance) {
       sortBy = 'recent',
     } = request.query as { kind?: string; page?: string; limit?: string; search?: string; sortBy?: string };
     try {
-      // B3 fix — Resolve accessible accounts via shared helper (cùng hierarchy với
-      // checkAccess): owner/admin → tất cả nick org; non-admin → ACL + owned.
-      // Trước đây inline chỉ explicit + owned → admin không own đủ nick bị empty list.
-      const accessibleIds = await getAccessibleZaloAccountIds({
-        id: user.id,
-        orgId: user.orgId,
-        role: user.role,
-      });
+      // Phase Zalo Account Mutation Gate 2026-05-27: migrate sang getZaloScope
+      // (helper cũ getAccessibleZaloAccountIds chỉ ACL+owned, KHÔNG cascade dept.
+      // Trưởng phòng giờ thấy friend nick cấp dưới).
+      const scope = await getZaloScope(user.id, user.orgId, user.role);
+      const accessibleIds = scope.accessibleIds;
 
       if (accessibleIds.length === 0) {
         return { friends: [], total: 0, counts: {}, page: 1, limit: parseInt(limit, 10) || 25 };
@@ -263,14 +267,37 @@ export async function friendRoutes(app: FastifyInstance) {
     // Normalize: Zalo findUser nhận format không có + (e.g. 84xxx hoặc 0xxx ok cả 2).
     const phone = body.phone.replace(/[^\d]/g, '');
     if (phone.length < 9) return reply.status(400).send({ error: 'phone format invalid' });
+    // Phase metrics layer 2026-05-22: log MỌI lookup attempt (kể cả lỗi)
+    // dùng cho dashboard "Phone search today" + automation rate-limit.
+    const phoneHash = hashPhone(phone);
+    const logEvent = async (result: string, foundUid: string | null, errorCode: string | null) => {
+      try {
+        await prisma.phoneSearchEvent.create({
+          data: {
+            orgId: user.orgId,
+            accountId,
+            userId: user.id,
+            phoneHash,
+            result,
+            foundUid,
+            errorCode,
+          },
+        });
+      } catch (e) {
+        logger.warn(`[phone-search-log] failed: ${String(e)}`);
+      }
+    };
+
     try {
       await resolveAccount(accountId, user.orgId);
       const result = await zaloOps.findUser(accountId, phone);
       const u = (result as Record<string, unknown>) || {};
       const uid = String(u.uid || u.userId || '') || null;
       if (!uid) {
+        await logEvent('no_zalo', null, null);
         return reply.send({ found: false, reason: 'no_zalo', detail: 'SĐT này không có Zalo' });
       }
+      await logEvent('found_zalo', uid, null);
       return reply.send({
         found: true,
         uid,
@@ -284,9 +311,24 @@ export async function friendRoutes(app: FastifyInstance) {
       const e = err as { code?: string; message?: string };
       // ZaloApiError code 216 = no Zalo for phone (zca-js có thể throw thay vì trả empty)
       if (e?.code === 'NOT_CONNECTED' || e?.code === 'RATE_LIMITED') {
-        return reply.status(503).send({ error: e.code, detail: e.message });
+        await logEvent('rate_limited', null, e.code);
+        // M55.3 2026-05-30: dịch message tiếng Việt sale-friendly thay tiếng Anh raw.
+        // NOT_CONNECTED = nick CRM của sale chưa kết nối Zalo (không phải KH chặn).
+        // userFriendly = label hiện toast nhỏ cho sale, detail = action message.
+        const isNotConnected = e.code === 'NOT_CONNECTED';
+        return reply.status(503).send({
+          error: e.code,
+          detail: isNotConnected
+            ? 'Nick Zalo của anh chưa kết nối. Vào "Quản lý nick" để kết nối lại, hoặc chuyển sang chat nội bộ với KH.'
+            : 'Nick đã bị Zalo chặn tạm thời (quá nhiều lượt tra cứu). Vui lòng thử lại sau vài phút.',
+          userFriendly: isNotConnected
+            ? 'KH chưa bật tìm kiếm Zalo công khai'
+            : 'Đã đạt giới hạn tra cứu Zalo',
+          suggestVirtualChat: isNotConnected,
+        });
       }
       // Default: treat as not found (Zalo phổ biến throw cho phone lạ)
+      await logEvent('no_zalo', null, e?.code ?? null);
       return reply.send({ found: false, reason: 'lookup_failed', detail: String(e?.message || err) });
     }
   });

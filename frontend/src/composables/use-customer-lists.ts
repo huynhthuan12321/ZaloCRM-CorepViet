@@ -28,6 +28,10 @@ export interface CustomerListSummary {
   hasZaloEntries: number;
   noZaloEntries: number;
   pendingLookupEntries: number;
+  // Phase Multi-Source Lead Ads 2026-05-27
+  integrationKey?: string | null;
+  displayInlineFields?: string[] | null;
+  shareableToPool?: boolean;
 }
 
 export interface MappedRow {
@@ -187,11 +191,15 @@ export function useCustomerLists() {
     sourceType?: string;
     rawText?: string;
     rows?: MappedRow[];
+    // Phase Multi-Source Lead Ads 2026-05-27
+    platform?: string;
+    integrationKey?: string;
+    shareableToPool?: boolean;
   }) {
     try {
       const res = await api.post('/customer-lists', payload);
       await fetchLists();
-      return res.data as { id: string; name: string; totalEntries: number };
+      return res.data as { id: string; name: string; totalEntries?: number; integrationKey?: string };
     } catch (err: any) {
       console.error('[customer-lists] create failed:', err);
       return null;

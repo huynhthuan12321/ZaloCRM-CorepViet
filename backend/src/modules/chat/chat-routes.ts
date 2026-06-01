@@ -12,6 +12,11 @@ import { logger } from '../../shared/utils/logger.js';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import { applyContactAggregateFromMessage, applyFriendAggregate } from '../contacts/contact-aggregate.js';
+import { normalizePhone } from '../../shared/utils/phone.js';
+// M53 2026-05-30 — AI Trợ Lý cho Virtual Chat (KH no-Zalo)
+import { triggerVirtualChatAiReply } from '../ai/ai-virtual-chat-service.js';
+// M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual conv
+import { attachContactCollaboratorByUser } from '../contacts/contact-scope.js';
 
 type QueryParams = Record<string, string>;
 
@@ -85,14 +90,12 @@ export async function chatRoutes(app: FastifyInstance) {
     if (accountId) baseWhere.zaloAccountId = accountId;
     if (tab) baseWhere.tab = tab;
 
-    // Members can only see conversations from Zalo accounts they have access to
-    if (user.role === 'member') {
-      const accessibleAccounts = await prisma.zaloAccountAccess.findMany({
-        where: { userId: user.id },
-        select: { zaloAccountId: true },
-      });
-      const accessibleIds = accessibleAccounts.map((a) => a.zaloAccountId);
-      // Intersect with user-selected account filter if present
+    // Phase Contact Scope Hybrid 2026-05-27: scope qua getZaloScope (gỡ legacy
+    // 'role===member' bypass — user legacy admin nhưng RBAC group Sale vẫn bị scope).
+    const { getZaloScope } = await import('../zalo/zalo-scope.js');
+    const zScope = await getZaloScope(user.id, user.orgId, user.role);
+    if (!zScope.isOrgAdmin) {
+      const accessibleIds = zScope.accessibleIds;
       if (accountId && accessibleIds.includes(accountId)) {
         baseWhere.zaloAccountId = accountId;
       } else {
@@ -320,14 +323,12 @@ export async function chatRoutes(app: FastifyInstance) {
       if (Object.keys(where.lastMessageAt).length === 0) delete where.lastMessageAt;
     }
 
-    // Members can only see conversations from Zalo accounts they have access to
-    if (user.role === 'member') {
-      const accessibleAccounts = await prisma.zaloAccountAccess.findMany({
-        where: { userId: user.id },
-        select: { zaloAccountId: true },
-      });
-      const accessibleIds = accessibleAccounts.map((a) => a.zaloAccountId);
-      // Intersect requested account list với accessible
+    // Phase Contact Scope Hybrid 2026-05-27: scope qua getZaloScope (gỡ legacy
+    // 'role===member' bypass — user legacy admin nhưng RBAC group Sale vẫn bị scope).
+    const { getZaloScope: _getZScope } = await import('../zalo/zalo-scope.js');
+    const zScope2 = await _getZScope(user.id, user.orgId, user.role);
+    if (!zScope2.isOrgAdmin) {
+      const accessibleIds = zScope2.accessibleIds;
       if (accountIdList.length > 0) {
         const allowed = accountIdList.filter(id => accessibleIds.includes(id));
         where.zaloAccountId = allowed.length === 1 ? allowed[0] : { in: allowed };
@@ -339,10 +340,12 @@ export async function chatRoutes(app: FastifyInstance) {
     // Sort mode — Phase 6+ "Chưa đọc lên trên" vs "Mới nhất lên trên"
     // unread-first: composite [unreadCount > 0 DESC, lastMessageAt DESC]
     // Recent (default): [lastMessageAt DESC]
+    // 2026-05-28: nulls: 'last' để conv chưa có message thật KHÔNG pin top
+    // (ensure-conversation từ Lead Pool / Friend click tạo conv với lastMessageAt=null).
     const orderByClause: any =
       sortMode === 'unread-first'
-        ? [{ unreadCount: 'desc' }, { lastMessageAt: 'desc' }]
-        : { lastMessageAt: 'desc' };
+        ? [{ unreadCount: 'desc' }, { lastMessageAt: { sort: 'desc', nulls: 'last' } }]
+        : { lastMessageAt: { sort: 'desc', nulls: 'last' } };
 
     const [conversations, total] = await Promise.all([
       prisma.conversation.findMany({
@@ -361,6 +364,7 @@ export async function chatRoutes(app: FastifyInstance) {
               avatarUrl: true,
               phone: true,
               zaloUid: true,
+              hasZalo: true,
               tags: true,
               leadScore: true,
               engagementPattern: true,
@@ -369,9 +373,19 @@ export async function chatRoutes(app: FastifyInstance) {
               statusId: true,
               assignedUserId: true,
               priorityScore: true,
+              // M55 2026-05-30 — Cùng chăm indicator cho ConversationList cột 2
+              // (avatar stack +N). Limit 5 để tránh payload bloat ở list view.
+              contactAccess: {
+                select: {
+                  role: true,
+                  user: { select: { id: true, fullName: true, email: true } },
+                },
+                orderBy: { createdAt: 'asc' },
+                take: 5,
+              },
             },
           },
-          zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true } },
+          zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, privacyMode: true, ownerUserId: true } },
           pins: { select: { id: true } },
           messages: {
             take: 1,
@@ -482,14 +496,29 @@ export async function chatRoutes(app: FastifyInstance) {
       }]));
     }
 
+    // PRIVACY REDACT 2026-05-22 — apply redactConversationRow + redactMessage
+    // cho preview text ở cột 2 khi conv thuộc nick privacy='main' + non-owner.
+    const { buildPrivacyContext, redactConversationRow, redactMessage } = await import('../privacy/redact.js');
+    const privacyCtx = await buildPrivacyContext(request);
+
     return {
-      conversations: conversations.map((c) => ({
-        ...c,
-        isPinned: c.pins.length > 0,
-        friendship: c.contactId && c.externalThreadId
-          ? friendMap.get(`${c.zaloAccountId}:${c.externalThreadId}`) || null
-          : null,
-      })),
+      conversations: conversations.map((c) => {
+        const base = {
+          ...c,
+          isPinned: c.pins.length > 0,
+          friendship: c.contactId && c.externalThreadId
+            ? friendMap.get(`${c.zaloAccountId}:${c.externalThreadId}`) || null
+            : null,
+        };
+        const redactedConv = redactConversationRow(base as any, privacyCtx);
+        // Cũng redact preview message (snippet cuối trong messages[0])
+        if ((redactedConv as any).messages?.length && (redactedConv as any).redacted) {
+          (redactedConv as any).messages = (redactedConv as any).messages.map((m: any) =>
+            redactMessage(m, c as any, privacyCtx),
+          );
+        }
+        return redactedConv;
+      }),
       total,
       page: parseInt(page),
       limit: Math.min(parseInt(limit), 200),
@@ -504,7 +533,22 @@ export async function chatRoutes(app: FastifyInstance) {
     const conversation = await prisma.conversation.findFirst({
       where: { id, orgId: user.orgId },
       include: {
-        contact: true,
+        contact: {
+          include: {
+            // M55 2026-05-30 — Full collaborators cho ChatContactPanel + header tooltip.
+            // Detail view nên KHÔNG limit (1 KH thường <10 sale chăm).
+            contactAccess: {
+              select: {
+                role: true,
+                source: true,
+                createdAt: true,
+                user: { select: { id: true, fullName: true, email: true } },
+              },
+              orderBy: { createdAt: 'asc' },
+              take: 20,
+            },
+          },
+        },
         zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, status: true } },
         pins: { select: { id: true } },
       },
@@ -625,7 +669,32 @@ export async function chatRoutes(app: FastifyInstance) {
       if (!contact.zaloUsername && sdkUsername) contactPatch.zaloUsername = sdkUsername;
 
       if (Object.keys(contactPatch).length > 0) {
-        await prisma.contact.update({ where: { id: conv.contactId }, data: contactPatch });
+        try {
+          await prisma.contact.update({ where: { id: conv.contactId }, data: contactPatch });
+        } catch (err: any) {
+          // Wave 1.5-B: unique constraint conflict trên (orgId, zaloGlobalId) — stub Contact
+          // đụng canonical Contact đã có. Merge stub INTO canonical thay vì throw lên user.
+          if (err?.code === 'P2002' && sdkGlobalId) {
+            const canonical = await prisma.contact.findFirst({
+              where: { orgId: user.orgId, zaloGlobalId: sdkGlobalId, mergedInto: null, id: { not: conv.contactId } },
+              select: { id: true },
+            });
+            if (canonical) {
+              logger.info(`[touch-profile] Conflict → merging stub ${conv.contactId} INTO canonical ${canonical.id} via globalId=${sdkGlobalId}`);
+              // Re-point Conversation + Friend + Outbox + Task + Appointment to canonical
+              await prisma.$transaction([
+                prisma.conversation.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
+                prisma.friend.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
+                prisma.friendRequestOutbox.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
+                prisma.automationTask.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
+                prisma.customerListEntry.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
+                prisma.contact.update({ where: { id: conv.contactId }, data: { mergedInto: canonical.id, phoneNormalized: null, phone: null, updatedAt: new Date() } }),
+              ]);
+              return { ok: true, merged: true, intoContactId: canonical.id };
+            }
+          }
+          throw err;
+        }
       }
 
       // Friend snapshot: zaloDisplayName + zaloAvatarUrl — per-pair, luôn refresh
@@ -685,16 +754,27 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // ── List messages for a conversation (paginated, newest first) ──────────
-  app.get('/api/v1/conversations/:id/messages', { preHandler: requireZaloAccess('read') }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/v1/conversations/:id/messages', {
+    preHandler: requireZaloAccess('read'),
+    // Privacy phase integration: main-nick conv content sẽ bị redact ▒▒▒▒ ở middleware Privacy
+    config: { contentClass: 'content' as const, rbacResource: 'conversation' as const, rbacAction: 'access' as const },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
     const { page = '1', limit = '50' } = request.query as QueryParams;
 
     const conversation = await prisma.conversation.findFirst({
       where: { id, orgId: user.orgId },
-      select: { id: true },
+      select: {
+        id: true,
+        zaloAccount: { select: { privacyMode: true, ownerUserId: true } },
+      },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+
+    // Phase Riêng Tư 2026-05-22: redact content nếu conv main-nick + viewer không own + chưa unlock
+    const { buildPrivacyContext, redactMessage } = await import('../privacy/redact.js');
+    const privacyCtx = await buildPrivacyContext(request);
 
     const [messages, total] = await Promise.all([
       prisma.message.findMany({
@@ -718,18 +798,35 @@ export async function chatRoutes(app: FastifyInstance) {
           // Edit audit (2026-05-21) — FE render badge "(đã sửa)" + tooltip nội dung gốc
           originalContent: true,
           editedAt: true,
+          // Read receipts (Wave 1+2 2026-05-21) — FE render tick xám / tick xanh
+          deliveredAt: true,
+          seenAt: true,
           quote: true,
           attachments: true,
           albumKey: true,
           albumIndex: true,
           albumTotal: true,
           reactions: { select: { emoji: true, reactorId: true } },
+          // M55 2026-05-30 — sender attribution cho multi-sale cùng chăm.
+          // Tin self (sale gửi qua CRM) lưu repliedByUserId — FE render mini avatar
+          // tên sale phía trên bubble khi sale khác (không phải mình) gửi.
+          repliedByUserId: true,
+          repliedBy: { select: { id: true, fullName: true, email: true } },
+          // M55: isLocal/metadata cho virtual chat (đã có sẵn nhưng chưa expose)
+          isLocal: true,
+          metadata: true,
         },
       }),
       prisma.message.count({ where: { conversationId: id } }),
     ]);
 
-    return { messages: messages.reverse(), total, page: parseInt(page), limit: parseInt(limit) };
+    const ordered = messages.reverse();
+    const redacted = ordered.map((m) => {
+      const r = redactMessage(m as any, conversation as any, privacyCtx);
+      // BigInt zaloMsgIdNum → string cho JSON serialize
+      return { ...r, zaloMsgIdNum: (r as any).zaloMsgIdNum?.toString() ?? null };
+    });
+    return { messages: redacted, total, page: parseInt(page), limit: parseInt(limit) };
   });
 
   // ── Send message ─────────────────────────────────────────────────────────
@@ -753,8 +850,84 @@ export async function chatRoutes(app: FastifyInstance) {
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
 
+    // ── M53 2026-05-30: Virtual conversation gate ──────────────────────────
+    // KH no-Zalo có conversation ảo trong /chat. Tin nhắn lưu thẳng DB, KHÔNG qua Zalo SDK.
+    // Skip rate-limit + privacy check + SDK send. Anh chốt Approach A — sale dùng làm nhật ký.
+    if (conversation.isVirtual) {
+      try {
+        const localMsgId = `local:${randomUUID()}`;
+        const message = await prisma.message.create({
+          data: {
+            id: randomUUID(),
+            conversationId: id,
+            zaloMsgId: localMsgId, // synthetic — né NULL collision trên @@unique([conversationId, zaloMsgId])
+            zaloMsgIdNum: null,
+            senderType: 'self',
+            senderUid: conversation.zaloAccount.zaloUid || '',
+            senderName: 'Staff',
+            content,
+            contentType: 'text',
+            sentAt: new Date(),
+            repliedByUserId: user.id,
+            isLocal: true,
+            sentVia: 'user',
+          },
+        });
+
+        await prisma.conversation.update({
+          where: { id },
+          data: { lastMessageAt: new Date(), isReplied: true, unreadCount: 0 },
+        });
+
+        const safeMessage = { ...message, zaloMsgIdNum: null as string | null };
+        const io = (app as any).io as Server;
+        io?.emit('chat:message', {
+          accountId: conversation.zaloAccountId,
+          message: safeMessage,
+          conversationId: id,
+          _virtual: true,
+        });
+
+        // M53 AI Trợ Lý — fire-and-forget, KHÔNG block response
+        void triggerVirtualChatAiReply(
+          { conversationId: id, triggerMessageId: message.id, orgId: user.orgId },
+          io,
+        );
+
+        // M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual.
+        // Sale chăm KH qua chat = counter "Cùng chăm" +1 (idempotent).
+        // Fire-and-forget, không block response.
+        if (conversation.contactId) {
+          void attachContactCollaboratorByUser({
+            orgId: user.orgId,
+            contactId: conversation.contactId,
+            userId: user.id,
+            source: 'virtual_chat_message',
+          });
+        }
+
+        return safeMessage;
+      } catch (err) {
+        logger.error('[chat] Virtual message save error:', err);
+        return reply.status(500).send({ error: 'Failed to save virtual message' });
+      }
+    }
+    // ── END M53 Virtual gate ───────────────────────────────────────────────
+
     const instance = zaloPool.getInstance(conversation.zaloAccountId);
     if (!instance?.api) return reply.status(400).send({ error: 'Zalo account not connected' });
+
+    // PRIVACY GUARD 2026-05-22: nick privacy='main' → chỉ chính chủ (owner) gửi được
+    // qua UI. Bot/automation đi qua zaloPool trực tiếp (không qua route này) → vẫn OK.
+    if (conversation.zaloAccount.privacyMode === 'main') {
+      const senderUserId = (user as any).userId ?? user.id;
+      if (conversation.zaloAccount.ownerUserId !== senderUserId) {
+        return reply.status(403).send({
+          error: 'Nick này đang bật Riêng tư — chỉ chính chủ mới gửi tin nhắn được. Vui lòng nhờ chủ nick gửi.',
+          code: 'PRIVACY_LOCKED',
+        });
+      }
+    }
 
     // Rate limit check — prevent account blocking
     const limits = await zaloRateLimiter.checkLimits(conversation.zaloAccountId);
@@ -845,10 +1018,22 @@ export async function chatRoutes(app: FastifyInstance) {
       void applyContactAggregateFromMessage(aggInput);
       void applyFriendAggregate(aggInput);
 
+      // FIX 2026-05-21: BigInt zaloMsgIdNum không serialize được trong socket.io + JSON.
+      // Cast trước khi emit + return.
+      const safeMessage = { ...message, zaloMsgIdNum: message.zaloMsgIdNum?.toString() ?? null };
       const io = (app as any).io as Server;
-      io?.emit('chat:message', { accountId: conversation.zaloAccountId, message, conversationId: id });
+      // PRIVACY 2026-05-22: kèm _privacyMeta để FE detect & blur cho non-owner
+      io?.emit('chat:message', {
+        accountId: conversation.zaloAccountId,
+        message: safeMessage,
+        conversationId: id,
+        _privacyMeta: {
+          privacyMode: conversation.zaloAccount.privacyMode,
+          ownerUserId: conversation.zaloAccount.ownerUserId,
+        },
+      });
 
-      return message;
+      return safeMessage;
     } catch (err) {
       logger.error('[chat] Send message error:', err);
       return reply.status(500).send({ error: 'Failed to send message' });
@@ -967,7 +1152,16 @@ export async function chatRoutes(app: FastifyInstance) {
 
       const io = (app as any).io as Server;
       for (const m of createdMessages) {
-        io?.emit('chat:message', { accountId: conversation.zaloAccountId, message: m, conversationId: id });
+        // PRIVACY 2026-05-22: kèm _privacyMeta để FE detect & blur cho non-owner
+        io?.emit('chat:message', {
+          accountId: conversation.zaloAccountId,
+          message: m,
+          conversationId: id,
+          _privacyMeta: {
+            privacyMode: conversation.zaloAccount.privacyMode,
+            ownerUserId: conversation.zaloAccount.ownerUserId,
+          },
+        });
       }
 
       return { success: true, count: tmpFiles.length, messages: createdMessages };
@@ -993,6 +1187,140 @@ export async function chatRoutes(app: FastifyInstance) {
     });
 
     return { success: true };
+  });
+
+  // ── POST /chat/send-handoff ─ gửi tin nội bộ giữa 2 nick CRM (sale-to-sale). 2026-05-22 ─
+  // Dùng cho tab "🎯 CRM" widget "Đồng đội cùng chăm KH": sale A (đang online nick X)
+  // nhắn nick chính (target nick) của sale B đang cùng chăm KH này.
+  //
+  // Body: { senderZaloAccountId, targetUserId, content }
+  // Response: { success: true, zaloMsgId, targetNickName, targetZaloUidInSenderView }
+  //
+  // CỐT LÕI per-nick UID trap (memory ref):
+  //   Zalo UID là per-account perspective. ZaloAccount.zaloUid của Evo Sport là UID
+  //   Evo Sport tự xưng. Khi Thành Phạm gọi sendMessage(threadId=Evo-Sport-uid),
+  //   Zalo trả "Tham số không hợp lệ" vì sender không nhìn thấy threadId ấy.
+  //   Phải dùng Friend.zaloUidInNick (perspective sender → target identity).
+  //
+  // Lookup chain:
+  //   1. targetUserId → các ZaloAccount của user (ưu tiên main)
+  //   2. Mỗi target nick lấy phone → normalize
+  //   3. Tìm Contact phoneNormalized match trong org → Friend per (sender, contact)
+  //   4. Dùng Friend.zaloUidInNick làm threadId → sendMessage
+  //   5. Nếu không có match → báo lỗi rõ "sender chưa kết bạn nick target"
+  app.post('/api/v1/chat/send-handoff', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user!;
+    const body = request.body as { senderZaloAccountId?: string; targetUserId?: string; content?: string };
+    if (!body.senderZaloAccountId) return reply.status(400).send({ error: 'senderZaloAccountId required' });
+    if (!body.targetUserId) return reply.status(400).send({ error: 'targetUserId required' });
+    if (!body.content?.trim()) return reply.status(400).send({ error: 'content required' });
+    if (body.content.length > 2000) return reply.status(400).send({ error: 'Tin quá dài (tối đa 2000 ký tự)' });
+
+    // Verify sender nick thuộc cùng org + user có access
+    const senderNick = await prisma.zaloAccount.findFirst({
+      where: { id: body.senderZaloAccountId, orgId: user.orgId },
+      select: { id: true, ownerUserId: true, status: true, displayName: true },
+    });
+    if (!senderNick) return reply.status(404).send({ error: 'Sender nick not found' });
+
+    if (!['owner', 'admin'].includes(user.role)) {
+      const access = await prisma.zaloAccountAccess.findFirst({
+        where: { zaloAccountId: senderNick.id, userId: user.id },
+        select: { permission: true },
+      });
+      const isOwnerOfNick = senderNick.ownerUserId === user.id;
+      if (!access && !isOwnerOfNick) {
+        return reply.status(403).send({ error: 'Không có quyền gửi từ nick này' });
+      }
+    }
+
+    const instance = zaloPool.getInstance(senderNick.id);
+    if (!instance?.api) {
+      return reply.status(400).send({ error: 'Nick gửi chưa kết nối Zalo — vui lòng đăng nhập lại nick này' });
+    }
+
+    // Lấy danh sách nick của target sale, ưu tiên main, có zaloUid + phone
+    const targetNicks = await prisma.zaloAccount.findMany({
+      where: { orgId: user.orgId, ownerUserId: body.targetUserId, zaloUid: { not: null } },
+      orderBy: [{ privacyMode: 'asc' }, { lastConnectedAt: 'desc' }],
+      select: { id: true, zaloUid: true, displayName: true, phone: true },
+    });
+
+    if (!targetNicks.length) {
+      return reply.status(404).send({ error: 'Sale target chưa có nick Zalo đăng nhập CRM' });
+    }
+
+    // 2-tier lookup để có threadId hợp lệ (per-nick UID perspective):
+    //   Tier 1 — Friend.zaloUidInNick (sender đã kết bạn target qua Zalo)
+    //   Tier 2 — instance.api.findUser(phone) (sender chưa kết bạn, Zalo SDK resolve UID
+    //            cho perspective của sender. Tốn 1 Zalo API call nhưng OK vì handoff
+    //            không phải hot path.)
+    let threadId: string | null = null;
+    let targetNickName: string | null = null;
+    let lookupVia: 'friend' | 'findUser' | null = null;
+    for (const tn of targetNicks) {
+      const phone = normalizePhone(tn.phone);
+      if (!phone) continue;
+
+      // Tier 1: đã kết bạn → dùng Friend.zaloUidInNick (clean, không tốn Zalo API)
+      const friend = await prisma.friend.findFirst({
+        where: {
+          orgId: user.orgId,
+          zaloAccountId: senderNick.id,
+          contact: { phoneNormalized: phone },
+        },
+        select: { zaloUidInNick: true },
+      });
+      if (friend?.zaloUidInNick) {
+        threadId = friend.zaloUidInNick;
+        targetNickName = tn.displayName;
+        lookupVia = 'friend';
+        break;
+      }
+
+      // Tier 2: chưa kết bạn → findUser(phone) qua Zalo SDK
+      try {
+        const found = await (instance.api as unknown as { findUser?: (p: string) => Promise<{ uid?: string | number } | null> }).findUser?.(phone);
+        const uid = found?.uid != null ? String(found.uid) : null;
+        if (uid) {
+          threadId = uid;
+          targetNickName = tn.displayName;
+          lookupVia = 'findUser';
+          break;
+        }
+      } catch (e: unknown) {
+        logger.warn(`[chat/send-handoff] findUser fail phone=${phone}: ${(e as Error).message}`);
+      }
+    }
+
+    if (!threadId) {
+      return reply.status(404).send({
+        error: `Không tìm được nick Zalo của sale target — nick target có thể chưa có số điện thoại hoặc Zalo chặn search. Vui lòng kết bạn thủ công trước.`,
+      });
+    }
+
+    // Rate-limit gating
+    const limits = await zaloRateLimiter.checkLimits(senderNick.id);
+    if (!limits.allowed) return reply.status(429).send({ error: limits.reason });
+
+    try {
+      zaloRateLimiter.recordSend(senderNick.id);
+      const sendResult = await instance.api.sendMessage({ msg: body.content }, threadId, 0);
+      const sr = sendResult as unknown as { message?: { msgId?: number | string } | null };
+      const zaloMsgId = String(sr?.message?.msgId ?? '');
+      // Listener echo sẽ tự lưu Message + Conversation vào DB qua message-handler
+      return {
+        success: true,
+        zaloMsgId,
+        targetNickName,
+        targetZaloUidInSenderView: threadId,
+        lookupVia,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`[chat/send-handoff] failed: ${msg}`);
+      return reply.status(500).send({ error: 'Gửi tin nội bộ thất bại — ' + msg });
+    }
   });
 
   // ── Move conversation to a different tab (main / other) ────────────────

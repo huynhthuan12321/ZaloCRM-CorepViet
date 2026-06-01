@@ -22,6 +22,8 @@ services:
       # Phase 7 overnight test: STUB mode prevents Zalo SDK calls.
       # Set to 'false' or remove for REAL mode.
       - AUTOMATION_STUB_MODE=${AUTOMATION_STUB_MODE:-false}
+      # Friend Invite Queue test mode: 60s tick delay instead of 20-40min.
+      - FRIEND_INVITE_TEST_MODE=${FRIEND_INVITE_TEST_MODE:-true}
     depends_on:
       db:
         condition: service_healthy

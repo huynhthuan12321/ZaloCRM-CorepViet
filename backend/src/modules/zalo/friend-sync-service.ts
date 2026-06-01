@@ -29,6 +29,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { logActivity } from '../activity/activity-logger.js';
 import { applyFriendTransition } from './friend-event-handler.js';
+import { resolveOrCreateContact } from '../contacts/resolve-contact.js';
 import { buildFriendUpdatedPayload } from '../../shared/friend-serializer.js';
 
 export type SyncTrigger = 'manual' | 'connect' | 'cron';
@@ -290,67 +291,26 @@ interface ProcessFriendArgs {
 }
 
 async function processFriend(args: ProcessFriendArgs): Promise<void> {
-  // 1. Resolve or create Contact.
-  //    Memory anh: per-account zaloUid khác nhau cho cùng person → KHÔNG được dedup
-  //    theo zaloUid only (sẽ tạo duplicate Contact cho mỗi nick nhìn cùng KH).
-  //    Phải dedup theo zaloGlobalId (cross-nick canonical) khi có, fallback zaloUid.
-  //    Bug Codex flagged + memory: Phong Lam 2 Contacts vì cùng KH 2 nick → 2 zaloUid.
-  const globalId = args.snapshot.zaloGlobalId;
-  let contact: { id: string; fullName: string | null } | null = null;
-
-  // 1a. Dedup priority 1 — match zaloGlobalId (canonical, cross-nick).
-  // KHÔNG filter mergedInto:null vì @@unique([orgId, zaloGlobalId]) apply cả
-  // merged Contact → nếu skip merged sẽ Race: pre-check miss, create thì
-  // UniqueConstraint violation. Match cả merged để follow chain tới root.
-  if (globalId) {
-    const matched = await prisma.contact.findFirst({
-      where: { orgId: args.orgId, zaloGlobalId: globalId },
-      select: { id: true, fullName: true, mergedInto: true },
-    });
-    if (matched?.mergedInto) {
-      // Soft-merge target — redirect Friend về root contact thay vì merged stub
-      const root = await prisma.contact.findUnique({
-        where: { id: matched.mergedInto },
-        select: { id: true, fullName: true },
-      });
-      contact = root ?? { id: matched.id, fullName: matched.fullName };
-    } else if (matched) {
-      contact = { id: matched.id, fullName: matched.fullName };
-    }
-  }
-  // 1b. Fallback — match per-nick zaloUid (legacy data + khi globalId chưa pull về).
-  if (!contact) {
-    const matched = await prisma.contact.findFirst({
-      where: { orgId: args.orgId, zaloUid: args.uid },
-      select: { id: true, fullName: true, mergedInto: true },
-    });
-    if (matched?.mergedInto) {
-      const root = await prisma.contact.findUnique({
-        where: { id: matched.mergedInto },
-        select: { id: true, fullName: true },
-      });
-      contact = root ?? { id: matched.id, fullName: matched.fullName };
-    } else if (matched) {
-      contact = { id: matched.id, fullName: matched.fullName };
-    }
-  }
-  if (!contact) {
-    const newContact = await prisma.contact.create({
-      data: {
-        id: randomUUID(),
-        orgId: args.orgId,
-        zaloUid: args.uid,
-        zaloGlobalId: globalId || null,
-        zaloUsername: args.snapshot.zaloUsername || null,
-        fullName: args.fallbackName || 'Unknown',
-        avatarUrl: args.fallbackAvatar || null,
-        hasZalo: true,
-      },
-      select: { id: true, fullName: true },
-    });
-    contact = newContact;
-    args.result.createdContacts++;
-  }
+  // 1. Resolve or create Contact via central helper.
+  //    Helper handles globalId/username/phone dedup + Friend reverse-lookup + ON CONFLICT race-safe stub.
+  //    enrichViaGetUserInfo=false vì friend-sync ALREADY có full profile từ getAllFriends.
+  const resolved = await resolveOrCreateContact({
+    orgId: args.orgId,
+    zaloAccountId: args.accountId,
+    zaloUidInNick: args.uid,
+    zaloGlobalId: args.snapshot.zaloGlobalId,
+    zaloUsername: args.snapshot.zaloUsername,
+    fallbackFullName: args.snapshot.zaloDisplayName || args.fallbackName,
+    fallbackAvatarUrl: args.snapshot.zaloAvatarUrl || args.fallbackAvatar,
+    enrichViaGetUserInfo: false,
+  });
+  if (resolved.created) args.result.createdContacts++;
+  // Re-read fullName for downstream B8 backfill logic
+  const contactRow = await prisma.contact.findUnique({
+    where: { id: resolved.id },
+    select: { id: true, fullName: true },
+  });
+  let contact = contactRow ?? { id: resolved.id, fullName: null };
 
   // 1c. B8 — Backfill Contact.fullName khi Contact stub 'Unknown' mà Friend đã có
   // zaloDisplayName từ SDK. Stub được tạo bởi resolveContact (friend-event-handler)
@@ -361,14 +321,13 @@ async function processFriend(args: ProcessFriendArgs): Promise<void> {
   if (
     newName
     && newName !== 'Unknown'
-    && (contact.fullName === 'Unknown' || contact.fullName === null || contact.fullName === '')
+    && (contact.fullName === 'Unknown' || contact.fullName === null || contact.fullName === '' || contact.fullName === 'KH chưa rõ')
   ) {
     await prisma.contact.update({
       where: { id: contact.id },
       data: {
         fullName: newName,
-        // Cũng backfill globalId/username nếu Contact thiếu (matched bằng zaloUid fallback)
-        ...(globalId && !args.snapshot.zaloUsername ? { zaloGlobalId: globalId } : {}),
+        ...(args.snapshot.zaloGlobalId ? { zaloGlobalId: args.snapshot.zaloGlobalId } : {}),
         ...(args.snapshot.zaloUsername ? { zaloUsername: args.snapshot.zaloUsername } : {}),
         ...(args.fallbackAvatar ? { avatarUrl: args.fallbackAvatar } : {}),
       },

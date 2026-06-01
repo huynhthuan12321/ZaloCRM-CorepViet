@@ -4,11 +4,16 @@ import { io, Socket } from 'socket.io-client';
 import type { Contact } from '@/composables/use-contacts';
 import { useAuthStore } from '@/stores/auth';
 import { applyPendingTags } from '@/composables/use-pending-mutations';
+import { usePrivacyStore } from '@/stores/privacy';
 
 interface ZaloAccount {
   id: string;
   displayName: string | null;
   avatarUrl?: string | null;
+  /** Privacy Phase 2026-05-22 — 'main' = nick chính chủ (privacy mode on), 'sub' = công khai */
+  privacyMode?: 'main' | 'sub';
+  /** Owner user của nick (chính chủ) — dùng cho gate UI privacy blur + composer lock */
+  ownerUserId?: string | null;
 }
 
 export interface AiSentiment {
@@ -104,6 +109,8 @@ export interface Conversation {
   isReplied: boolean;
   isPinned?: boolean;
   messages?: ConversationMessage[];
+  /** M53 2026-05-30: Virtual conversation cho KH no-Zalo. Tin nhắn lưu nội bộ, KHÔNG gửi qua Zalo SDK. */
+  isVirtual?: boolean;
 }
 
 export interface MessageReactionView {
@@ -132,6 +139,18 @@ export interface Message {
   // Edit audit (2026-05-21) — set khi sale sửa tin trên CRM. Edit chỉ áp dụng local, không sync Zalo.
   originalContent?: string | null;
   editedAt?: string | null;
+  /** Privacy 2026-05-22 — true = server đã redact (non-owner xem nick privacy='main'). UI blur. */
+  redacted?: boolean;
+  /** Read receipts (Wave 1+2) — chỉ có giá trị cho tin OUTGOING (senderType='self') */
+  deliveredAt?: string | null;
+  seenAt?: string | null;
+  /** M55 2026-05-30 — sender attribution cho multi-sale cùng chăm.
+   *  Tin self lưu sale nào gõ qua CRM UI. Khác user hiện viewer → render mini avatar. */
+  repliedByUserId?: string | null;
+  repliedBy?: { id: string; fullName: string | null; email: string | null } | null;
+  /** M55 — virtual chat indicators */
+  isLocal?: boolean;
+  metadata?: Record<string, unknown> | null;
 }
 
 /** Sort comparator: primary by zaloMsgIdNum (Zalo Snowflake), fallback sentAt cho row chưa echo */
@@ -191,17 +210,43 @@ function mergeContactPreserveDetail<T extends { id?: string } | null | undefined
   return { ...existing, ...incoming } as T;
 }
 
-function mergeConvListPreserveDetail(existing: Conversation[], incoming: Conversation[]): Conversation[] {
+/**
+ * Merge list incoming (fresh fetch) với existing (state hiện tại):
+ * - Conv có trong incoming: lấy fresh + preserve contact detail
+ * - Conv có trong existing nhưng KHÔNG trong incoming + nằm trong preserveIds
+ *   (vd conv stub từ Lead Pool đang được select, lastMessageAt=null không vào
+ *   top 100 fresh) → giữ lại + APPEND vào CUỐI (vì lastMessageAt=null thuộc cuối).
+ *   Fix 2026-05-29: trước đây stub bị wipe → UI clear trắng khi fetchConversations rerun.
+ */
+function mergeConvListPreserveDetail(
+  existing: Conversation[],
+  incoming: Conversation[],
+  preserveIds?: Set<string>,
+): Conversation[] {
   const existingMap = new Map(existing.map(c => [c.id, c]));
-  return incoming.map(c => {
+  const incomingIds = new Set(incoming.map(c => c.id));
+  const merged: Conversation[] = incoming.map(c => {
     const prev = existingMap.get(c.id);
     if (!prev) return c;
     return { ...c, contact: mergeContactPreserveDetail(prev.contact, c.contact) };
   });
+  // Preserve stub/selected conv that didn't make incoming list
+  if (preserveIds && preserveIds.size > 0) {
+    for (const id of preserveIds) {
+      if (!incomingIds.has(id)) {
+        const stub = existingMap.get(id);
+        if (stub) merged.push(stub); // append cuối — lastMessageAt=null sort cuối tự nhiên
+      }
+    }
+  }
+  return merged;
 }
 
 export function useChat() {
   const authStore = useAuthStore();
+  const privacyStore = usePrivacyStore();
+  function currentUserIdForPrivacy(): string | null { return authStore.user?.id ?? null; }
+  function privacyUnlockedRef(): boolean { return !!privacyStore.isUnlocked; }
   const conversations = ref<Conversation[]>([]);
   const selectedConvId = ref<string | null>(null);
   const messages = ref<Message[]>([]);
@@ -212,6 +257,11 @@ export function useChat() {
   const loadingConvs = ref(false);
   const loadingMsgs = ref(false);
   const sendingMsg = ref(false);
+  // Wave 1 (2026-05-21) — KH đang gõ realtime. Key = conversationId (FE map từ
+  // threadId qua selectedConv). Value = timestamp ms cuối cùng nhận typing event.
+  // Auto-clear sau 5s không có event mới (timer per conv).
+  const typingConvIds = ref<Map<string, number>>(new Map());
+  const typingTimers = new Map<string, number>();
   const searchQuery = ref('');
   const accountFilter = ref<string | null>(null);
   const aiSuggestion = ref('');
@@ -268,9 +318,13 @@ export function useChat() {
     // bypassCache=true cho socket-triggered refresh (scheduleConvSync sau khi
     // socket optimistic move conv lên top). Lý do: nếu apply cache cũ sẽ ghi đè
     // state đã được socket update → conv "tụt xuống xíu rồi nhảy lên top" flicker.
+    // Fix 2026-05-29: preserve conv đang được select (vd stub từ Lead Pool,
+    // lastMessageAt=null không vào top 100 → bị wipe → UI blank).
+    const preserveIds = selectedConvId.value ? new Set([selectedConvId.value]) : undefined;
+
     if (cached) {
       logCacheEvent('hit', cacheKey);
-      conversations.value = mergeConvListPreserveDetail(conversations.value, cached.data);
+      conversations.value = mergeConvListPreserveDetail(conversations.value, cached.data, preserveIds);
     } else {
       if (!opts?.bypassCache) logCacheEvent('miss', cacheKey);
       // Spinner chỉ hiện khi state thực sự rỗng (first load). bypassCache khi
@@ -288,7 +342,7 @@ export function useChat() {
       evictOldConvCacheIfNeeded();
       // Merge để giữ detail fields (Contact full ~50 field từ /conversations/:id)
       // không bị wipe bởi narrow list response (14 field).
-      conversations.value = mergeConvListPreserveDetail(conversations.value, fresh);
+      conversations.value = mergeConvListPreserveDetail(conversations.value, fresh, preserveIds);
     } catch (err) {
       console.error('Failed to fetch conversations:', err);
     } finally {
@@ -487,8 +541,15 @@ export function useChat() {
     await fetchMessages(convId);
     try {
       const convDetail = await api.get(`/conversations/${convId}`);
-      const conv = conversations.value.find(c => c.id === convId);
-      if (conv) {
+      let conv = conversations.value.find(c => c.id === convId);
+      if (!conv) {
+        // 2026-05-28: Conv stub từ Lead Pool có thể không nằm trong 100 conv top
+        // (lastMessageAt=null, sort sau hết). Push detail vào CUỐI list (không gim top —
+        // fix 2026-05-29: trước đây unshift gim top, sau khi gửi tin nhắn đầu BE update
+        // lastMessageAt → conv tự nhảy lên top theo sort tự nhiên).
+        conversations.value = [...conversations.value, convDetail.data];
+        conv = convDetail.data;
+      } else {
         if (convDetail.data.contact) conv.contact = convDetail.data.contact;
         // friendship per-pair (counter, leadScore, status RIÊNG cặp nick×KH).
         // KHÔNG fallback contact aggregate vì các trường này khác semantics.
@@ -563,7 +624,24 @@ export function useChat() {
   function initSocket() {
     socket = io({ transports: ['websocket', 'polling'] });
 
-    socket.on('chat:message', (data: { message: Message; conversationId: string }) => {
+    socket.on('chat:message', (data: { message: Message; conversationId: string; _privacyMeta?: { privacyMode?: string; ownerUserId?: string | null } }) => {
+      // PRIVACY 2026-05-22 — backend kèm _privacyMeta cho mỗi event, FE đánh dấu
+      // redacted client-side khi non-owner để blur hiệu lực ngay realtime (tránh
+      // bug "tin mới không bị mờ" anh báo). Server không gửi raw content cho
+      // non-owner conv (đã có gate), nên đây chỉ là safety belt cho UI.
+      const meta = data._privacyMeta;
+      if (meta?.privacyMode === 'main') {
+        const myId = currentUserIdForPrivacy();
+        const isOwner = !!myId && meta.ownerUserId === myId;
+        const unlocked = privacyUnlockedRef();
+        if (!isOwner || !unlocked) {
+          (data.message as any).redacted = true;
+          (data.message as any).content = '';
+          (data.message as any).originalContent = null;
+          (data.message as any).attachments = [];
+        }
+      }
+
       if (data.conversationId === selectedConvId.value) {
         if (!messages.value.find(m => m.id === data.message.id)) {
           // INSERT theo sortedBy sentAt thay vì push cuối array. Lý do: socket có
@@ -638,7 +716,7 @@ export function useChat() {
       }
     });
 
-    socket.on('chat:reactions', (data: { messageId?: string; msgId?: string; zaloMsgId?: string; reactions: { userId: string; userName: string; reaction: string; action: 'add' | 'remove' }[] }) => {
+    socket.on('chat:reactions', (data: { messageId?: string; msgId?: string; zaloMsgId?: string; reactions: { userId: string; userName: string; reaction: string; action: 'add' | 'remove'; totalCount?: number }[] }) => {
       const msg = messages.value.find(m => m.id === data.messageId || m.id === data.msgId || m.zaloMsgId === data.zaloMsgId);
       if (!msg) return;
       // Merge với reactions hiện có thay vì replace — tránh mất emoji của user khác
@@ -652,7 +730,19 @@ export function useChat() {
       for (const r of data.reactions) {
         const emoji = r.reaction;
         const isMine = r.userId === myId;
-        if (r.action === 'add') {
+        // ANTI-DRIFT FIX 2026-05-22: prefer authoritative totalCount từ BE post-mutation.
+        // Trước fix: Zalo gửi 10 events → FE increment +1 mỗi event → count=10 realtime,
+        // refresh REST trả 1 (DB composite key msg×reactor×emoji = 1 row) → mismatch.
+        // Giờ BE emit totalCount = count thực từ DB → FE set thay vì increment.
+        if (typeof r.totalCount === 'number') {
+          if (r.totalCount > 0) counts.set(emoji, r.totalCount);
+          else counts.delete(emoji);
+          if (isMine) {
+            if (r.action === 'add') myEmojis.add(emoji);
+            else if (r.action === 'remove') myEmojis.delete(emoji);
+          }
+        } else if (r.action === 'add') {
+          // Fallback cho legacy emit không kèm totalCount
           counts.set(emoji, (counts.get(emoji) || 0) + 1);
           if (isMine) myEmojis.add(emoji);
         } else if (r.action === 'remove') {
@@ -673,6 +763,61 @@ export function useChat() {
 
     socket.on('chat:unpinned', () => {
       fetchConversations({ bypassCache: true });
+    });
+
+    // ─── WAVE 1 — KH đang gõ tin nhắn ─────────────────────────────────────
+    // SDK fire mỗi ~2s khi KH còn gõ. Auto-clear sau 5s không có event mới
+    // (timer per conv, reset mỗi lần nhận event mới — tránh nháy).
+    socket.on('zalo:typing', (data: { accountId: string; threadId: string; threadType: string; ts: number }) => {
+      const conv = conversations.value.find(
+        c => c.externalThreadId === data.threadId && c.zaloAccount?.id === data.accountId,
+      );
+      if (!conv) return;
+      const m = new Map(typingConvIds.value);
+      m.set(conv.id, Date.now());
+      typingConvIds.value = m;
+      // Reset timer: nếu đã có timer cho conv này → clear, set timer mới 5s
+      const existingTimer = typingTimers.get(conv.id);
+      if (existingTimer) window.clearTimeout(existingTimer);
+      const newTimer = window.setTimeout(() => {
+        const m2 = new Map(typingConvIds.value);
+        m2.delete(conv.id);
+        typingConvIds.value = m2;
+        typingTimers.delete(conv.id);
+      }, 5000);
+      typingTimers.set(conv.id, newTimer);
+    });
+
+    // ─── WAVE 1+2 — bubble status update (delivered/seen) ─────────────────
+    socket.on('zalo:message-status', (data: {
+      accountId: string;
+      conversationId: string;
+      messageId: string;
+      zaloMsgId?: string | null;
+      deliveredAt?: string | null;
+      seenAt?: string | null;
+    }) => {
+      // Update local messages cache nếu đang mở conv đúng
+      if (messagesConvId.value === data.conversationId) {
+        const msg = messages.value.find(
+          m => m.id === data.messageId || (data.zaloMsgId && m.zaloMsgId === data.zaloMsgId),
+        );
+        if (msg) {
+          msg.deliveredAt = data.deliveredAt ?? msg.deliveredAt;
+          msg.seenAt = data.seenAt ?? msg.seenAt;
+        }
+      }
+      // Patch persistent cache (lần sau quay lại conv vẫn thấy status đúng)
+      const cached = messagesCache.get(data.conversationId);
+      if (cached) {
+        const msg = cached.find(
+          m => m.id === data.messageId || (data.zaloMsgId && m.zaloMsgId === data.zaloMsgId),
+        );
+        if (msg) {
+          msg.deliveredAt = data.deliveredAt ?? msg.deliveredAt;
+          msg.seenAt = data.seenAt ?? msg.seenAt;
+        }
+      }
     });
   }
 
@@ -716,5 +861,6 @@ export function useChat() {
     initSocket,
     destroySocket,
     getSocket: () => socket,
+    typingConvIds,
   };
 }

@@ -34,6 +34,16 @@ export function detectContentType(msgType: string | undefined, content: any): st
     if (typeof content.description === 'string' && content.description.includes('qrCodeUrl')) {
       return 'qr_code';
     }
+    // FIX G1 2026-05-21: action="recommened.link" / "recommended.link" = KH share link
+    // có preview (FB reel, Maps, YouTube...) — lẽ ra phải là 'link', không phải 'contact_card'.
+    // 635 row cũ bị classify sai vì rơi vào keyword check "recommended/card" ở dưới.
+    // Yêu cầu thêm href hợp lệ để tránh false-positive với link rỗng.
+    if (
+      (action === 'recommened.link' || action === 'recommended.link') &&
+      typeof content.href === 'string' && content.href.startsWith('http')
+    ) {
+      return 'link';
+    }
     // Fallback shape detection cho call (1 số SDK version dùng key khác)
     if (content.callDuration !== undefined || content.callType !== undefined) return 'call';
   }

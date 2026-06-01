@@ -17,6 +17,7 @@ import type { BlockActionType } from '../blocks/types.js';
 // ── Pure gate functions ───────────────────────────────────────────────────
 
 // Hour range gate — returns retryAfter for next valid window if blocked.
+// Mọi cài đặt nhân hệ thống theo Asia/Ho_Chi_Minh (UTC+7) — container có thể UTC.
 export function checkHourRange(
   now: Date,
   rules: SequenceRuntimeRules,
@@ -24,24 +25,25 @@ export function checkHourRange(
   const range = rules.allowedHourRange;
   if (!range) return { passed: true };
   const [start, end] = range;
-  const hour = now.getHours();
-  if (hour >= start && hour <= end) {
+  // Convert "now" to VN local clock by shifting +7h, then read as if UTC.
+  const vnNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const vnHour = vnNow.getUTCHours();
+  if (vnHour >= start && vnHour <= end) {
     return { passed: true };
   }
-  // Compute next valid window:
-  //   if hour < start: today at `start`
-  //   if hour > end: tomorrow at `start`
-  const retryAfter = new Date(now);
-  if (hour < start) {
-    retryAfter.setHours(start, 0, 0, 0);
+  // Compute next valid VN window, then convert back to UTC for retryAfter.
+  const vnRetry = new Date(vnNow);
+  if (vnHour < start) {
+    vnRetry.setUTCHours(start, 0, 0, 0);
   } else {
-    retryAfter.setDate(retryAfter.getDate() + 1);
-    retryAfter.setHours(start, 0, 0, 0);
+    vnRetry.setUTCDate(vnRetry.getUTCDate() + 1);
+    vnRetry.setUTCHours(start, 0, 0, 0);
   }
+  const retryAfter = new Date(vnRetry.getTime() - 7 * 60 * 60 * 1000);
   return {
     passed: false,
     failedGate: 'hour_range',
-    detail: `Outside hours [${start}:00 - ${end}:00], retry at ${retryAfter.toISOString()}`,
+    detail: `Outside hours VN [${start}:00 - ${end}:00], retry at ${retryAfter.toISOString()}`,
     retryAfter,
   };
 }
@@ -56,7 +58,8 @@ export function checkPerNickThrottle(
   lastSentAt: Date | null,
   rules: SequenceRuntimeRules,
 ): GateResult {
-  if (!rules.perNickThrottle) return { passed: true };
+  // Treat null/undefined/false as DISABLED (UI may write absent/false when off).
+  if (rules.perNickThrottle == null || rules.perNickThrottle === false) return { passed: true };
   if (!lastSentAt) return { passed: true };
 
   const delay = rules.randomDelayPerSend;
@@ -105,7 +108,8 @@ export function checkStopOnAccept(
   rules: SequenceRuntimeRules,
   acceptedNicksCount: number,
 ): GateResult {
-  if (!rules.stopOnAccept) return { passed: true };
+  // Treat null/undefined/false as DISABLED.
+  if (rules.stopOnAccept == null || rules.stopOnAccept === false) return { passed: true };
   if (acceptedNicksCount === 0) return { passed: true };
   return {
     passed: false,
@@ -123,7 +127,9 @@ export function checkCrossNickRecency(
   latestOtherNickActivity: Date | null,
 ): GateResult {
   const days = rules.crossNickRecencyDays;
-  if (!days || days <= 0) return { passed: true };
+  // Treat null/undefined/0 as DISABLED — FE writes 0 when field cleared.
+  if (days == null || days === 0) return { passed: true };
+  if (days <= 0) return { passed: true };
   if (!latestOtherNickActivity) return { passed: true };
 
   const cutoffMs = days * 24 * 60 * 60 * 1000;
@@ -162,4 +168,38 @@ export function checkRuleEnabled(enabled: boolean): GateResult {
     failedGate: 'rule_disabled',
     detail: 'Sequence/Trigger đã bị disable',
   };
+}
+
+// ── Wave 1 — Frequency cap per contact on a Khối (chốt 2026-05-23) ────────
+//
+// Caller passes how many tasks for THIS contact × THIS block đã DONE trong
+// window (typically queried as: state=done, contactId+blockId, executedAt > now - windowDays).
+// Config từ Block.content.frequencyCapPerContact: { max: number, windowDays: number }.
+// null/missing = no cap (default).
+export function checkFrequencyCapPerContact(
+  doneCount: number,
+  cap: { max: number; windowDays: number } | null,
+): GateResult {
+  if (!cap || cap.max <= 0) return { passed: true };
+  if (doneCount < cap.max) return { passed: true };
+  return {
+    passed: false,
+    failedGate: 'frequency_cap_per_contact',
+    detail: `KH đã nhận ${doneCount} tin từ Khối này trong ${cap.windowDays} ngày (cap=${cap.max})`,
+  };
+}
+
+// Extract frequency cap from block.content. Returns null when missing/invalid.
+export function extractFrequencyCap(
+  blockContent: unknown,
+): { max: number; windowDays: number } | null {
+  if (!blockContent || typeof blockContent !== 'object') return null;
+  const c = (blockContent as Record<string, unknown>).frequencyCapPerContact;
+  if (!c || typeof c !== 'object') return null;
+  const obj = c as Record<string, unknown>;
+  const max = typeof obj.max === 'number' && Number.isInteger(obj.max) ? obj.max : null;
+  const windowDays = typeof obj.windowDays === 'number' && Number.isInteger(obj.windowDays) ? obj.windowDays : null;
+  if (max === null || windowDays === null) return null;
+  if (max <= 0 || windowDays <= 0) return null;
+  return { max, windowDays };
 }

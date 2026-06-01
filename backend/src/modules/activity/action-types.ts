@@ -80,6 +80,17 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   bot_score_calc: 'automation',
   bot_status_suggest: 'automation',
   auto_tag_change: 'automation', // Phase 6+ unified auto-tag system (scoring/auto-tag.ts)
+
+  // Lead Pool 2026-05-29 — Phase v2.D timeline logging.
+  // assign: sale được chia lead (system action thay đổi Contact.assignedUserId)
+  // auto_return: cron 2am hoặc lazy reaper trả pool vì sale không note
+  // bonus_grant: admin/leader grant bonus quota sau khi review noted leads
+  // zalo_lookup: zaloOps.findUser được gọi (auto trong requestLead/getLeadPayload hoặc manual via find-zalo)
+  lead_pool_assign: 'customer_info',
+  lead_pool_auto_return: 'system',
+  lead_pool_manual_return: 'customer_info', // sale chủ động trả pool — narrative event
+  lead_pool_bonus_grant: 'system',
+  lead_pool_zalo_lookup: 'system',
 };
 
 export function categoryOf(action: string): ActivityCategory | null {

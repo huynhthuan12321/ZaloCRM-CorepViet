@@ -5,12 +5,17 @@ import { refreshOrgTimezone } from '@/composables/use-org-timezone';
 
 interface User {
   id: string;
-  email: string;
+  email: string | null;
+  phone?: string | null;
   fullName: string;
   role: string;
   orgId: string;
   orgName: string;
   orgTimezone?: string;
+  // Phase Onboarding v1 2026-05-24 — track first-run setup state.
+  // passwordChangedAt = null → force change pw (router guard redirect /setup-password)
+  passwordChangedAt?: string | null;
+  onboardingDismissedAt?: string | null;
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -35,8 +40,11 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('token', res.data.token);
   }
 
-  async function login(email: string, password: string) {
-    const res = await api.post('/auth/login', { email, password });
+  // Phase Onboarding v1 2026-05-24 — identifier accept cả email vừa phone
+  async function login(identifier: string, password: string) {
+    // BE expect field 'email' nhưng accept cả phone — gửi raw identifier qua field email
+    // để backward-compat (BE auto-detect '@' hoặc digit-only).
+    const res = await api.post('/auth/login', { email: identifier, password });
     token.value = res.data.token;
     user.value = res.data.user;
     localStorage.setItem('token', res.data.token);
@@ -50,11 +58,14 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = {
         id: data.id,
         email: data.email,
+        phone: data.phone ?? null,
         fullName: data.fullName,
         role: data.role,
         orgId: data.orgId,
         orgName: data.org?.name ?? '',
         orgTimezone: tz,
+        passwordChangedAt: data.passwordChangedAt ?? null,
+        onboardingDismissedAt: data.onboardingDismissedAt ?? null,
       };
       refreshOrgTimezone(tz);
     } catch {

@@ -153,6 +153,64 @@
           </div>
         </div>
 
+        <!-- ───── TAB LEAD ADS ───── -->
+        <div v-if="activeTab === 'leadads'" class="leadads-tab">
+          <div class="field">
+            <label>Nền tảng quảng cáo</label>
+            <div class="platform-grid">
+              <button
+                v-for="p in LEAD_PLATFORMS"
+                :key="p.key"
+                type="button"
+                class="platform-btn"
+                :class="{ active: leadPlatform === p.key }"
+                @click="leadPlatform = p.key"
+              >
+                <span class="platform-icon">{{ p.icon }}</span>
+                <span class="platform-label">{{ p.label }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>
+              Mã đồng bộ (key trong tên chiến dịch)
+              <span class="info-pill" title="Mỗi tệp 1 mã. Anh đặt tên chiến dịch trên FB/TikTok kèm #MÃ — lead chảy về đúng tệp này. VD chiến dịch 'Sunshine Q7 #A-001' → tệp có mã A-001.">
+                ℹ️ Cách dùng
+              </span>
+            </label>
+            <input
+              :value="integrationKey"
+              placeholder="A-001"
+              maxlength="32"
+              class="key-input"
+              @input="onIntegrationKeyInput"
+            />
+            <div v-if="integrationKeyError" class="key-error">⚠️ {{ integrationKeyError }}</div>
+            <div class="hint">
+              Đặt tên chiến dịch trên FB là <code>Sunshine Q7 #{{ integrationKey || 'A-001' }}</code> để lead chảy về tệp này.
+              Mỗi tệp 1 mã, không trùng trong tổ chức.
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="switch-row">
+              <input type="checkbox" v-model="shareableToPool" />
+              <span class="switch-label">
+                Chia sẻ vào Lead Pool — sale có thể nhận
+                <span class="info-pill" title="Khi bật, các lead validated trong tệp này sẽ vào pool /lead-pool/request, bất kỳ sale nào trong org có quyền nhận đều có thể click 'Nhận lead' để được assign.">
+                  ℹ️
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div class="leadads-note">
+            <span class="ico">💡</span>
+            Tạo xong, anh vào <b>Cài đặt → Kênh & Tích hợp → {{ leadPlatform === 'fb-leadads' ? 'Facebook Lead Ads' : 'tích hợp tương ứng' }}</b> để kết nối page/app.
+          </div>
+        </div>
+
         <!-- ───── Dry-run preview chung ───── -->
         <div v-if="dryRunResult" class="parse-preview">
           <div class="pp-row">
@@ -212,12 +270,40 @@ const dryRunResult = ref<DryRunResult | null>(null);
 const ICON_CHOICES = ['🏢', '📣', '❄️', '🌊', '📋', '🎪', '📱', '🎵', '🔥', '⭐'];
 
 const TABS = [
-  { key: 'paste' as const, label: 'Paste danh sách', icon: '📋', accept: '' },
-  { key: 'excel' as const, label: 'Upload Excel',    icon: '📊', accept: '.xlsx,.xls' },
-  { key: 'csv'   as const, label: 'Upload CSV',      icon: '📄', accept: '.csv' },
+  { key: 'paste'   as const, label: 'Paste danh sách', icon: '📋', accept: '' },
+  { key: 'excel'   as const, label: 'Upload Excel',    icon: '📊', accept: '.xlsx,.xls' },
+  { key: 'csv'     as const, label: 'Upload CSV',      icon: '📄', accept: '.csv' },
+  // Phase Multi-Source Lead Ads 2026-05-27
+  { key: 'leadads' as const, label: 'Lead Ads',        icon: '📣', accept: '' },
 ];
-type TabKey = 'paste' | 'excel' | 'csv';
+type TabKey = 'paste' | 'excel' | 'csv' | 'leadads';
 const activeTab = ref<TabKey>('paste');
+
+// ───────── Tab leadads ─────────
+const LEAD_PLATFORMS = [
+  { key: 'fb-leadads',     label: 'Facebook Lead Ads', icon: '📘' },
+  { key: 'tiktok-leadgen', label: 'TikTok Lead Gen',   icon: '🎵' },
+  { key: 'google-leadform',label: 'Google Lead Form',  icon: '🔍' },
+  { key: 'zalo-ads',       label: 'Zalo Ads',          icon: '💬' },
+  { key: 'custom',         label: 'Khác / Tuỳ chỉnh',  icon: '🔧' },
+];
+const leadPlatform = ref<string>('fb-leadads');
+const integrationKey = ref<string>('');
+const shareableToPool = ref<boolean>(false);
+const integrationKeyError = ref<string>('');
+
+function onIntegrationKeyInput(e: Event) {
+  const target = e.target as HTMLInputElement;
+  // Auto-uppercase + strip space, allow A-Z 0-9 dash
+  const cleaned = target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  integrationKey.value = cleaned.slice(0, 32);
+  target.value = integrationKey.value;
+  // Validate
+  if (!integrationKey.value) integrationKeyError.value = '';
+  else if (!/^[A-Z0-9-]{1,32}$/.test(integrationKey.value)) {
+    integrationKeyError.value = 'Chỉ A-Z, 0-9, dấu gạch ngang (1-32 ký tự)';
+  } else integrationKeyError.value = '';
+}
 
 const acceptForTab = computed(() => {
   const t = TABS.find((x) => x.key === activeTab.value);
@@ -379,6 +465,11 @@ watch(mapping, () => triggerFileDryRun(), { deep: true });
 // ───────── Submit ─────────
 const canSubmit = computed(() => {
   if (activeTab.value === 'paste') return !!rawText.value.trim();
+  if (activeTab.value === 'leadads') {
+    return !!name.value.trim()
+      && !!integrationKey.value
+      && !integrationKeyError.value;
+  }
   return mapping.value.phone != null && mappedRows.value.length > 0;
 });
 
@@ -393,6 +484,15 @@ async function onSubmit() {
         iconEmoji: iconEmoji.value ?? undefined,
         sourceType: 'paste',
         rawText: rawText.value,
+      });
+    } else if (activeTab.value === 'leadads') {
+      result = await createList({
+        name: name.value.trim(),
+        iconEmoji: iconEmoji.value ?? '📣',
+        sourceType: 'leadads',
+        platform: leadPlatform.value,
+        integrationKey: integrationKey.value,
+        shareableToPool: shareableToPool.value,
       });
     } else {
       result = await createList({
@@ -420,6 +520,11 @@ function resetAll() {
   rawText.value = '';
   dryRunResult.value = null;
   activeTab.value = 'paste';
+  // Phase Multi-Source Lead Ads 2026-05-27
+  leadPlatform.value = 'fb-leadads';
+  integrationKey.value = '';
+  integrationKeyError.value = '';
+  shareableToPool.value = false;
   resetFile();
 }
 
@@ -677,4 +782,33 @@ watch(activeTab, (newTab, oldTab) => {
   background: transparent; border-color: transparent; color: #4B5563;
 }
 .btn.ghost:hover { background: #F4F5F8; }
+
+/* ───── Lead Ads tab (Phase Multi-Source Lead Ads 2026-05-27) ───── */
+.leadads-tab { display: flex; flex-direction: column; gap: 16px; }
+.platform-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.platform-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 12px 8px; border: 2px solid #E5E7EB; border-radius: 10px;
+  background: #FFF; cursor: pointer; transition: all 120ms;
+}
+.platform-btn:hover { border-color: #C7D2FE; background: #F8F9FF; }
+.platform-btn.active { border-color: #4F46E5; background: #EEF2FF; }
+.platform-icon { font-size: 22px; }
+.platform-label { font-size: 12px; font-weight: 500; color: #374151; text-align: center; }
+.key-input {
+  font-family: 'Courier New', monospace; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.key-error { color: #B91C1C; font-size: 12px; margin-top: 4px; }
+.switch-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.switch-row input[type="checkbox"] { width: 16px; height: 16px; }
+.switch-label { font-size: 14px; color: #374151; }
+.leadads-note {
+  background: #FEF3C7; border-left: 3px solid #F59E0B; padding: 10px 12px;
+  border-radius: 6px; font-size: 13px; color: #92400E; display: flex; gap: 8px;
+}
+.leadads-note .ico { font-size: 16px; }
 </style>

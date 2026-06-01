@@ -119,6 +119,7 @@ import {
   appointmentEnd,
   type AppointmentEx as Appointment,
 } from '@/composables/appointment-helpers';
+import { orgDayKey, getOrgParts, weekdayInOrgTz } from '@/composables/use-org-timezone';
 
 const props = defineProps<{
   appointments: Appointment[];
@@ -131,8 +132,9 @@ defineEmits<{
   (e: 'open-chat', a: Appointment): void;
 }>();
 
+// 2026-05-21 Phase B-2: group/compare ngày theo org TZ thay vì browser local.
 function isoDay(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return orgDayKey(d);
 }
 
 /**
@@ -152,8 +154,9 @@ function rowUrgency(a: Appointment): 'overdue' | 'upcoming' | 'done' {
 }
 
 function fmtTime(a: Appointment): string {
-  const d = appointmentStart(a);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const p = getOrgParts(appointmentStart(a));
+  if (!p) return '';
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
 }
 
 function shortName(name: string): string {
@@ -162,16 +165,19 @@ function shortName(name: string): string {
 }
 
 function dayLabel(d: Date): string {
-  const DOWS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const tmr = new Date(today); tmr.setDate(today.getDate() + 1);
-  const yest = new Date(today); yest.setDate(today.getDate() - 1);
-  const dayMid = new Date(d); dayMid.setHours(0, 0, 0, 0);
+  // Phase B-2: today/tomorrow/yesterday so theo org TZ + DOW + dd/mm/yyyy theo org TZ.
+  const todayKey = orgDayKey(new Date());
+  const tmrKey = orgDayKey(new Date(Date.now() + 86_400_000));
+  const yestKey = orgDayKey(new Date(Date.now() - 86_400_000));
+  const dKey = orgDayKey(d);
+  const p = getOrgParts(d);
+  if (!p) return '';
   let prefix = '';
-  if (dayMid.getTime() === today.getTime()) prefix = 'Hôm nay · ';
-  else if (dayMid.getTime() === tmr.getTime()) prefix = 'Mai · ';
-  else if (dayMid.getTime() === yest.getTime()) prefix = 'Hôm qua · ';
-  return `${prefix}${DOWS[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  if (dKey === todayKey) prefix = 'Hôm nay · ';
+  else if (dKey === tmrKey) prefix = 'Mai · ';
+  else if (dKey === yestKey) prefix = 'Hôm qua · ';
+  const dow = weekdayInOrgTz(d, undefined, 'long');
+  return `${prefix}${dow}, ${String(p.day).padStart(2, '0')}/${String(p.month).padStart(2, '0')}/${p.year}`;
 }
 
 function countConflicts(items: Appointment[]): number {

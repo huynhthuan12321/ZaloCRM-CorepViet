@@ -86,6 +86,7 @@ import {
   appointmentEnd,
   type AppointmentEx as Appointment,
 } from '@/composables/appointment-helpers';
+import { orgDayKey, getOrgParts, startOfOrgDay } from '@/composables/use-org-timezone';
 
 const props = defineProps<{
   weekStart: Date;
@@ -105,25 +106,27 @@ const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 const bodyEl = ref<HTMLElement | null>(null);
 
+// 2026-05-21 Phase B-1: tất cả tính ngày/giờ chuyển sang org TZ.
 function isoDay(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return orgDayKey(d);
 }
 
-const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
-
 const days = computed(() => {
+  const todayKey = orgDayKey(new Date());
   return Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(props.weekStart);
-    date.setDate(date.getDate() + i);
-    date.setHours(0, 0, 0, 0);
-    const iso = isoDay(date);
+    // Cộng i ngày (delta UTC ms) → giữ chính xác bất kể TZ.
+    const date = new Date(props.weekStart.getTime() + i * 86_400_000);
+    const orgMid = startOfOrgDay(date);
+    const dateOrgMid = orgMid || date;
+    const iso = isoDay(dateOrgMid);
     const dayApts = props.appointments.filter(a => isoDay(appointmentStart(a)) === iso);
+    const parts = getOrgParts(dateOrgMid);
     return {
-      date,
+      date: dateOrgMid,
       iso,
       dowLabel: DOW[i],
-      day: date.getDate(),
-      isToday: date.getTime() === todayMid.getTime(),
+      day: parts?.day ?? dateOrgMid.getDate(),
+      isToday: iso === todayKey,
       count: dayApts.length,
       pending: dayApts.filter(a => a.status === 'overdue').length,
       events: layoutEvents(dayApts),
@@ -192,8 +195,11 @@ function layoutEvents(items: Appointment[]): LaidOut[] {
 function buildLaidOut(a: Appointment, colIdx: number, nCols: number): LaidOut {
   const start = appointmentStart(a);
   const end = appointmentEnd(a);
-  const startH = start.getHours() + start.getMinutes() / 60;
-  const endH = end.getHours() + end.getMinutes() / 60;
+  // Phase B-1: hour/minute đọc theo org TZ → vertical position chính xác kể cả browser khác TZ.
+  const sp = getOrgParts(start);
+  const ep = getOrgParts(end);
+  const startH = sp ? sp.hour + sp.minute / 60 : start.getHours() + start.getMinutes() / 60;
+  const endH = ep ? ep.hour + ep.minute / 60 : end.getHours() + end.getMinutes() / 60;
   const top = (startH - HOUR_START) * SLOT_PX;
   // Min 30px để card 15-phút vẫn render được 1 dòng compact (icon + tên + giờ)
   const height = Math.max(30, (endH - startH) * SLOT_PX - 2);
@@ -223,23 +229,28 @@ function onAvatarError(e: Event) {
 }
 
 function fmtTime(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const p = getOrgParts(d);
+  if (!p) return '';
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
 }
 
 const nowTick = ref(Date.now());
 let tickHandle: number | null = null;
 onMounted(() => {
   tickHandle = window.setInterval(() => { nowTick.value = Date.now(); }, 60_000);
-  const now = new Date();
-  const hour = Math.max(HOUR_START, Math.min(HOUR_END - 2, now.getHours() - 1));
+  // Phase B-1: scroll-to-current-hour theo org TZ.
+  const nowP = getOrgParts(new Date());
+  const nowHour = nowP?.hour ?? new Date().getHours();
+  const hour = Math.max(HOUR_START, Math.min(HOUR_END - 2, nowHour - 1));
   if (bodyEl.value) bodyEl.value.scrollTop = (hour - HOUR_START) * SLOT_PX;
 });
 onBeforeUnmount(() => { if (tickHandle) window.clearInterval(tickHandle); });
 
 const nowOffset = computed(() => {
   void nowTick.value;
-  const now = new Date();
-  const h = now.getHours() + now.getMinutes() / 60;
+  const nowP = getOrgParts(new Date());
+  if (!nowP) return null;
+  const h = nowP.hour + nowP.minute / 60;
   if (h < HOUR_START || h > HOUR_END) return null;
   return (h - HOUR_START) * SLOT_PX;
 });

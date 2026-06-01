@@ -104,7 +104,7 @@ export function useZaloAccounts() {
     showQRDialog.value = true;
     socket?.emit('zalo:subscribe', { accountId });
     try {
-      await api.post(`/zalo-accounts/${accountId}/login`);
+      await api.post(`/zalo-accounts/${accountId}/login`, {});
     } catch (err: any) {
       qrError.value = err.response?.data?.error || 'Không thể bắt đầu đăng nhập';
     }
@@ -112,7 +112,7 @@ export function useZaloAccounts() {
 
   async function reconnectAccount(accountId: string) {
     try {
-      await api.post(`/zalo-accounts/${accountId}/reconnect`);
+      await api.post(`/zalo-accounts/${accountId}/reconnect`, {});
       await fetchAccounts();
     } catch (err: any) {
       console.error('Reconnect failed:', err);

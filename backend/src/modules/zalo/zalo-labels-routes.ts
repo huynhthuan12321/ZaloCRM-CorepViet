@@ -19,6 +19,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { zaloPool } from './zalo-pool.js';
 import { logActivity } from '../activity/activity-logger.js';
+import { getZaloScope, requireAccountManagement, requireAccountVisible } from './zalo-scope.js';
 
 type LabelDataFromSdk = {
   id: number | string;
@@ -288,6 +289,55 @@ export async function syncLabelsForAccount(
       },
       data: { archivedAt: new Date() },
     });
+
+    // M57 Wave 3 dual-write — sync Tag v2 (scope=friend, source=zalo_real) definitions.
+    // Khi Zalo thêm label mới hoặc đổi name/color → upsert Tag.
+    // Khi Zalo xoá label → archive Tag tương ứng.
+    for (const l of upserted) {
+      const tagSlug = (await import('../../shared/tag-slug.js')).slugifyTag(l.text);
+      if (!tagSlug) continue;
+      const existingTag = await prisma.tag.findFirst({
+        where: { orgId, zaloAccountId: accountId, sourceZaloLabelId: l.zaloLabelId },
+      });
+      if (existingTag) {
+        // Update name/color/emoji nếu Zalo đổi
+        if (existingTag.name !== l.text || existingTag.color !== l.color || existingTag.emoji !== l.emoji) {
+          await prisma.tag.update({
+            where: { id: existingTag.id },
+            data: { name: l.text, slug: tagSlug, color: l.color || '#1976D2', emoji: l.emoji ?? null, archivedAt: null },
+          });
+        } else if (existingTag.archivedAt) {
+          await prisma.tag.update({ where: { id: existingTag.id }, data: { archivedAt: null } });
+        }
+      } else {
+        // Tag mới (Zalo vừa thêm label, hoặc backfill bỏ lỡ)
+        await prisma.tag.create({
+          data: {
+            orgId,
+            name: l.text,
+            slug: tagSlug,
+            color: l.color || '#1976D2',
+            emoji: l.emoji ?? null,
+            scope: 'friend',
+            source: 'zalo_real',
+            priority: 1,
+            zaloAccountId: accountId,
+            sourceZaloLabelId: l.zaloLabelId,
+          },
+        }).catch(() => { /* race-safe */ });
+      }
+    }
+    // Archive Tag v2 zalo_real khi Zalo xoá label
+    await prisma.tag.updateMany({
+      where: {
+        orgId,
+        zaloAccountId: accountId,
+        source: 'zalo_real',
+        sourceZaloLabelId: { notIn: currentLabelIds.length ? currentLabelIds : [-1] },
+        archivedAt: null,
+      },
+      data: { archivedAt: new Date() },
+    });
   }
 
   // Bulk update friend.zaloLabels + diff log.
@@ -334,6 +384,56 @@ export async function syncLabelsForAccount(
       },
     });
     friendsUpdated++;
+
+    // M57 Wave 3 /plan-eng-review dual-write: sync vào FriendTag(source=zalo_real).
+    // Lookup Tag(scope=friend, source=zalo_real, zaloAccountId=accountId, sourceZaloLabelId)
+    // → upsert FriendTag với @@unique(friend_id, tag_id). Re-activate nếu đã soft-removed.
+    // Wave 5 sẽ remove block legacy update phía trên + đổi reader sang FriendTag JOIN.
+    try {
+      // Build set ID Zalo label hiện đang gắn vào friend (sau sync).
+      const currentLabelIds = new Set(newLabels.map((l) => l.id));
+      const previousLabelIds = new Set(oldLabels.map((l) => (l as { id?: number }).id).filter((id): id is number => typeof id === 'number'));
+
+      // Add: label mới được gắn
+      for (const labelId of currentLabelIds) {
+        if (previousLabelIds.has(labelId)) continue; // không đổi
+        const tagRow = await prisma.tag.findFirst({
+          where: { orgId, zaloAccountId: accountId, sourceZaloLabelId: labelId },
+          select: { id: true },
+        });
+        if (!tagRow) continue; // chưa backfill Tag → bỏ qua, lần sync sau sẽ catch
+        const existing = await prisma.friendTag.findUnique({
+          where: { friendId_tagId: { friendId: f.id, tagId: tagRow.id } },
+        });
+        if (existing) {
+          if (existing.removedAt) {
+            await prisma.friendTag.update({
+              where: { id: existing.id },
+              data: { removedAt: null, removedBy: null, addedVia: 'zalo_real', addedAt: new Date() },
+            });
+          }
+        } else {
+          await prisma.friendTag.create({
+            data: { friendId: f.id, tagId: tagRow.id, addedVia: 'zalo_real', addedBy: null },
+          }).catch(() => { /* race-safe absorb P2002 */ });
+        }
+      }
+      // Remove: label cũ không còn gắn nữa → soft remove FriendTag
+      for (const labelId of previousLabelIds) {
+        if (currentLabelIds.has(labelId)) continue;
+        const tagRow = await prisma.tag.findFirst({
+          where: { orgId, zaloAccountId: accountId, sourceZaloLabelId: labelId },
+          select: { id: true },
+        });
+        if (!tagRow) continue;
+        await prisma.friendTag.updateMany({
+          where: { friendId: f.id, tagId: tagRow.id, removedAt: null },
+          data: { removedAt: new Date(), removedBy: null },
+        });
+      }
+    } catch (err) {
+      logger.warn(`[zalo-labels] FriendTag dual-write skipped for friend ${f.id}: ${(err as Error).message}`);
+    }
 
     // ── ACTIVITY LOG — gộp tag_change_zalo nếu có CẢ remove + add cùng sync.
     //  Single-select Zalo tag (1 label/friend) → đổi A→B thường có 1 remove + 1 add.
@@ -454,13 +554,13 @@ export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/zalo-accounts/labels-overview', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
+      // Phase Zalo Account Mutation Gate 2026-05-27: migrate sang getZaloScope
+      // để trưởng phòng thấy labels của nick cấp dưới (cascade dept tree).
+      const scope = await getZaloScope(user.id, user.orgId, user.role);
       const accounts = await prisma.zaloAccount.findMany({
         where: {
           orgId: user.orgId,
-          OR: [
-            { ownerUserId: user.id },
-            { access: { some: { userId: user.id } } },
-          ],
+          ...(scope.isOrgAdmin ? {} : { id: { in: scope.accessibleIds } }),
         },
         select: {
           id: true, displayName: true, avatarUrl: true, status: true,
@@ -494,12 +594,9 @@ export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
   //    Settings page "Đồng bộ ngay" + manual user click.
   app.post('/api/v1/zalo-accounts/:id/labels/sync', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     try {
-      const user = request.user!;
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id: request.params.id, orgId: user.orgId },
-        select: { id: true, orgId: true },
-      });
-      if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
+      // Phase Zalo Account Mutation Gate 2026-05-27: gate write trên nick
+      const account = await requireAccountManagement(request, reply, request.params.id);
+      if (!account) return reply;
       const result = await syncLabelsForAccount(account.id, account.orgId);
       return result;
     } catch (err) {
@@ -513,12 +610,9 @@ export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
   //    Frontend trigger khi switch conversation / load tab. No-op nếu vừa sync gần đây.
   app.post('/api/v1/zalo-accounts/:id/labels/touch', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     try {
-      const user = request.user!;
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id: request.params.id, orgId: user.orgId },
-        select: { id: true, orgId: true },
-      });
-      if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
+      // Phase Zalo Account Mutation Gate 2026-05-27: gate (touch là write side-effect)
+      const account = await requireAccountManagement(request, reply, request.params.id);
+      if (!account) return reply;
       const result = await syncLabelsIfStale(account.id, account.orgId);
       if (!result) return { ok: true, skipped: true, reason: 'cooldown' };
       return { ok: true, ...result };
@@ -539,12 +633,9 @@ export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
     Body: { threadId: string; labelId: number | null };
   }>, reply: FastifyReply) => {
     try {
-      const user = request.user!;
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id: request.params.id, orgId: user.orgId },
-        select: { id: true, orgId: true },
-      });
-      if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
+      // Phase Zalo Account Mutation Gate 2026-05-27: gate write (label thread)
+      const account = await requireAccountManagement(request, reply, request.params.id);
+      if (!account) return reply;
 
       const threadId = (request.body?.threadId || '').trim();
       const newLabelId = request.body?.labelId ?? null;
@@ -682,12 +773,9 @@ export async function zaloLabelsRoutes(app: FastifyInstance): Promise<void> {
     Body: { color?: string; text?: string; emoji?: string };
   }>, reply: FastifyReply) => {
     try {
-      const user = request.user!;
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id: request.params.id, orgId: user.orgId },
-        select: { id: true, orgId: true },
-      });
-      if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
+      // Phase Zalo Account Mutation Gate 2026-05-27: gate edit label nick
+      const account = await requireAccountManagement(request, reply, request.params.id);
+      if (!account) return reply;
 
       const labelId = Number(request.params.labelId);
       const label = await prisma.zaloLabel.findUnique({

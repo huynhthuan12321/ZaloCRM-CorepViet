@@ -25,6 +25,7 @@
         :accounts="accountList"
         :selected-account-ids="selectedAccountIds"
         :active-tab-key="inboxFilters.state.activeTab"
+        :auto-compose-phone="autoComposePhone"
         v-model:search="searchQuery"
         @select="onSelectConv"
         @filter-account="onFilterAccount"
@@ -66,7 +67,6 @@
       @undo-message="onUndoMessage"
       @edit-message="onEditMessage"
       @forward-message="onForwardMessage"
-      @pin-conversation="onPinConversation"
       @set-reply-to="setReplyTo"
       @set-editing="setEditing"
       @cancel-reply-edit="onCancelReplyEdit"
@@ -92,6 +92,8 @@
       :friendship="selectedConv.friendship ?? null"
       :active-zalo-account-id="selectedConv.zaloAccount?.id ?? null"
       :friend-id="selectedConv.friendship?.id ?? null"
+      :conversation-id="selectedConv.id ?? null"
+      :active-zalo-account-name="selectedConv.zaloAccount?.displayName ?? null"
       :ai-summary="aiSummary"
       :ai-summary-loading="aiSummaryLoading"
       :ai-sentiment="aiSentiment"
@@ -118,6 +120,7 @@ import FolderManagePopup from '@/components/chat/FolderManagePopup.vue';
 import { useChat } from '@/composables/use-chat';
 import { useInboxFilters } from '@/composables/use-inbox-filters';
 import { useAuthStore } from '@/stores/auth';
+import { usePrivacyStore } from '@/stores/privacy';
 import { useChatOperations } from '@/composables/use-chat-operations';
 import { useZaloAccounts } from '@/composables/use-zalo-accounts';
 import MobileChatView from '@/views/MobileChatView.vue';
@@ -135,16 +138,19 @@ const {
   fetchConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
   generateAiSuggestion, generateAiSummary, generateAiSentiment,
   initSocket, destroySocket, getSocket,
+  typingConvIds,
 } = useChat();
 
 const {
   typingUsers, replyingTo, editingMessage,
   addReaction, removeReaction, sendTypingEvent, deleteMessage, undoMessage,
-  editMessage, forwardMessage, pinConversation,
+  editMessage, forwardMessage,
   setReplyTo, clearReplyTo, setEditing, clearEditing,
   registerSocketListeners,
-  unpinConversation,
 } = useChatOperations();
+
+// ════════ Auth (cần để compute isOwnedByMe fallback cho accountList) ════════
+const authStore = useAuthStore();
 
 // ════════ Zalo accounts (for FilterRail nick picker) ════════
 const { accounts: zaloAccounts, fetchAccounts: fetchZaloAccounts } = useZaloAccounts();
@@ -159,12 +165,15 @@ const accountList = computed(() =>
     displayName: a.displayName,
     avatarUrl: a.avatarUrl ?? null,
     ownerUserId: a.ownerUserId,
+    privacyMode: (a as any).privacyMode ?? 'sub',
+    isOwnedByMe: (a as any).isOwnedByMe ?? (a.ownerUserId === authStore.user?.id),
+    owner: (a as any).owner ?? null,
+    zaloUid: (a as any).zaloUid ?? null,
   })),
 );
 
 // ════════ Phase 6+ Inbox Triage Filters ════════
 const inboxFilters = useInboxFilters();
-const authStore = useAuthStore();
 const workspaceName = computed(() => authStore.user?.fullName?.split(' ')[0] || 'CRM');
 const currentUserName = computed(() => authStore.user?.fullName || 'Tôi');
 const currentUserId = computed(() => authStore.user?.id || '');
@@ -226,10 +235,38 @@ watch(
   { deep: true }
 );
 
-// ════════ Existing handlers ════════
-const currentTypers = computed(() =>
-  (selectedConvId.value ? typingUsers.value.get(selectedConvId.value) : null) || [],
+// Anh chốt 2026-05-22: khi privacy state đổi (lock/unlock) → refetch conversation
+// list + messages thread đang mở. Server sẽ trả msg.redacted + conv.redacted
+// theo state mới → bubble blur cập nhật đúng cả cột 2 + cột 3 ngay lập tức
+// (không phải F5 mới apply). Skip lần đầu mount.
+const _privacyStore = usePrivacyStore();
+watch(
+  () => _privacyStore.isUnlocked,
+  () => {
+    fetchConversations();
+    if (selectedConvId.value) fetchMessages(selectedConvId.value);
+  },
 );
+
+// ════════ Existing handlers ════════
+// currentTypers: sale collab typing (typingUsers từ presence) + KH typing
+// (typingConvIds từ Wave 1 zalo:typing socket). KH hiện thành "KH" hoặc tên contact.
+// Loại bỏ CHÍNH user đang đăng nhập khỏi list — user tự biết mình đang gõ, không
+// cần hiện "thanhpc@x đang nhập" cho chính họ thấy. Anh chốt 2026-05-22.
+const currentTypers = computed(() => {
+  const myId = currentUserId.value;
+  const internalAll = (selectedConvId.value ? typingUsers.value.get(selectedConvId.value) : null) || [];
+  const internal = myId ? internalAll.filter(u => u.userId !== myId) : internalAll;
+  if (!selectedConvId.value || !typingConvIds.value.has(selectedConvId.value)) {
+    return internal;
+  }
+  const conv = selectedConv.value;
+  const customerName = conv?.contact?.fullName || (conv?.threadType === 'group' ? 'Thành viên' : 'Khách hàng');
+  return [
+    { userId: '__customer__', userName: customerName },
+    ...internal,
+  ];
+});
 
 async function onAddReaction(msgId: string, reaction: string) {
   if (!selectedConvId.value) return;
@@ -274,16 +311,6 @@ async function onForwardMessage(msgId: string, targetIds: string[]) {
   } catch (err: any) {
     toast.error(err?.response?.data?.error || 'Không chuyển tiếp được');
   }
-}
-async function onPinConversation() {
-  if (!selectedConvId.value || !selectedConv.value) return;
-  if (selectedConv.value.isPinned) {
-    await unpinConversation(selectedConvId.value);
-  } else {
-    await pinConversation(selectedConvId.value);
-  }
-  // bypassCache: pin state đã đổi server-side → cache cũ sẽ làm conv flicker
-  await fetchConversations({ bypassCache: true });
 }
 function onCancelReplyEdit() {
   clearReplyTo();
@@ -340,6 +367,13 @@ watch(
   },
   { immediate: false },
 );
+
+// Phase 2026-05-30 — Mở chat từ lead Facebook (/chat?compose=SĐT). Truyền xuống
+// ConversationList để tự mở "Tin nhắn mới" + điền sẵn SĐT → dialog tự lookup Zalo + tạo hội thoại.
+const autoComposePhone = computed(() => {
+  const c = route.query.compose;
+  return typeof c === 'string' ? c : '';
+});
 
 // Watch query.contactId — khi nav từ Contacts/Friends qua /chat?contactId=xxx
 // Resolve sang convId qua conversations list, rồi redirect /chat/:convId.
@@ -483,4 +517,5 @@ watch(searchQuery, () => {
   .smax-chat-grid > :first-child,
   .smax-chat-grid > :nth-child(4) { display: none; }
 }
+
 </style>

@@ -92,6 +92,21 @@
           </v-list-item>
         </v-list>
       </v-menu>
+      <!-- Phase Dual View 2026-05-28: toggle 2 view mode -->
+      <div class="view-toggle" role="radiogroup" aria-label="View mode">
+        <button
+          class="view-btn"
+          :class="{ active: viewMode === 'm1' }"
+          @click="setViewMode('m1')"
+          title="Bảng đầy đủ — click row mở Friend rows inline"
+        >📋 Bảng đầy đủ</button>
+        <button
+          class="view-btn"
+          :class="{ active: viewMode === 'm2' }"
+          @click="setViewMode('m2')"
+          title="Chi tiết bên — click row mở panel chi tiết bên phải"
+        >🔍 Chi tiết bên</button>
+      </div>
       <button class="btn btn-primary" @click="openCreate">+ Thêm KH</button>
     </div>
 
@@ -160,9 +175,10 @@
       <div class="stat-box">📵 No Zalo: <span class="stat-num">{{ stats.noZalo }}</span></div>
     </div>
 
-    <!-- ════════ Master/child table ════════ -->
-    <div class="scroll-wrap">
-      <table class="smax-table">
+    <!-- ════════ Master/child table + Detail pane (Phase Dual View 2026-05-28) ════════ -->
+    <div class="dual-pane" :class="{ 'detail-open': viewMode === 'm2' && selectedContact }">
+    <div class="scroll-wrap" :class="{ 'mode-shrunk': viewMode === 'm2' && selectedContact }">
+      <table class="smax-table" :class="{ 'mode-shrunk': viewMode === 'm2' && selectedContact }">
         <thead>
           <tr>
             <th class="w-32"></th>
@@ -192,7 +208,12 @@
           <template v-for="contact in contacts" :key="contact.id">
             <tr
               class="master-row"
-              :class="{ open: expandedId === contact.id }"
+              :class="{
+                open: expandedId === contact.id,
+                'detail-active': viewMode === 'm2' && selectedContact?.id === contact.id,
+                'row-flash': focusedContactId === contact.id,
+              }"
+              :data-contact-id="contact.id"
               @click="onRowClick($event, contact.id)"
             >
               <td>
@@ -212,23 +233,33 @@
               <td>
                 <div class="name-text">
                   {{ contact.crmName || contact.fullName || '—' }}
+                </div>
+                <!-- Anh chốt 2026-05-28: badge "Cùng chăm (N)" xuống dòng 2 để giảm width cột -->
+                <div
+                  v-if="(contact.childrenCount ?? 0) > 1"
+                  class="name-sub"
+                >
                   <span
-                    v-if="(contact.childrenCount ?? 0) > 1"
-                    class="chip chip-multi-nick"
-                    :title="`${contact.childrenCount} Friend row (nick chăm × Zalo identity) — mở ▸ để xem chi tiết`"
+                    class="chip chip-cung-cham"
+                    :title="`${contact.childrenCount} nick chăm KH này — mở ▸ để xem`"
                   >
-                    👥 Đa nick ({{ contact.childrenCount }})
+                    🤝 Cùng chăm ({{ contact.childrenCount }})
                   </span>
                 </div>
                 <div v-if="contact.fullName && contact.crmName && contact.fullName !== contact.crmName" class="name-sub">
                   {{ contact.fullName }}
                 </div>
               </td>
-              <td>{{ contact.phone || '—' }}</td>
+              <td><span class="phone-cell">{{ formatVnPhone(contact.phone) }}</span></td>
               <td>
-                <template v-if="contact.gender">
-                  {{ genderLabel(contact.gender) }}
-                  <template v-if="ageOf(contact)">· {{ ageOf(contact) }}t</template>
+                <!-- Anh chốt 2026-05-28: icon giới tính nhỏ + tuổi xuống hàng 2 giảm width -->
+                <template v-if="contact.gender || ageOf(contact)">
+                  <div class="gender-row">
+                    <span v-if="contact.gender" :title="genderLabel(contact.gender)">
+                      {{ contact.gender === 'male' ? '♂' : contact.gender === 'female' ? '♀' : '⚥' }}
+                    </span>
+                  </div>
+                  <div v-if="ageOf(contact)" class="gender-age">{{ ageOf(contact) }}t</div>
                 </template>
                 <span v-else class="empty">—</span>
               </td>
@@ -261,14 +292,45 @@
                 </span>
               </td>
               <td>
-                <!-- Nick chăm: 4 chip count theo trạng thái KB -->
-                <div class="nick-count-row">
-                  <span v-for="b in nickCountChips(contact)" :key="b.kind" :class="['chip', b.cls]" :title="b.title">
+                <!-- M55 2026-05-30: KH no-Zalo (không có Friend) → avatar stack
+                     sale cùng chăm. KH có Zalo → giữ 4 chip Friend như cũ. -->
+                <div v-if="!hasAnyFriend(contact) && (contact.contactAccess?.length ?? 0) > 0" class="cung-cham-stack" :title="formatCungChamTooltip(contact)">
+                  <span
+                    v-for="(acc, idx) in (contact.contactAccess ?? []).slice(0, 4)"
+                    :key="acc.user?.id || idx"
+                    class="cc-avatar"
+                    :class="{ 'cc-primary': acc.role === 'primary' }"
+                    :style="{ background: avatarColor(acc.user?.fullName || acc.user?.email || '') }"
+                  >
+                    {{ initialOf(acc.user?.fullName || acc.user?.email || '?') }}
+                  </span>
+                  <span v-if="(contact.contactAccess?.length ?? 0) > 4" class="cc-more">
+                    +{{ (contact.contactAccess?.length ?? 0) - 4 }}
+                  </span>
+                  <span class="cc-count">{{ contact.contactAccess?.length ?? 0 }} sale</span>
+                </div>
+                <div v-else class="nick-count-grid">
+                  <span v-for="b in nickCountChips(contact)" :key="b.kind" :class="['chip', 'nick-mini', b.cls]" :title="b.title">
                     {{ b.icon }} {{ b.count }}
                   </span>
                 </div>
               </td>
-              <td>{{ contact.assignedUser?.fullName || '—' }}</td>
+              <td>
+                <div class="assigned-cell">
+                  <span>{{ contact.assignedUser?.fullName || '—' }}</span>
+                  <!-- Phase Contact Scope Hybrid 2026-05-27 — badge collaborator -->
+                  <span
+                    v-if="contact.viewerRole === 'primary'"
+                    class="role-badge role-primary"
+                    title="Bạn là người chịu trách nhiệm chính chăm khách hàng này"
+                  >👤 Phụ trách</span>
+                  <span
+                    v-else-if="contact.viewerRole === 'collaborator'"
+                    class="role-badge role-collab"
+                    title="Bạn cùng chăm KH này qua nick của bạn (đồng đội với sale khác)"
+                  >🤝 Cùng chăm</span>
+                </div>
+              </td>
               <td>
                 <template v-if="contact.lastInboundAt">
                   <div class="cell-strong">{{ formatRecentDateTime(contact.lastInboundAt) }}</div>
@@ -299,9 +361,13 @@
                 </div>
               </td>
               <td>
-                <span v-if="contact.hasZalo === true" class="chip chip-success">Có</span>
-                <span v-else-if="contact.hasZalo === false" class="chip chip-grey">Không</span>
-                <span v-else class="empty">?</span>
+                <!-- Phase Dual View 2026-05-28: cột Zalo cố định 3 trạng thái mutex.
+                     Anh fix 2026-05-28: dùng displayHasZalo aggregate Cha/Con thay
+                     hasZalo raw — KH có zalo_uid/global_id từ Friend row thì Cha
+                     phải hiện "Có Zalo" dù field hasZalo chưa được set. -->
+                <span v-if="zaloDisplay(contact) === 'yes'" class="zalo-pill zalo-yes">🟢 Có Zalo</span>
+                <span v-else-if="zaloDisplay(contact) === 'no'" class="zalo-pill zalo-no">🔴 Không tìm thấy</span>
+                <span v-else class="zalo-pill zalo-unknown">⚪ Chưa tìm</span>
               </td>
               <td v-if="visibleCols.zaloUid" :title="'Per-account UID khác nhau theo nick. Mở ▸ xem chi tiết per row con.'">
                 <span v-if="(contact.childrenCount ?? 0) > 1" class="chip chip-multi" title="Đa Zalo identity — mỗi nick có UID riêng">đa {{ contact.childrenCount }} con</span>
@@ -484,6 +550,17 @@
       </table>
     </div>
 
+    <!-- Phase Dual View 2026-05-28: Detail pane bên phải khi mode 2 + selected -->
+    <aside v-if="viewMode === 'm2' && selectedContact" class="detail-pane">
+      <ContactDetailPanel
+        :contact="selectedContact"
+        @close="closeDetailPane"
+        @go-chat="goChat(selectedContact!)"
+        @saved="onSaved"
+      />
+    </aside>
+    </div><!-- /.dual-pane -->
+
     <!-- Pagination -->
     <div class="pagination">
       <button class="btn" :disabled="pagination.page <= 1" @click="changePage(pagination.page - 1)">← Trước</button>
@@ -516,15 +593,34 @@
       </div>
     </div>
     <DuplicateReviewDialog v-model="showDuplicateDialog" @merged="onDuplicateMerged" />
+
+    <!-- FAB: Thêm KH nhanh (Wedge A 2026-05-28) -->
+    <button
+      type="button"
+      class="add-customer-fab"
+      title="Thêm khách hàng nhanh"
+      aria-label="Thêm khách hàng nhanh"
+      @click="showAddCustomerDialog = true"
+    >
+      <span class="fab-plus">+</span>
+      <span class="fab-label">Thêm KH</span>
+    </button>
+    <AddCustomerQuickDialog
+      v-model="showAddCustomerDialog"
+      lead-source="contacts_fab"
+      @created="onContactQuickCreated"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import ContactDetailDialog from '@/components/contacts/ContactDetailDialog.vue';
+import ContactDetailPanel from '@/components/contacts/ContactDetailPanel.vue';
 import ParentCandidateDialog from '@/components/contacts/ParentCandidateDialog.vue';
 import DuplicateReviewDialog from '@/components/contacts/DuplicateReviewDialog.vue';
+import AddCustomerQuickDialog from '@/components/contacts/AddCustomerQuickDialog.vue';
 import type { CareStatusValue } from '@/constants/care-status';
 import Avatar from '@/components/ui/Avatar.vue';
 import { useToast } from '@/composables/use-toast';
@@ -541,6 +637,7 @@ import { useFriendSocket, type FriendUpdatedPayload } from '@/composables/use-fr
 
 const { isMobile } = useMobile();
 const router = useRouter();
+const route = useRoute();
 
 const { contacts, total, loading, filters, pagination, fetchContacts } = useContacts();
 const { duplicateTotal, fetchDuplicateGroups } = useContactIntelligence();
@@ -601,6 +698,26 @@ function toggleChildColumn(key: ChildColKey) {
 const showDialog = ref(false);
 const showDuplicateDialog = ref(false);
 const showCandidateDialog = ref(false);
+const showAddCustomerDialog = ref(false);
+
+function onContactQuickCreated(_c: { id: string; fullName: string | null; phone: string | null }) {
+  // Reload list ngay để KH mới xuất hiện đầu danh sách
+  fetchContacts();
+}
+
+// Phase Dual View 2026-05-28: viewMode persist localStorage
+const LS_KEY_VIEW = 'contactsview.viewMode.v1';
+const viewMode = ref<'m1' | 'm2'>((localStorage.getItem(LS_KEY_VIEW) as 'm1' | 'm2') || 'm1');
+function setViewMode(m: 'm1' | 'm2') {
+  viewMode.value = m;
+  try { localStorage.setItem(LS_KEY_VIEW, m); } catch { /* ignore */ }
+  // Đổi mode → đóng detail pane / dialog đang mở
+  if (m === 'm1') {
+    selectedContact.value = null;
+  } else {
+    showDialog.value = false;
+  }
+}
 const candidateCount = ref(0);
 async function fetchCandidateCount() {
   try {
@@ -639,6 +756,9 @@ async function onRunDetector() {
 }
 const selectedContact = ref<Contact | null>(null);
 const expandedId = ref<string | null>(null);
+// M55.2 2026-05-30 — Focus param từ /contacts?focus=X (AddCustomerQuickDialog
+// "Mở chi tiết" khi duplicate) → highlight row + scroll + open detail panel.
+const focusedContactId = ref<string | null>(null);
 // Real friendship data per contact (key: contactId → ChildRow[]). Fetched on first expand.
 const friendshipCache = ref<Record<string, ChildRow[]>>({});
 const friendshipLoading = ref<Record<string, boolean>>({});
@@ -747,12 +867,19 @@ function toggleExpand(id: string) {
   }
 }
 
-// Click anywhere trên row Cha = toggle expand. Skip nếu click vào button / input /
-// link bên trong (để giữ behavior gốc của những control đó: edit name, click chat...).
+// Click anywhere trên row Cha:
+//   - Mode 1: toggle expand inline Friend rows (giữ behavior cũ)
+//   - Mode 2: open detail pane bên phải (list shrink)
+// Skip nếu click vào button / input / link bên trong.
 function onRowClick(e: MouseEvent, id: string) {
   const t = e.target as HTMLElement;
   if (t.closest('button, input, select, textarea, a, .v-menu, .action-cell')) return;
-  toggleExpand(id);
+  if (viewMode.value === 'm2') {
+    const c = contacts.value.find((x) => x.id === id);
+    if (c) selectedContact.value = c;
+  } else {
+    toggleExpand(id);
+  }
 }
 
 async function fetchFriendships(contact: Contact) {
@@ -957,6 +1084,45 @@ function sourceLabel(value: string) {
 function statusLabel(value: string) {
   return STATUS_OPTIONS.find(o => o.value === value)?.text ?? value;
 }
+
+/**
+ * Format SĐT chuẩn Việt Nam — anh chốt 2026-05-28.
+ * Input có thể là:
+ *   - "84936668266"   → "0936 668 266"  (84xxx → 0xxx, group 4-3-3)
+ *   - "0936668266"    → "0936 668 266"
+ *   - "+84 936 668 266" → "0936 668 266"
+ *   - "936668266"     → "0936 668 266"  (thiếu 0/84 → prepend 0)
+ *   - null/empty       → "—"
+ */
+/**
+ * Resolve trạng thái cột Zalo (3 trạng thái mutex). Ưu tiên:
+ *   1. KH đã có Friend row / zaloUid / zaloGlobalId / zaloUsername → 'yes' (chắc chắn có Zalo)
+ *   2. hasZalo === false → 'no' (đã lookup, KH chặn / không có)
+ *   3. hasZalo === true → 'yes' (verified qua lookup)
+ *   4. Else → 'unknown' (chưa tra)
+ * Anh chốt 2026-05-28: aggregate Cha/Con phải đúng — KH có UID tức có Zalo.
+ */
+function zaloDisplay(c: Contact): 'yes' | 'no' | 'unknown' {
+  // Có Friend row hoặc có Zalo identity → CHẮC CHẮN có Zalo
+  if ((c.childrenCount ?? 0) > 0) return 'yes';
+  if (c.zaloUid || c.zaloGlobalId || c.zaloUsername) return 'yes';
+  if (c.displayHasZalo === true) return 'yes';
+  if (c.hasZalo === true) return 'yes';
+  // Đã lookup → không có Zalo
+  if (c.hasZalo === false) return 'no';
+  // Chưa lookup
+  return 'unknown';
+}
+
+function formatVnPhone(phone: string | null | undefined): string {
+  if (!phone) return '—';
+  let s = String(phone).replace(/\D/g, '');
+  if (s.startsWith('84') && s.length === 11) s = '0' + s.slice(2);   // 84936... → 0936...
+  else if (s.length === 9 && !s.startsWith('0')) s = '0' + s;        // 936... → 0936... (rare)
+  if (s.length === 10) return s.slice(0, 4) + ' ' + s.slice(4, 7) + ' ' + s.slice(7);
+  if (s.length === 11) return s.slice(0, 4) + ' ' + s.slice(4, 7) + ' ' + s.slice(7);
+  return phone; // fallback giữ nguyên nếu không match
+}
 function statusChipClass(status: string): string {
   const map: Record<string, string> = {
     new: 'chip-grey',
@@ -1002,10 +1168,39 @@ function openCreate() {
   showDialog.value = true;
 }
 function openDetail(c: Contact) {
+  // Phase Dual View 2026-05-28:
+  // - Mode 1 (Bảng đầy đủ): mở Dialog full screen như cũ
+  // - Mode 2 (Chi tiết bên): chỉ set selectedContact → inline DetailPanel hiện ra bên phải
   selectedContact.value = c;
-  showDialog.value = true;
+  if (viewMode.value === 'm1') {
+    showDialog.value = true;
+  }
+  // m2: detail pane bind v-if với selectedContact, không cần showDialog
 }
-function goChat(c: Contact) {
+function closeDetailPane() {
+  selectedContact.value = null;
+}
+// M53 2026-05-30: KH no-Zalo (hasZalo=null/false) → mở virtual chat ngay,
+// KHÔNG dùng query.contactId vì conversations list không chắc có virtual conv
+// (resolve fail → user thấy /chat trống). Tạo virtual conv proactive rồi push trực tiếp /chat/:convId.
+async function goChat(c: Contact) {
+  if (!c.hasZalo) {
+    try {
+      const vcRes = await api.post<{ conversationId: string; created: boolean }>(
+        `/contacts/${c.id}/virtual-conversation`, {},
+      );
+      const convId = vcRes.data?.conversationId;
+      if (convId) {
+        await router.push({ name: 'Chat', params: { convId } });
+        return;
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data?.error;
+      toast.warning(msg || 'Không mở được chat nội bộ — vui lòng thử lại');
+      return;
+    }
+  }
+  // KH có Zalo → fallback flow cũ: push query.contactId để ChatView resolve.
   router.push({ path: '/chat', query: { contactId: c.id } });
 }
 function onAutomation(_c: Contact) { toast.warning('Automation dialog: chưa implement'); }
@@ -1104,6 +1299,34 @@ function nickCountChips(contact: Contact): NickCountChip[] {
     { kind: 'ghost', icon: '⚪', count: m.ghost || 0, cls: 'chip-grey', title: 'Đã ngắt' },
   ];
 }
+
+// ════════ M55 2026-05-30 — "Cùng chăm" avatar stack cho KH no-Zalo ════════
+function hasAnyFriend(contact: Contact): boolean {
+  return (contact.childrenCount ?? 0) > 0;
+}
+function initialOf(name: string): string {
+  const t = name.trim();
+  if (!t) return '?';
+  const parts = t.split(/\s+/);
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+const AVATAR_COLORS = ['#0ea5e9', '#f97316', '#10b981', '#a855f7', '#ec4899', '#eab308', '#06b6d4', '#ef4444'];
+function avatarColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+function formatCungChamTooltip(contact: Contact): string {
+  const list = contact.contactAccess ?? [];
+  if (!list.length) return '';
+  const lines = list.map((a) => {
+    const name = a.user?.fullName || a.user?.email || 'Sale';
+    const roleLabel = a.role === 'primary' ? '⭐ Phụ trách chính' : '🤝 Cùng chăm';
+    return `${roleLabel}: ${name}`;
+  });
+  return `${list.length} sale đang/đã chăm KH này:\n${lines.join('\n')}`;
+}
 function onSaved() { fetchContacts(); }
 function onDeleted() { fetchContacts(); }
 function onDuplicateMerged() {
@@ -1119,6 +1342,55 @@ onMounted(() => {
   loadMasterStatuses();
   loadUsers();
 });
+
+// M55.2 2026-05-30 — Handle /contacts?focus={id} từ AddCustomerQuickDialog
+// "Mở chi tiết" khi duplicate. Auto-fetch contact, open detail panel + scroll + flash row.
+async function focusOnContact(id: string) {
+  focusedContactId.value = id;
+
+  // Switch sang viewMode m2 (chi tiết bên) để mở panel ngay
+  if (viewMode.value !== 'm2') {
+    viewMode.value = 'm2';
+  }
+
+  // Tìm contact trong list hiện tại, nếu không có → fetch single
+  let target = contacts.value.find((c) => c.id === id);
+  if (!target) {
+    try {
+      const res = await api.get<Contact>(`/contacts/${id}`);
+      target = res.data;
+    } catch {
+      toast.warning('Không tìm thấy KH — có thể đã bị xoá hoặc không thuộc quyền chăm');
+      return;
+    }
+  }
+  selectedContact.value = target;
+
+  // Scroll row vào view + flash 2.5s
+  await nextTick();
+  const row = document.querySelector(`tr[data-contact-id="${id}"]`);
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  setTimeout(() => {
+    if (focusedContactId.value === id) focusedContactId.value = null;
+  }, 2500);
+
+  // Clean URL để F5 không reopen
+  const newQuery = { ...route.query };
+  delete newQuery.focus;
+  router.replace({ query: newQuery });
+}
+
+watch(
+  () => route.query.focus,
+  (id) => {
+    if (typeof id === 'string' && id) {
+      void focusOnContact(id);
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped>
@@ -1401,6 +1673,8 @@ onMounted(() => {
 }
 .w-32 { width: 32px; }
 .w-40 { width: 40px; }
+.w-60 { width: 60px; }
+.w-70 { width: 70px; }
 .w-78 { width: 78px; }
 .w-80 { width: 80px; }
 .w-90 { width: 90px; }
@@ -1460,6 +1734,15 @@ onMounted(() => {
 .chip-multi-nick {
   background: linear-gradient(135deg, rgba(124,77,255,0.14), rgba(33,150,243,0.10));
   color: #4527a0;
+  margin-left: 6px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+/* "Cùng chăm (N)" badge — vàng cam theo Airtable signature (anh chốt 2026-05-28) */
+.chip-cung-cham {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #F59E0B66;
   margin-left: 6px;
   font-weight: 600;
   letter-spacing: 0.2px;
@@ -1574,6 +1857,76 @@ onMounted(() => {
   padding: 2px 6px;
 }
 
+/* Anh chốt 2026-05-28: Nick chăm fix 2×2 grid để giảm chiều rộng cột */
+.nick-count-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  width: fit-content;
+}
+.nick-mini {
+  font-size: 10px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* M55 2026-05-30: Cùng chăm avatar stack — cho KH no-Zalo */
+.cung-cham-stack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+}
+.cc-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #94a3b8;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #e2e8f0;
+  margin-left: -6px;
+  text-transform: uppercase;
+}
+.cc-avatar:first-child { margin-left: 0; }
+.cc-avatar.cc-primary {
+  border: 2px solid #f59e0b;
+  box-shadow: 0 0 0 1px #fbbf24;
+}
+.cc-more {
+  font-size: 10px;
+  color: #64748b;
+  margin-left: 2px;
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.cc-count {
+  font-size: 10px;
+  color: #475569;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+/* Giới tính icon nhỏ + tuổi xuống hàng 2 */
+.gender-row {
+  font-size: 16px;
+  line-height: 1.1;
+  color: var(--smax-grey-700);
+}
+.gender-age {
+  font-size: 11px;
+  color: var(--smax-grey-700);
+  margin-top: 1px;
+}
+
 .chip-orange-soft {
   background: rgba(255,167,38,0.18);
   color: #ef6c00;
@@ -1626,4 +1979,248 @@ onMounted(() => {
   font-size: 13px; color: var(--smax-grey-700);
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Phase Contact Scope Hybrid 2026-05-27 — collaborator badge */
+.assigned-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+.role-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.role-primary { background: #EEF0FF; color: #4F46E5; }
+.role-collab  { background: #FEF3C7; color: #92400E; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Phase Dual View 2026-05-28 — Toggle 2 view modes + Master-Detail layout
+ * Responsive: HD 1366 / Full HD 1920 / 2K 2560 (KHÔNG mobile)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* View toggle button group */
+.view-toggle {
+  display: inline-flex;
+  background: var(--smax-grey-50, #f8fafc);
+  border: 1px solid var(--smax-grey-200, #e5e7eb);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  margin-right: 6px;
+}
+.view-btn {
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--smax-grey-600, #475569);
+  cursor: pointer;
+  border-radius: 5px;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.view-btn:hover:not(.active) { color: var(--smax-grey-900, #181d26); }
+.view-btn.active {
+  background: white;
+  color: var(--smax-grey-900, #181d26);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+/* Cột Zalo cố định 3 trạng thái mutex */
+.zalo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.zalo-pill.zalo-yes {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+.zalo-pill.zalo-no {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+.zalo-pill.zalo-unknown {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px dashed #cbd5e1;
+}
+
+/* ── Dual-pane layout ── */
+.dual-pane {
+  display: grid;
+  grid-template-columns: 1fr 0;
+  flex: 1;
+  min-height: 0;
+  transition: grid-template-columns 0.25s ease;
+}
+.dual-pane.detail-open {
+  /* HD: list 560px (4 cột Tên 200 + SĐT 110 + TT 110 + Zalo 110 + padding) / detail rest. */
+  grid-template-columns: 560px 1fr;
+}
+
+.dual-pane > .scroll-wrap {
+  min-width: 0;
+  overflow: auto;
+}
+
+.detail-pane {
+  border-left: 1px solid var(--smax-grey-200, #e5e7eb);
+  background: white;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Mode 2 shrunk: hide các cột không essential ── */
+.smax-table.mode-shrunk thead th:nth-child(1),  /* expand chevron */
+.smax-table.mode-shrunk thead th:nth-child(2),  /* # */
+.smax-table.mode-shrunk thead th:nth-child(5),  /* Giới tính */
+.smax-table.mode-shrunk thead th:nth-child(6),  /* Tỉnh/Quận */
+.smax-table.mode-shrunk thead th:nth-child(7),  /* Nguồn */
+.smax-table.mode-shrunk thead th:nth-child(9),  /* Score (giữ riêng compact) */
+.smax-table.mode-shrunk thead th:nth-child(10), /* Nick chăm */
+.smax-table.mode-shrunk thead th:nth-child(11), /* Sale chính */
+.smax-table.mode-shrunk thead th:nth-child(12), /* KH nhắn cuối */
+.smax-table.mode-shrunk thead th:nth-child(13), /* Sale nhắn cuối */
+.smax-table.mode-shrunk thead th:nth-child(14), /* Tin in/out */
+.smax-table.mode-shrunk thead th:nth-child(15), /* Tags CRM */
+.smax-table.mode-shrunk thead th:nth-child(17), /* zaloUid (opt) */
+.smax-table.mode-shrunk thead th:nth-child(18), /* globalId (opt) */
+.smax-table.mode-shrunk thead th:nth-child(19), /* username (opt) */
+.smax-table.mode-shrunk thead th:nth-child(20), /* lookup (opt) */
+.smax-table.mode-shrunk thead th:nth-child(21), /* Action */
+.smax-table.mode-shrunk tbody td:nth-child(1),
+.smax-table.mode-shrunk tbody td:nth-child(2),
+.smax-table.mode-shrunk tbody td:nth-child(5),
+.smax-table.mode-shrunk tbody td:nth-child(6),
+.smax-table.mode-shrunk tbody td:nth-child(7),
+.smax-table.mode-shrunk tbody td:nth-child(9),
+.smax-table.mode-shrunk tbody td:nth-child(10),
+.smax-table.mode-shrunk tbody td:nth-child(11),
+.smax-table.mode-shrunk tbody td:nth-child(12),
+.smax-table.mode-shrunk tbody td:nth-child(13),
+.smax-table.mode-shrunk tbody td:nth-child(14),
+.smax-table.mode-shrunk tbody td:nth-child(15),
+.smax-table.mode-shrunk tbody td:nth-child(17),
+.smax-table.mode-shrunk tbody td:nth-child(18),
+.smax-table.mode-shrunk tbody td:nth-child(19),
+.smax-table.mode-shrunk tbody td:nth-child(20),
+.smax-table.mode-shrunk tbody td:nth-child(21) {
+  display: none;
+}
+/* Shrunk: row hơi cao hơn để chứa name + phone stacked */
+.smax-table.mode-shrunk tbody tr.master-row td { height: 56px; }
+
+/* Shrunk: override min-width 1500 của smax-table mặc định → table co lại theo list pane */
+.smax-table.mode-shrunk {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0 !important;
+}
+.smax-table.mode-shrunk thead th:nth-child(3) { width: 220px; }   /* Tên */
+.smax-table.mode-shrunk thead th:nth-child(4) { width: 110px; }   /* SĐT */
+.smax-table.mode-shrunk thead th:nth-child(8) { width: 110px; }   /* Trạng thái KH */
+.smax-table.mode-shrunk thead th:nth-child(16) { width: 110px; }  /* Có Zalo? */
+.smax-table.mode-shrunk thead th { white-space: nowrap; }
+.smax-table.mode-shrunk tbody td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Highlight active row khi detail-open */
+.smax-table.mode-shrunk tbody tr.master-row.detail-active {
+  background: #fef9e7;
+  border-left: 3px solid var(--smax-coral, #aa2d00);
+}
+
+/* M55.2 2026-05-30 — Flash row 2.5s khi focus param trigger (Mở chi tiết từ dialog) */
+.smax-table tbody tr.master-row.row-flash {
+  animation: row-flash-anim 2.5s ease-out;
+}
+@keyframes row-flash-anim {
+  0%   { background: #fef3c7; box-shadow: inset 0 0 0 2px #f59e0b; }
+  40%  { background: #fef3c7; box-shadow: inset 0 0 0 2px #f59e0b; }
+  100% { background: transparent; box-shadow: inset 0 0 0 2px transparent; }
+}
+
+/* Responsive breakpoints — anh chốt 2026-05-28: chỉ HD / FHD / 2K, không mobile */
+/* HD (1366×768): default — đã set ở trên (460px detail) */
+
+/* Full HD (1920×1080) */
+@media (min-width: 1920px) {
+  .dual-pane.detail-open { grid-template-columns: 620px 1fr; }
+}
+
+/* 2K / QHD (2560×1440) */
+@media (min-width: 2560px) {
+  .dual-pane.detail-open { grid-template-columns: 720px 1fr; }
+  .smax-contacts-page { max-width: 2400px; margin: 0 auto; }
+}
+
+/* Wedge A 2026-05-28: FAB "Thêm KH nhanh" — floating bottom-right */
+.add-customer-fab {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 20px 0 16px;
+  border-radius: 9999px;
+  border: 1px solid #181d26;
+  background: #181d26;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22), 0 4px 8px rgba(15, 23, 42, 0.10);
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+.add-customer-fab:hover {
+  background: #0d1218;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.28), 0 6px 12px rgba(15, 23, 42, 0.12);
+}
+.add-customer-fab:active { transform: translateY(1px); }
+.add-customer-fab .fab-plus {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 400;
+}
+.add-customer-fab .fab-label {
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+}
+@media (min-width: 1920px) {
+  .add-customer-fab { right: 40px; bottom: 40px; height: 52px; padding: 0 22px 0 18px; }
+  .add-customer-fab .fab-plus { font-size: 24px; }
+  .add-customer-fab .fab-label { font-size: 14px; }
+}
+@media (min-width: 2560px) {
+  .add-customer-fab { right: 56px; bottom: 56px; height: 56px; padding: 0 26px 0 20px; }
+  .add-customer-fab .fab-label { font-size: 15px; }
+}
 </style>

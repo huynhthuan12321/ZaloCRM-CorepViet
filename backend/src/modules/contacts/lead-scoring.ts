@@ -7,6 +7,7 @@
  */
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
+import { emitLeadScoreThresholdIfCrossed } from '../automation/engine/lead-score-threshold-hook.js';
 
 export async function computeLeadScore(contactId: string): Promise<number> {
   const now = new Date();
@@ -74,7 +75,7 @@ export async function computeLeadScore(contactId: string): Promise<number> {
 export async function computeAllLeadScores(): Promise<void> {
   const contacts = await prisma.contact.findMany({
     where: { mergedInto: null },
-    select: { id: true, updatedAt: true },
+    select: { id: true, orgId: true, updatedAt: true, leadScore: true },
   });
 
   let updated = 0;
@@ -82,6 +83,7 @@ export async function computeAllLeadScores(): Promise<void> {
 
   for (const contact of contacts) {
     const score = await computeLeadScore(contact.id);
+    const oldScore = contact.leadScore ?? 0;
 
     // Determine lastActivity (max of message/appointment/updatedAt) cho cột sort
     const conversations = await prisma.conversation.findMany({
@@ -112,6 +114,9 @@ export async function computeAllLeadScores(): Promise<void> {
       where: { id: contact.id },
       data: { leadScore: score, lastActivity },
     });
+
+    // Phase 7 Wave 1 #14 — fire lead_score_threshold nếu vừa cross ngưỡng cấu hình
+    await emitLeadScoreThresholdIfCrossed(contact.orgId, contact.id, oldScore, score);
 
     updated++;
   }

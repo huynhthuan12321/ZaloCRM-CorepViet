@@ -6,16 +6,21 @@ import type { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { zaloPool } from './zalo-pool.js';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { getZaloScope, canManageAccount, requireAccountManagement, requireAccountVisible } from './zalo-scope.js';
 
 export async function zaloRoutes(app: FastifyInstance): Promise<void> {
   // All routes in this plugin require auth
   app.addHook('preHandler', authMiddleware);
 
   // GET /api/v1/zalo-accounts — list accounts with live status from pool
+  // RBAC scoped 2026-05-22: chỉ trả nicks user được phép xem (xem getZaloScope).
   app.get('/api/v1/zalo-accounts', async (request) => {
     const user = request.user!;
+    const userId = (user as any).userId ?? user.id;
+    const scope = await getZaloScope(userId, user.orgId, user.role);
+
     const accounts = await prisma.zaloAccount.findMany({
-      where: { orgId: user.orgId },
+      where: { orgId: user.orgId, id: { in: scope.accessibleIds } },
       select: {
         id: true,
         zaloUid: true,
@@ -23,7 +28,9 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
         avatarUrl: true,
         phone: true,
         status: true,
+        ownerUserId: true,
         proxyUrl: true,
+        privacyMode: true,
         lastConnectedAt: true,
         createdAt: true,
         owner: { select: { id: true, fullName: true, email: true } },
@@ -31,12 +38,14 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { createdAt: 'asc' },
     });
 
-    // Merge live status from pool; mask proxy credentials
+    // Merge live status from pool; mask proxy credentials; thêm canManage flag
     return accounts.map((a) => ({
       ...a,
       proxyUrl: a.proxyUrl ? maskProxyUrl(a.proxyUrl) : null,
       hasProxy: !!a.proxyUrl,
       liveStatus: zaloPool.getStatus(a.id),
+      canManage: canManageAccount(a.ownerUserId, userId, user.role),
+      isOwnedByMe: a.ownerUserId === userId,
     }));
   });
 
@@ -51,14 +60,23 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'Invalid proxy URL format. Use: http://[user:pass@]host:port' });
       }
 
-      const account = await prisma.zaloAccount.create({
-        data: {
-          orgId: user.orgId,
-          ownerUserId: user.id,
-          displayName: displayName ?? null,
-          proxyUrl: proxyUrl ?? null,
-          status: 'qr_pending',
-        },
+      // FIX 2026-05-22 Bug A: tạo nick + auto-insert ZaloAccountAccess cho owner.
+      // Trước: owner KHÔNG hiện trong crew list (frontend đọc crew từ access table).
+      // Giờ: atomic create cả 2 trong tx, owner mặc định permission='admin'.
+      const account = await prisma.$transaction(async (tx) => {
+        const acc = await tx.zaloAccount.create({
+          data: {
+            orgId: user.orgId,
+            ownerUserId: user.id,
+            displayName: displayName ?? null,
+            proxyUrl: proxyUrl ?? null,
+            status: 'qr_pending',
+          },
+        });
+        await tx.zaloAccountAccess.create({
+          data: { zaloAccountId: acc.id, userId: user.id, permission: 'admin' },
+        });
+        return acc;
       });
 
       return reply.status(201).send(account);
@@ -70,17 +88,17 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
     '/api/v1/zalo-accounts/:id/login',
     async (request, reply) => {
       const { id } = request.params;
-      const user = request.user!;
-
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id, orgId: user.orgId },
+      // Phase Zalo Account Mutation Gate 2026-05-27: chỉ owner-of-nick + org admin
+      // mới được trigger QR login (chặn take-over qua endpoint mutation).
+      const gate = await requireAccountManagement(request, reply, id);
+      if (!gate) return reply;
+      // Load lại để có proxyUrl
+      const account = await prisma.zaloAccount.findUnique({
+        where: { id },
+        select: { proxyUrl: true },
       });
-      if (!account) {
-        return reply.status(404).send({ error: 'Account not found' });
-      }
-
       // Fire-and-forget — QR delivered via Socket.IO
-      zaloPool.loginQR(id, account.proxyUrl).catch(() => {
+      zaloPool.loginQR(id, account?.proxyUrl ?? null).catch(() => {
         // errors are emitted via socket; no need to crash here
       });
 
@@ -93,10 +111,12 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
     '/api/v1/zalo-accounts/:id/reconnect',
     async (request, reply) => {
       const { id } = request.params;
-      const user = request.user!;
-
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id, orgId: user.orgId },
+      // Phase Zalo Account Mutation Gate 2026-05-27: gate take-over reconnect.
+      const gate = await requireAccountManagement(request, reply, id);
+      if (!gate) return reply;
+      const account = await prisma.zaloAccount.findUnique({
+        where: { id },
+        select: { sessionData: true, proxyUrl: true },
       });
       if (!account) {
         return reply.status(404).send({ error: 'Account not found' });
@@ -124,14 +144,10 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
     '/api/v1/zalo-accounts/:id',
     async (request, reply) => {
       const { id } = request.params;
-      const user = request.user!;
-
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id, orgId: user.orgId },
-      });
-      if (!account) {
-        return reply.status(404).send({ error: 'Account not found' });
-      }
+      // Phase Zalo Account Mutation Gate 2026-05-27 CRITICAL: chặn sale xoá
+      // nick người khác (trước fix chỉ check orgId — sale curl được id là xoá).
+      const gate = await requireAccountManagement(request, reply, id);
+      if (!gate) return reply;
 
       zaloPool.disconnect(id);
       await prisma.zaloAccount.delete({ where: { id } });
@@ -145,15 +161,10 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
     '/api/v1/zalo-accounts/:id/status',
     async (request, reply) => {
       const { id } = request.params;
-      const user = request.user!;
-
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id, orgId: user.orgId },
-        select: { id: true, status: true },
-      });
-      if (!account) {
-        return reply.status(404).send({ error: 'Account not found' });
-      }
+      // Phase Zalo Account Mutation Gate 2026-05-27: read endpoint cũng scope
+      // (read OK cho trưởng phòng qua dept-cascade).
+      const gate = await requireAccountVisible(request, reply, id);
+      if (!gate) return reply;
 
       return { accountId: id, liveStatus: zaloPool.getStatus(id) };
     },
@@ -164,15 +175,11 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
     '/api/v1/zalo-accounts/:id/proxy',
     async (request, reply) => {
       const { id } = request.params;
-      const user = request.user!;
       const { proxyUrl } = request.body ?? {};
-
-      const account = await prisma.zaloAccount.findFirst({
-        where: { id, orgId: user.orgId },
-      });
-      if (!account) {
-        return reply.status(404).send({ error: 'Account not found' });
-      }
+      // Phase Zalo Account Mutation Gate 2026-05-27 CRITICAL: chặn MITM —
+      // proxy set bởi non-owner có thể chặn toàn bộ traffic Zalo của nick.
+      const gate = await requireAccountManagement(request, reply, id);
+      if (!gate) return reply;
 
       if (proxyUrl && !isValidProxyUrl(proxyUrl)) {
         return reply.status(400).send({ error: 'Invalid proxy URL format. Use: http://[user:pass@]host:port' });

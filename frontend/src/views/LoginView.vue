@@ -11,11 +11,14 @@
 
     <v-form @submit.prevent="handleLogin">
       <v-text-field
-        v-model="email"
-        label="Email"
-        type="email"
-        prepend-inner-icon="mdi-email-outline"
+        v-model="identifier"
+        label="Email hoặc số điện thoại"
+        type="text"
+        prepend-inner-icon="mdi-account-outline"
         required
+        autocomplete="username"
+        hint="Anh nhập email (vd: admin@hs.com) hoặc SĐT (vd: 0987 654 321)"
+        persistent-hint
         class="mb-3"
       />
       <v-text-field
@@ -24,6 +27,7 @@
         type="password"
         prepend-inner-icon="mdi-lock-outline"
         required
+        autocomplete="current-password"
         class="mb-5"
       />
       <v-btn type="submit" color="primary" block size="large" :loading="loading" rounded="xl">
@@ -32,6 +36,9 @@
       </v-btn>
     </v-form>
 
+    <v-alert v-if="passwordChangedNotice" type="success" class="mt-4" density="compact" closable variant="tonal">
+      ✅ Mật khẩu đã đổi thành công. Vui lòng đăng nhập lại với mật khẩu mới.
+    </v-alert>
     <v-alert v-if="error" type="error" class="mt-4" density="compact" closable variant="tonal">
       {{ error }}
     </v-alert>
@@ -40,15 +47,19 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 
-const email = ref('');
+const identifier = ref('');
 const password = ref('');
 const loading = ref(false);
 const error = ref('');
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
+
+// Phase Onboarding v1 — sau khi force change password thành công, redirect về /login?password-changed=1
+const passwordChangedNotice = ref(route.query['password-changed'] === '1');
 
 onMounted(async () => {
   try {
@@ -61,7 +72,7 @@ async function handleLogin() {
   loading.value = true;
   error.value = '';
   try {
-    await authStore.login(email.value, password.value);
+    await authStore.login(identifier.value, password.value);
     router.push('/');
   } catch (err: any) {
     error.value = err.response?.data?.error || 'Đăng nhập thất bại';

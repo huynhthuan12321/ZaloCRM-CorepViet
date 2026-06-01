@@ -193,33 +193,23 @@ export async function backfillAccountHistory(api: any, accountId: string): Promi
       const zaloName = friend?.zaloName || friend?.zalo_name || friend?.displayName || friend?.display_name || '';
       const avatar = friend?.avatar || '';
       const phone = friend?.phoneNumber || '';
+      const globalId = friend?.globalId || '';
+      const username = friend?.username || '';
 
       try {
-        const existing = await prisma.contact.findFirst({
-          where: { zaloUid: uid, orgId: account.orgId },
-          select: { id: true, fullName: true },
+        // Wave 1.5-B (B7 fix): dùng central resolver thay vì Contact.zaloUid only dedup
+        const { resolveOrCreateContact } = await import('../contacts/resolve-contact.js');
+        await resolveOrCreateContact({
+          orgId: account.orgId,
+          zaloAccountId: accountId,
+          zaloUidInNick: uid,
+          zaloGlobalId: globalId || null,
+          zaloUsername: username || null,
+          phone: phone || null,
+          fallbackFullName: zaloName || null,
+          fallbackAvatarUrl: avatar || null,
+          enrichViaGetUserInfo: false,
         });
-        if (existing) {
-          await prisma.contact.update({
-            where: { id: existing.id },
-            data: {
-              fullName: zaloName || existing.fullName,
-              avatarUrl: avatar || undefined,
-              phone: phone || undefined,
-            },
-          });
-        } else {
-          await prisma.contact.create({
-            data: {
-              id: randomUUID(),
-              orgId: account.orgId,
-              zaloUid: uid,
-              fullName: zaloName || 'Unknown',
-              avatarUrl: avatar || null,
-              phone: phone || null,
-            },
-          });
-        }
         result.friendsSynced++;
       } catch (err) {
         result.errors++;

@@ -46,17 +46,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /api/v1/auth/login — verify credentials, return JWT
+  // Phase Onboarding v1 2026-05-24 — identifier (field 'email' historical) accept
+  // cả email vừa phone. Backend auto-detect '@' hoặc digit-only.
   app.post<{
-    Body: { email: string; password: string };
+    Body: { email?: string; identifier?: string; password: string };
   }>('/api/v1/auth/login', async (request, reply) => {
-    const { email, password } = request.body;
-    if (!email || !password) {
-      return reply.status(400).send({ error: 'Missing email or password' });
+    const { email, identifier, password } = request.body;
+    const id = (identifier ?? email ?? '').trim();
+    if (!id || !password) {
+      return reply.status(400).send({ error: 'Thiếu email/SĐT hoặc mật khẩu' });
     }
-    const payload = await login(email, password);
+    const payload = await login(id, password);
     const token = app.jwt.sign(payload, { expiresIn: '7d' });
-    // Phase 6 polish — fire-and-forget seed nếu org cũ chưa có scoring config.
-    // Idempotent — skip nếu đã tồn tại. Không await.
     autoSeedScoringIfNeeded(payload.orgId);
     return { token, user: payload };
   });

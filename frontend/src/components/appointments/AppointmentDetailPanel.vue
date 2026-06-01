@@ -144,7 +144,7 @@ import {
   appointmentEnd,
   type AppointmentEx as Appointment,
 } from '@/composables/appointment-helpers';
-import { formatInOrgTz } from '@/composables/use-org-timezone';
+import { formatInOrgTz, getOrgParts, weekdayInOrgTz } from '@/composables/use-org-timezone';
 
 const props = defineProps<{
   appointment: Appointment | null;
@@ -160,7 +160,8 @@ defineEmits<{
   (e: 'open-contact', a: Appointment): void;
 }>();
 
-const DOWS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+// 2026-05-21 Phase B-4: DOW + dd/mm/yyyy compute via org TZ (xem use-org-timezone.ts).
+// Trước: getDay/getDate/getMonth/getFullYear/getHours/getMinutes → browser local TZ.
 
 // Avatar resolve: ưu tiên data sẵn có trên appointment.contact (Contact.avatarUrl +
 // friends embed từ APPOINTMENT_INCLUDE). Nếu vẫn null → fetch /contacts/:id enrich.
@@ -196,9 +197,13 @@ const timeRangeLabel = computed(() => {
   if (!props.appointment) return '';
   const s = appointmentStart(props.appointment);
   const e = appointmentEnd(props.appointment);
-  const sd = `${DOWS[s.getDay()]}, ${String(s.getDate()).padStart(2, '0')}/${String(s.getMonth() + 1).padStart(2, '0')}/${s.getFullYear()}`;
-  const st = `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`;
-  const et = `${String(e.getHours()).padStart(2, '0')}:${String(e.getMinutes()).padStart(2, '0')}`;
+  const sp = getOrgParts(s);
+  const ep = getOrgParts(e);
+  if (!sp || !ep) return '';
+  const dow = weekdayInOrgTz(s, undefined, 'long');
+  const sd = `${dow}, ${String(sp.day).padStart(2, '0')}/${String(sp.month).padStart(2, '0')}/${sp.year}`;
+  const st = `${String(sp.hour).padStart(2, '0')}:${String(sp.minute).padStart(2, '0')}`;
+  const et = `${String(ep.hour).padStart(2, '0')}:${String(ep.minute).padStart(2, '0')}`;
   return `${sd} · ${st}–${et}`;
 });
 
