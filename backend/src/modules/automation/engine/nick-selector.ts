@@ -115,7 +115,7 @@ export async function pickNickForTask(args: {
       if (nick.dailyFriendAddCap <= 0) {
         return { nickId: nick.id, reason: 'cap_aware' };
       }
-      const todayCount = await prisma.automationTask.count({
+      const todayCount = await (prisma as any).automationTask.count({
         where: {
           assignedNickId: nick.id,
           state: 'done',

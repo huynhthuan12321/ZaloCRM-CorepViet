@@ -115,7 +115,7 @@ export async function resolveAndEnqueue(bc: BroadcastRow): Promise<{ recipients:
 
   const CHUNK = 500;
   for (let i = 0; i < tasksData.length; i += CHUNK) {
-    await prisma.automationTask.createMany({
+    await (prisma as any).automationTask.createMany({
       data: tasksData.slice(i, i + CHUNK),
     });
   }

@@ -191,7 +191,7 @@ export async function materializeFromEvent(
       const baseNow = Date.now();
 
       for (const contactId of contactIds) {
-        const existing = await prisma.automationTask.findFirst({
+        const existing = await (prisma as any).automationTask.findFirst({
           where: { campaignId: blockCampaign.id, contactId },
           select: { id: true },
         });
@@ -202,7 +202,7 @@ export async function materializeFromEvent(
         }
         const jitter = jitterMin + Math.random() * Math.max(0, jitterMax - jitterMin);
         const scheduledAt = new Date(baseNow + jitter);
-        await prisma.automationTask.create({
+        await (prisma as any).automationTask.create({
           data: {
             id: randomUUID(),
             orgId: event.orgId,
@@ -303,7 +303,7 @@ export async function materializeFromEvent(
     // 7. For each contact: idempotent enrollment — skip if already has task for this campaign
     const now = Date.now();
     for (const contactId of contactIds) {
-      const existing = await prisma.automationTask.findFirst({
+      const existing = await (prisma as any).automationTask.findFirst({
         where: { campaignId: campaign.id, contactId },
         select: { id: true },
       });
@@ -317,7 +317,7 @@ export async function materializeFromEvent(
       // "Active" = task state in (queued, running) trong sequence-bound campaign khác (≠ campaign hiện tại)
       // cùng org. Đảm bảo 1 KH không bị fire song song nhiều Luồng cùng lúc.
       // Default: skip. Sau này có thể đổi sang queue nếu anh muốn override per-Sequence.
-      const activeInOther = await prisma.automationTask.findFirst({
+      const activeInOther = await (prisma as any).automationTask.findFirst({
         where: {
           orgId: event.orgId,
           contactId,
@@ -339,7 +339,7 @@ export async function materializeFromEvent(
       const jitter = jitterMin + Math.random() * Math.max(0, jitterMax - jitterMin);
       const scheduledAt = new Date(now + firstStep.delayMinutes * 60 * 1000 + jitter);
 
-      await prisma.automationTask.create({
+      await (prisma as any).automationTask.create({
         data: {
           id: randomUUID(),
           orgId: event.orgId,
@@ -458,7 +458,7 @@ export async function materializeSequenceForContact(
   }
 
   // 5. Idempotency: skip enroll if contact đã có task trong campaign này
-  const existing = await prisma.automationTask.findFirst({
+  const existing = await (prisma as any).automationTask.findFirst({
     where: { campaignId: campaign.id, contactId: input.contactId },
     select: { id: true },
   });
@@ -493,7 +493,7 @@ export async function materializeSequenceForContact(
   const jitter = jitterMin + Math.random() * Math.max(0, jitterMax - jitterMin);
   const scheduledAt = new Date(Date.now() + firstStep.delayMinutes * 60 * 1000 + jitter);
 
-  await prisma.automationTask.create({
+  await (prisma as any).automationTask.create({
     data: {
       id: randomUUID(),
       orgId: input.orgId,

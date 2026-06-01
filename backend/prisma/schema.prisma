@@ -59,7 +59,7 @@ model Organization {
   automationTriggers        AutomationTrigger[]
   automationBroadcasts      AutomationBroadcast[]
   automationCampaigns       AutomationCampaign[]
-  automationTasks           AutomationTask[]
+  // automationTasks       AutomationTask[]  ← REMOVED 2026-06-01 Luồng Mục Tiêu M0
   // RBAC Phase Phân Quyền 2026-05-21
   departments               Department[]
   permissionGroups          PermissionGroup[]
@@ -245,7 +245,7 @@ model ZaloAccount {
   // Phase 7 — Automation framework
   ownedBlocks        Block[]               @relation("BlockOwnerNick")
   ownedBlockFolders  BlockFolder[]         @relation("BlockFolderOwnerNick")
-  assignedTasks      AutomationTask[]      @relation("TaskAssignedNick")
+  // assignedTasks   AutomationTask[]      @relation("TaskAssignedNick")  ← REMOVED 2026-06-01 Luồng Mục Tiêu M0
 
   // Phase 7 — Per-nick automation caps (configurable, default theo memory rule:
   //   300 msg/day/nick, 30-50 friend-add/day/nick)
@@ -432,7 +432,7 @@ model Contact {
   contactAccess     ContactAccess[]
   contactNotes      Note[]
   // Phase 7 — Automation framework
-  automationTasks   AutomationTask[]
+  // automationTasks   AutomationTask[]  ← REMOVED 2026-06-01 Luồng Mục Tiêu M0
   // Phase Lead Pool 2026-05-24
   leadRequests      LeadRequest[]
 
@@ -616,6 +616,12 @@ model Message {
   // 'automation' = bot/sequence/broadcast/NBA suggest gửi qua engine
   // 'system' = CRM internal (reminder card, system notice — chưa dùng, reserved)
   sentVia         String    @default("user") @map("sent_via")
+  // ── Luồng Mục Tiêu M10/M11 attribution 2026-06-01 ──
+  // automationTaskId = BullMQ jobId (string, KHÔNG FK vì AutomationTask đã drop).
+  // Pattern: `${triggerId}-${contactId}-${stepIdx}` (DASH, BullMQ v5 cấm `:` — POC 2026-06-01).
+  // automationStepIndex = bước thứ mấy trong sequence (1,2,3...) cho per-step funnel M10.
+  automationTaskId    String?   @map("automation_task_id")
+  automationStepIndex Int?      @map("automation_step_index")
   createdAt       DateTime  @default(now()) @map("created_at")
 
   conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -628,6 +634,9 @@ model Message {
   @@index([conversationId, zaloMsgIdNum(sort: Desc)])
   // Phase metrics 2026-05-22: aggregate query per nick per day per category
   @@index([conversationId, sentAt, senderType, sentVia])
+  // M10/M11 — attribution + filter
+  @@index([automationTaskId, sentAt])
+  @@index([sentVia, conversationId])
   @@map("messages")
 }
 
@@ -1746,7 +1755,7 @@ model Block {
   folder    BlockFolder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
   ownerNick ZaloAccount?     @relation("BlockOwnerNick", fields: [ownerNickId], references: [id], onDelete: SetNull)
   createdBy User             @relation("BlockCreatedBy", fields: [createdById], references: [id])
-  tasks     AutomationTask[]
+  // tasks  AutomationTask[]  ← REMOVED 2026-06-01 Luồng Mục Tiêu M0
 
   @@index([orgId, channel, actionType])
   @@index([orgId, archivedAt])
@@ -1771,10 +1780,17 @@ model AutomationSequence {
   channel        String   @default("zalo_user")
   steps          Json     @default("[]")
   runtimeRules   Json     @default("{}") @map("runtime_rules")
-  // Cached stats — refresh từ AutomationTask aggregate
-  enrolledCount  Int      @default(0) @map("enrolled_count")
-  completedCount Int      @default(0) @map("completed_count")
-  failedCount    Int      @default(0) @map("failed_count")
+  // ── Stats Dashboard M10 cached counters (hồi sinh dead writer 2026-06-01) ──
+  // Hooks: task-worker on state transition + friend-event-handler:502 REMOVE/BLOCK
+  // + message-handler:557 customer_reply. Cron 02:30 VN reconcile drift từ raw aggregate.
+  enrolledCount        Int      @default(0) @map("enrolled_count")
+  completedCount       Int      @default(0) @map("completed_count")
+  failedCount          Int      @default(0) @map("failed_count")
+  blockCountCached     Int      @default(0) @map("block_count_cached")
+  enrolledCountCached  Int      @default(0) @map("enrolled_count_cached")
+  completedCountCached Int      @default(0) @map("completed_count_cached")
+  replyCountCached     Int      @default(0) @map("reply_count_cached")
+  countersLastSyncedAt DateTime? @map("counters_last_synced_at")
   enabled        Boolean  @default(true)
   createdById    String   @map("created_by_id")
   createdAt      DateTime @default(now()) @map("created_at")
@@ -1798,7 +1814,7 @@ model AutomationTrigger {
   id                  String   @id @default(uuid())
   orgId               String   @map("org_id")
   name                String
-  category            String   @default("general") // 'general' | 'keyword' | 'bot_api' | 'livechat' | 'genai'
+  category            String   @default("general") // 'general' | 'keyword' | 'bot_api' | 'livechat' | 'genai' | 'manual'
   eventType           String   @map("event_type")
   eventFilter         Json?    @map("event_filter")
   bindingKind         String   @map("binding_kind") // 'sequence' | 'block' | 'broadcast'
@@ -1812,6 +1828,29 @@ model AutomationTrigger {
   successorSequenceId String?  @map("successor_sequence_id")
   greetingTemplate    String?  @map("greeting_template") @db.Text
   state               String   @default("draft") // 'draft' | 'active' | 'paused' | 'cancelling' | 'cancelled' | 'completed'
+
+  // ── Luồng Mục Tiêu rebuild 2026-06-01 (Marketing BullMQ Rebuild M0) ──
+  // P1: Delay sau khi gửi lời mời → step 1 bám đuổi (phút). Cấu hình per-trigger qua Wizard B3.
+  sequenceStartDelayMinutes   Int @default(60) @map("sequence_start_delay_minutes")
+  // P2: Pause khi KH tương tác (giờ). Reply trong window → reset (P2.1).
+  pauseOnActivityHours        Int @default(24) @map("pause_on_activity_hours")
+  // P6: Bỏ qua KH có > N nick friend trong hệ thống (0 = không filter, JOIN permission_groups theo T3A).
+  multiNickThreshold          Int @default(0)  @map("multi_nick_threshold")
+  // D12: Concurrency per nick per minute.
+  concurrencyPerNickPerMinute Int @default(1)  @map("concurrency_per_nick_per_minute")
+  // Working hours VN (giờ 0-23). Cap đọc từ ZaloAccount per-nick (KHÔNG duplicate ở trigger).
+  sendHourStart        Int    @default(6)  @map("send_hour_start")
+  sendHourEnd          Int    @default(22) @map("send_hour_end")
+  // Cross-nick recency: skip KH tương tác nick khác < N ngày (0 = không filter).
+  recencySkipDays      Int    @default(30) @map("recency_skip_days")
+  // Per-nick throttle gate (ms) giữa các lần gửi friend-request.
+  minFriendReqGapMs    Int    @default(60000) @map("min_friend_req_gap_ms")
+  // Memory 1-1 only (feedback_crm_filter_1to1_not_group) — chỉ trigger conv.threadType='user'.
+  filterThreadType     String @default("user") @map("filter_thread_type")
+  // M9 System trigger flag — "Bám đuổi khách hàng thủ công" KHÔNG cho xoá, chỉ Tắt.
+  isSystemTrigger      Boolean @default(false) @map("is_system_trigger")
+  systemKind           String? @map("system_kind") // 'manual_chat_followup' | future kinds
+
   createdById         String   @map("created_by_id")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
@@ -1824,6 +1863,8 @@ model AutomationTrigger {
 
   @@index([orgId, eventType, enabled])
   @@index([orgId, category])
+  // M9 — quick lookup system trigger per org
+  @@index([systemKind])
   @@map("automation_triggers")
 }
 
@@ -1892,7 +1933,8 @@ model AutomationCampaign {
   trigger   AutomationTrigger?   @relation("CampaignTrigger", fields: [triggerId], references: [id], onDelete: SetNull)
   broadcast AutomationBroadcast? @relation("CampaignBroadcast", fields: [broadcastId], references: [id], onDelete: SetNull)
   sequence  AutomationSequence?  @relation("CampaignSequence", fields: [sequenceId], references: [id], onDelete: SetNull)
-  tasks     AutomationTask[]
+  // tasks    AutomationTask[]  ← REMOVED 2026-06-01 (Luồng Mục Tiêu M0)
+  //                              AutomationTask đã drop, BullMQ làm runtime layer
 
   @@index([orgId, state])
   @@index([triggerId, state])
@@ -1900,48 +1942,13 @@ model AutomationCampaign {
   @@map("automation_campaigns")
 }
 
-// AutomationTask — runtime per-contact per-campaign instance.
-// State machine: queued → running → done | failed | skipped
-// `blockSnapshot` deep copy Block.content lúc task created → edit Block KHÔNG
-// ảnh hưởng task pending (anh chốt Q1). `currentStepIdx` track tiến trình trong
-// sequence; sau khi block hoàn thành, engine advance idx + scheduledAt += delay.
-// `skipReason` enum: 'cap_hit' | 'recency_block' | 'hour_range' | 'stop_on_accept'
-//                  | 'already_friend' | 'no_zalo' | 'block_archived' | 'rule_disabled'
-model AutomationTask {
-  id             String    @id @default(uuid())
-  orgId          String    @map("org_id")
-  campaignId     String    @map("campaign_id")
-  contactId      String    @map("contact_id")
-  // Sequence progress (null cho single_block / broadcast tasks)
-  sequenceId     String?   @map("sequence_id")
-  currentStepIdx Int?      @map("current_step_idx")
-  currentBlockId String?   @map("current_block_id")
-  blockSnapshot  Json      @map("block_snapshot")
-  // Scheduling
-  scheduledAt    DateTime  @map("scheduled_at")
-  assignedNickId String?   @map("assigned_nick_id")
-  // State machine
-  state          String    @default("queued") // 'queued' | 'running' | 'done' | 'failed' | 'skipped'
-  attemptCount   Int       @default(0) @map("attempt_count")
-  outcome        Json?
-  skipReason     String?   @map("skip_reason")
-  errorMessage   String?   @map("error_message")
-  executedAt     DateTime? @map("executed_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-
-  org          Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  campaign     AutomationCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  contact      Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  block        Block?             @relation(fields: [currentBlockId], references: [id], onDelete: SetNull)
-  assignedNick ZaloAccount?       @relation("TaskAssignedNick", fields: [assignedNickId], references: [id], onDelete: SetNull)
-
-  @@index([state, scheduledAt]) // worker pickup
-  @@index([campaignId, contactId])
-  @@index([assignedNickId, executedAt]) // per-nick cap check
-  @@index([contactId, state]) // dashboard query
-  @@map("automation_tasks")
-}
+// ════════════════════════════════════════════════════════════════════════
+// AutomationTask model REMOVED — Luồng Mục Tiêu M0 (2026-06-01)
+// Lý do: BullMQ + Redis làm runtime layer thay thế DB polling.
+// Code đụng prisma.automationTask đã stub trong M0, rewrite trong M2-M4 với queue.
+// Pattern jobId: ${triggerId}-${contactId}-${stepIdx} (DASH, BullMQ v5 cấm `:`).
+// Migration: 20260601182155_marketing_bullmq_rebuild
+// ════════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════════
 // Phase 8 — ContactEngagementDaily
@@ -2133,6 +2140,19 @@ model CustomerListEntry {
   stuckRecoveryCount Int       @default(0) @map("stuck_recovery_count")
   triggerId          String?   @map("trigger_id") // FK to AutomationTrigger (no relation enforced)
 
+  // ── M9 Bám đuổi thủ công overrides (Luồng Mục Tiêu 2026-06-01) ──
+  // Sale ở /chat enroll 1 KH vào "Mục tiêu hệ thống" → set override per-entry:
+  //   nickIdOverride = nick đang chat (KHÔNG trong segmentSpec.nickIds whitelist)
+  //   sequenceIdOverride = Sequence sale tự chọn trong modal
+  //   enrolledBy = userId sale ra quyết định
+  //   enrollReason = lý do bắt buộc nhập trong modal
+  sequenceIdOverride String?   @map("sequence_id_override")
+  nickIdOverride     String?   @map("nick_id_override")
+  enrolledBy         String?   @map("enrolled_by")
+  enrollReason       String?   @map("enroll_reason")
+  enrolledAt         DateTime? @map("enrolled_at")
+  manualEnrollMeta   Json?     @map("manual_enroll_meta")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -2143,6 +2163,9 @@ model CustomerListEntry {
   // Phase Friend Invite Queue 2026-05-28 — hot pickup query
   @@index([queueStatus, triggerId, rowIndex])
   @@index([queueStatus, lockedAt])
+  // M9 — nick override + enrolledBy lookup
+  @@index([nickIdOverride])
+  @@index([enrolledBy, enrolledAt])
   @@map("customer_list_entries")
 }
 
@@ -2480,7 +2503,7 @@ model NotifyDedupState {
 // → stuck sweeper after 5 phút release back to pool (documented duplicate-send risk).
 model FriendRequestOutbox {
   id                      String    @id @default(uuid())
-  customerListEntryId     String    @unique @map("customer_list_entry_id")
+  customerListEntryId     String    @map("customer_list_entry_id")
   triggerId               String    @map("trigger_id")
   nickId                  String    @map("nick_id")
   contactId               String    @map("contact_id")
@@ -2503,6 +2526,9 @@ model FriendRequestOutbox {
   welcomeRetryCount       Int       @default(0) @map("welcome_retry_count")
   welcomeLastError        String?   @map("welcome_last_error") @db.Text
 
+  // Legacy unique constraint từ Wave 2 Welcome Probe (di sản DB).
+  // Declare lại trong schema để Prisma db push không cố drop khi restart container.
+  @@unique([customerListEntryId, kind], map: "friend_request_outbox_customer_list_entry_id_kind_key")
   @@index([sendStatus, sequenceMaterializedAt])
   @@index([nickId, createdAt]) // hot index for todayCount recovery on worker restart
   @@index([kind, sendStatus], map: "idx_outbox_kind_send_status_run_at")

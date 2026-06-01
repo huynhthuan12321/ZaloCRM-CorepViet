@@ -348,7 +348,7 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         where: { broadcastId: id, state: { in: ['active', 'paused'] } },
         data: { state: 'cancelled', completedAt: new Date() },
       }),
-      prisma.automationTask.updateMany({
+      (prisma as any).automationTask.updateMany({
         where: {
           campaign: { broadcastId: id },
           state: 'queued',

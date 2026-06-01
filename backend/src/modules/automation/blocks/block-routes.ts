@@ -264,7 +264,7 @@ export async function blockRoutes(app: FastifyInstance): Promise<void> {
       const [broadcastRef, triggerRef, taskRef] = await Promise.all([
         prisma.automationBroadcast.count({ where: { blockId: id, orgId: user.orgId } }),
         prisma.automationTrigger.count({ where: { blockId: id, orgId: user.orgId } }),
-        prisma.automationTask.count({ where: { currentBlockId: id, orgId: user.orgId } }),
+        (prisma as any).automationTask.count({ where: { currentBlockId: id, orgId: user.orgId } }),
       ]);
 
       if (broadcastRef + triggerRef + taskRef > 0) {

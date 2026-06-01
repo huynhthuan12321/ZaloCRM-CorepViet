@@ -656,7 +656,7 @@ export async function chatRoutes(app: FastifyInstance) {
                 prisma.conversation.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
                 prisma.friend.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
                 prisma.friendRequestOutbox.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
-                prisma.automationTask.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
+                (prisma as any).automationTask.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
                 prisma.customerListEntry.updateMany({ where: { contactId: conv.contactId }, data: { contactId: canonical.id } }),
                 prisma.contact.update({ where: { id: conv.contactId }, data: { mergedInto: canonical.id, phoneNormalized: null, phone: null, updatedAt: new Date() } }),
               ]);

@@ -79,7 +79,7 @@ export async function tick(): Promise<void> {
     // for retry. Uses updatedAt as the lease proxy (auto-updated by Prisma on
     // state transition). No schema change needed.
     const leaseExpiry = new Date(now.getTime() - 5 * 60 * 1000);
-    const reclaimed = await prisma.automationTask.updateMany({
+    const reclaimed = await (prisma as any).automationTask.updateMany({
       where: {
         state: TASK_STATES.RUNNING,
         updatedAt: { lt: leaseExpiry },
@@ -89,7 +89,7 @@ export async function tick(): Promise<void> {
     if (reclaimed.count > 0) {
       logger.warn(`[task-worker] reclaimed ${reclaimed.count} stuck-running tasks (lease expired)`);
     }
-    const tasks = await prisma.automationTask.findMany({
+    const tasks = await (prisma as any).automationTask.findMany({
       where: {
         state: TASK_STATES.QUEUED,
         scheduledAt: { lte: now, gte: staleCutoff },
@@ -100,7 +100,7 @@ export async function tick(): Promise<void> {
     if (tasks.length === 0) {
       // Cleanup stale tasks (any queued task scheduled > 24h ago is stale).
       // Single-shot per tick — doesn't run if there's actual work to do.
-      await prisma.automationTask.updateMany({
+      await (prisma as any).automationTask.updateMany({
         where: {
           state: TASK_STATES.QUEUED,
           scheduledAt: { lt: staleCutoff },
@@ -126,13 +126,13 @@ export async function tick(): Promise<void> {
 async function processTask(taskId: string): Promise<void> {
   // Atomic claim: queued → running. If another worker already claimed it,
   // updateMany returns 0 → skip.
-  const claim = await prisma.automationTask.updateMany({
+  const claim = await (prisma as any).automationTask.updateMany({
     where: { id: taskId, state: TASK_STATES.QUEUED },
     data: { state: TASK_STATES.RUNNING, attemptCount: { increment: 1 } },
   });
   if (claim.count === 0) return; // race lost
 
-  const task = await prisma.automationTask.findUnique({
+  const task = await (prisma as any).automationTask.findUnique({
     where: { id: taskId },
     include: {
       campaign: {
@@ -199,7 +199,7 @@ async function processTask(taskId: string): Promise<void> {
   const freqCap = extractFrequencyCap(task.block.content);
   if (freqCap) {
     const windowStart = new Date(now.getTime() - freqCap.windowDays * 24 * 60 * 60 * 1000);
-    const doneCount = await prisma.automationTask.count({
+    const doneCount = await (prisma as any).automationTask.count({
       where: {
         contactId: task.contact.id,
         currentBlockId: task.block.id,
@@ -263,7 +263,7 @@ async function processTask(taskId: string): Promise<void> {
     });
     if (!pinnedNick || pinnedNick.status !== 'connected' || (allowedNickIds && !allowedNickIds.includes(assignedNickId))) {
       logger.warn(`[task-worker] task ${taskId} pinned nick disconnected/disallowed — re-picking`);
-      await prisma.automationTask.update({
+      await (prisma as any).automationTask.update({
         where: { id: task.id },
         data: { assignedNickId: null },
       });
@@ -289,7 +289,7 @@ async function processTask(taskId: string): Promise<void> {
     }
     assignedNickId = pick.nickId;
     // Persist the selection so retries reuse the same nick
-    await prisma.automationTask.update({
+    await (prisma as any).automationTask.update({
       where: { id: taskId },
       data: { assignedNickId },
     });
@@ -319,7 +319,7 @@ async function processTask(taskId: string): Promise<void> {
     const cap = actionType === 'request_friend' ? nick.dailyFriendAddCap : nick.dailyMessageCap;
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
-    const executedToday = await prisma.automationTask.count({
+    const executedToday = await (prisma as any).automationTask.count({
       where: {
         assignedNickId,
         state: TASK_STATES.DONE,
@@ -386,7 +386,7 @@ async function processTask(taskId: string): Promise<void> {
 // ── State transitions ────────────────────────────────────────────────────
 
 async function markSkipped(taskId: string, reason: string, detail?: string): Promise<void> {
-  await prisma.automationTask.update({
+  await (prisma as any).automationTask.update({
     where: { id: taskId },
     data: {
       state: TASK_STATES.SKIPPED,
@@ -404,7 +404,7 @@ async function markFailed(
   errorMessage: string,
   data: object | null = null,
 ): Promise<void> {
-  await prisma.automationTask.update({
+  await (prisma as any).automationTask.update({
     where: { id: taskId },
     data: {
       state: TASK_STATES.FAILED,
@@ -417,7 +417,7 @@ async function markFailed(
 }
 
 async function rescheduleForRetry(taskId: string, retryAt: Date, detail?: string): Promise<void> {
-  await prisma.automationTask.update({
+  await (prisma as any).automationTask.update({
     where: { id: taskId },
     data: {
       state: TASK_STATES.QUEUED,
@@ -436,7 +436,7 @@ async function markDoneAndAdvance(
   actionType: BlockActionType,
   now: Date,
 ): Promise<void> {
-  await prisma.automationTask.update({
+  await (prisma as any).automationTask.update({
     where: { id: task.id },
     data: {
       state: TASK_STATES.DONE,
@@ -553,7 +553,7 @@ async function markDoneAndAdvance(
   // step N+1 reuses the SAME nick. Previously omitted → worker re-ran
   // pickNickForTask at next execution, which could pick a different nick for
   // the same KH. Mirrors materializeSequenceForContact() carry-over pattern.
-  await prisma.automationTask.create({
+  await (prisma as any).automationTask.create({
     data: {
       id: randomUUID(),
       orgId: task.orgId,
