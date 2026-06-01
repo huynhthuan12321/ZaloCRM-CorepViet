@@ -60,6 +60,7 @@ model Organization {
   automationBroadcasts      AutomationBroadcast[]
   automationCampaigns       AutomationCampaign[]
   // automationTasks       AutomationTask[]  ← REMOVED 2026-06-01 Luồng Mục Tiêu M0
+  automationEventLogs       AutomationEventLog[]
   // RBAC Phase Phân Quyền 2026-05-21
   departments               Department[]
   permissionGroups          PermissionGroup[]
@@ -1949,6 +1950,43 @@ model AutomationCampaign {
 // Pattern jobId: ${triggerId}-${contactId}-${stepIdx} (DASH, BullMQ v5 cấm `:`).
 // Migration: 20260601182155_marketing_bullmq_rebuild
 // ════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════
+// AutomationEventLog — Luồng Mục Tiêu M3 (2026-06-01)
+// ════════════════════════════════════════════════════════════════════════
+// Append-only event log:
+//   1. Outbox sweeper recovery (v4 Fix #1): check sequence_step_sent ↔
+//      sequence_step_enqueued chain consistency
+//   2. Stats Dashboard M10: count event by type per trigger
+//   3. M5 pause/resume: latest event per (trigger, contact)
+//
+// Event types:
+//   sequence_step_enqueued | sequence_step_sent | sequence_step_failed
+//   friend_request_sent | friend_accepted | friend_rejected | friend_blocked
+//   customer_reply | customer_block | customer_reaction_negative
+//   manual_pause | manual_stop | manual_resume | manual_enroll
+//   no_zalo | send_error | nick_disconnected
+//
+// Migration: 20260601193019_automation_event_log
+model AutomationEventLog {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  triggerId String?  @map("trigger_id")
+  contactId String?  @map("contact_id")
+  nickId    String?  @map("nick_id")
+  eventType String   @map("event_type")
+  detail    String?
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([triggerId, contactId, eventType], map: "idx_automation_event_log_trigger_contact_type")
+  @@index([eventType, createdAt(sort: Desc)], map: "idx_automation_event_log_type_created")
+  @@index([orgId, eventType, createdAt(sort: Desc)], map: "idx_automation_event_log_org_type_created")
+  @@index([contactId, createdAt(sort: Desc)], map: "idx_automation_event_log_contact_created")
+  @@map("automation_event_log")
+}
 
 // ════════════════════════════════════════════════════════════════════════
 // Phase 8 — ContactEngagementDaily
