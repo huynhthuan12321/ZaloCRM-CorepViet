@@ -968,6 +968,22 @@ export async function friendInviteRoutes(app: FastifyInstance): Promise<void> {
           ? { id: trigger.sequence.id, name: trigger.sequence.name, stepsCount: sequenceStepsCount }
           : null,
         createdAt: trigger.createdAt,
+        // M13 2026-06-02 — Expose 8 safety-rule columns cho card "Quy tắc gửi an toàn"
+        // (read-only). Wizard B3 đặt giá trị; detail view chỉ hiển thị, nút "Sửa" defer Wave 4.
+        // Mapping wizard ↔ schema: quietHoursStart/End → sendHourStart/End,
+        // sendIntervalSeconds → minFriendReqGapMs/1000, recencyDays → recencySkipDays,
+        // multinickThreshold → multiNickThreshold, delayAfterFriendRequestMin → sequenceStartDelayMinutes,
+        // pauseHoursOnReply → pauseOnActivityHours. concurrencyPerNickPerMinute không có trong wizard.
+        safetyRules: {
+          sendHourStart: trigger.sendHourStart,
+          sendHourEnd: trigger.sendHourEnd,
+          sequenceStartDelayMinutes: trigger.sequenceStartDelayMinutes,
+          pauseOnActivityHours: trigger.pauseOnActivityHours,
+          multiNickThreshold: trigger.multiNickThreshold,
+          concurrencyPerNickPerMinute: trigger.concurrencyPerNickPerMinute,
+          recencySkipDays: trigger.recencySkipDays,
+          minFriendReqGapMs: trigger.minFriendReqGapMs,
+        },
       },
       counters: {
         ...counters,
