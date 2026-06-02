@@ -119,7 +119,7 @@
           :key="trig.id"
           class="configured-row"
           :class="{ 'is-clickable': trig.eventType === 'friend_invite_to_list' }"
-          @click="trig.eventType === 'friend_invite_to_list' && router.push(`/marketing/triggers/${trig.id}`)"
+          @click="trig.eventType === 'friend_invite_to_list' && router.push(`/automation/muc-tieu/${trig.id}`)"
         >
           <div class="cell-trig">
             <div

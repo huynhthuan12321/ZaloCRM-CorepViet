@@ -179,7 +179,6 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: 'triggers',                   name: 'Marketing.Triggers',           component: () => import('@/views/automation/TriggersView.vue') },
       { path: 'triggers/new/friend-invite', name: 'Marketing.FriendInviteCreate', component: () => import('@/views/automation/FriendInviteCreateView.vue') },
-      { path: 'triggers/:id',               name: 'Marketing.TriggerDetail',      component: () => import('@/views/automation/TriggerDetailView.vue') },
       { path: 'blocks',     name: 'Marketing.Blocks',     component: () => import('@/views/automation/BlocksView.vue') },
       { path: 'sequences',           name: 'Marketing.Sequences',     component: () => import('@/views/automation/SequencesView.vue') },
       { path: 'sequences/:id/stats', name: 'Marketing.SequenceStats', component: () => import('@/views/automation/SequenceStatsView.vue') },
@@ -206,7 +205,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', name: 'Marketing.MucTieuList', component: () => import('@/views/automation/MucTieuListView.vue') },
       // Wave 3 Day 1 (2026-05-30) — Mục tiêu detail v1 (Dashboard + Log tab).
-      // Legacy /marketing/triggers/:id (TriggerDetailView.vue) vẫn alive cho deep link cũ.
+      // 2026-06-02: TriggerDetailView legacy DELETED — deep link cũ redirect tại block dưới.
       { path: ':id', name: 'Marketing.MucTieuDetail', component: () => import('@/views/automation/MucTieuDetailView.vue') },
     ],
   },
@@ -215,6 +214,14 @@ const routes: RouteRecordRaw[] = [
   // Alias detail page dưới namespace marketing/* (memory: keep marketing namespace unified)
   {
     path: '/marketing/muc-tieu/:id',
+    redirect: (to: RouteLocation) => ({ path: `/automation/muc-tieu/${to.params.id}` }),
+  },
+  // 2026-06-02 — Anh chốt: deprecate TriggerDetailView legacy. Mọi deep link cũ
+  // /marketing/triggers/:id redirect sang UI mới /automation/muc-tieu/:id (MucTieuDetailView
+  // có Pause/Resume + safetyRules card M13). Đặt SAU /marketing children block để Vue
+  // Router không bị conflict với /marketing/triggers/new/friend-invite (route literal).
+  {
+    path: '/marketing/triggers/:id',
     redirect: (to: RouteLocation) => ({ path: `/automation/muc-tieu/${to.params.id}` }),
   },
   // Backward compat redirect — URL /automation/bot/* cũ vẫn hoạt động

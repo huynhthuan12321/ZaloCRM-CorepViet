@@ -1422,7 +1422,7 @@ async function submit() {
     if (form.value.startMode === 'now') {
       await api.post(`/automation/triggers/${triggerId}/activate`);
     }
-    router.push(`/marketing/triggers/${triggerId}`);
+    router.push(`/automation/muc-tieu/${triggerId}`);
   } catch (err: any) {
     alert('Tạo Mục tiêu thất bại: ' + (err?.response?.data?.error ?? err?.message ?? 'unknown'));
   } finally {
