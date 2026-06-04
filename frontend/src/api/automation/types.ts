@@ -43,6 +43,7 @@ export interface BlockFolder {
   id: string;
   orgId: string;
   name: string;
+  visibility: 'public' | 'private'; // 2026-06-04 — Anh chốt
   parentId: string | null;
   ownerNickId: string | null;
   ownerUserId: string | null;
@@ -62,13 +63,14 @@ export interface Block {
   content: Record<string, unknown>;
   ownerNickId: string | null;
   isShared: boolean;
+  tagIds: string[]; // 2026-06-04 — Anh chốt: dự án/mục đích, multi
   usageCount: number;
   lastUsedAt: string | null;
   archivedAt: string | null;
   createdById: string;
   createdAt: string;
   updatedAt: string;
-  folder?: { id: string; name: string } | null;
+  folder?: { id: string; name: string; visibility?: 'public' | 'private' } | null;
   ownerNick?: { id: string; displayName: string | null } | null;
 }
 

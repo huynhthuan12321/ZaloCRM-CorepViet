@@ -141,6 +141,7 @@ export async function blockRoutes(app: FastifyInstance): Promise<void> {
           content: body.content,
           ownerNickId: body.ownerNickId ?? null,
           isShared: body.isShared ?? true,
+          tagIds: Array.isArray(body.tagIds) ? body.tagIds.filter((t: unknown) => typeof t === 'string') : [],
           createdById: user.id,
         },
       });
@@ -199,6 +200,7 @@ export async function blockRoutes(app: FastifyInstance): Promise<void> {
           content: body.content ?? undefined,
           ownerNickId: body.ownerNickId === null ? null : body.ownerNickId ?? undefined,
           isShared: body.isShared ?? undefined,
+          tagIds: Array.isArray(body.tagIds) ? body.tagIds.filter((t: unknown) => typeof t === 'string') : undefined,
         },
       });
       return block;
