@@ -29,6 +29,31 @@ import {
 import { checkBlockReferences } from './block-refs.js';
 import { getOwnerScope, applyOwnerScope } from '../../rbac/owner-scope.js';
 
+// 2026-06-04 — Khối Phase 1: sync JSON steps → sequence_steps FK table.
+// Worker dual-read (sequence-step-worker.ts loadSequenceSteps): ưu tiên FK table,
+// fallback JSON nếu rows empty. Dual-write window 2 tuần → drop JSON 2026-06-18.
+async function syncSequenceStepsTable(sequenceId: string, steps: SequenceStep[]): Promise<void> {
+  try {
+    await prisma.sequenceStep.deleteMany({ where: { sequenceId } });
+    if (steps.length === 0) return;
+    for (const [idx, s] of steps.entries()) {
+      await prisma.sequenceStep.create({
+        data: {
+          id: randomUUID(),
+          sequenceId,
+          blockId: s.blockId || null,
+          stepOrder: idx,
+          delayMinutes: s.delayMinutes ?? 0,
+          ...(s.exitCondition ? { exitCondition: s.exitCondition as unknown as object } : {}),
+        },
+      });
+    }
+  } catch (err) {
+    logger.warn(`[sequence] syncSequenceStepsTable failed for ${sequenceId}: ${err}`);
+    // Non-fatal: JSON write thành công, worker fallback đọc JSON cũ. Retry sweeper sau.
+  }
+}
+
 const BASE = '/api/v1/automation/sequences';
 
 export async function sequenceRoutes(app: FastifyInstance): Promise<void> {
@@ -138,6 +163,8 @@ export async function sequenceRoutes(app: FastifyInstance): Promise<void> {
           createdById: user.id,
         },
       });
+      // 2026-06-04: dual-write FK table
+      await syncSequenceStepsTable(sequence.id, stepsValidation.steps);
       return reply.status(201).send(sequence);
     } catch (error) {
       logger.error('[sequence] create error:', error);
@@ -187,6 +214,10 @@ export async function sequenceRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const sequence = await prisma.automationSequence.update({ where: { id }, data });
+      // 2026-06-04: dual-write FK table khi steps thay đổi
+      if (body.steps !== undefined) {
+        await syncSequenceStepsTable(sequence.id, sequence.steps as unknown as SequenceStep[]);
+      }
       return sequence;
     } catch (error) {
       logger.error('[sequence] update error:', error);
@@ -225,6 +256,8 @@ export async function sequenceRoutes(app: FastifyInstance): Promise<void> {
           createdById: user.id,
         },
       });
+      // 2026-06-04: dual-write FK table cho copy
+      await syncSequenceStepsTable(copy.id, source.steps as unknown as SequenceStep[]);
       return reply.status(201).send(copy);
     } catch (error) {
       logger.error('[sequence] duplicate error:', error);
