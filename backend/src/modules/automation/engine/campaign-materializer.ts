@@ -18,7 +18,7 @@ import { prisma } from '../../../shared/database/prisma-client.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { DEFAULT_RUNTIME_RULES, type SequenceStep } from '../sequences/types.js';
 import type { AutomationEvent } from './types.js';
-import { sanitizeContactCriteria, sanitizeManualContactIds } from './segment-sanitizer.js';
+import { resolveSegmentToContactIds } from './segment-resolver.js';
 import { automationTaskStub as _automationTaskStub } from './_automation-task-stub.js';
 import {
   buildSequenceStepJobId,
@@ -52,48 +52,24 @@ function matchesEventFilter(
   return true;
 }
 
-// segmentSpec evaluation. Phase 7 supports 'manual' (contactIds list) and
-// 'filter' (Prisma where clause subset). 'import-batch' requires the import
-// phase to ship a ContactImportBatch table — soft-checked here.
+// segmentSpec evaluation — Refactored 2026-06-05: gọi shared resolver.
+// Materializer KHÔNG cần hasZalo/excludeBlocked post-filter (gate-checks ở step
+// worker đã handle), nên pass hasZalo=null + excludeBlocked=false để skip
+// post-filter của shared resolver. Hint contactId vẫn ưu tiên (event đã chốt).
 async function resolveSegmentContactIds(
   orgId: string,
   spec: unknown,
   hintContactId: string | null,
 ): Promise<string[]> {
-  if (hintContactId) return [hintContactId]; // event already names the contact
-
+  if (hintContactId) return [hintContactId];
   if (!spec || typeof spec !== 'object') return [];
-  const s = spec as Record<string, unknown>;
-
-  if (s.kind === 'manual' && Array.isArray(s.contactIds)) {
-    // SECURITY FIX (A1): validate ids belong to this org before returning.
-    const safeIds = sanitizeManualContactIds(s.contactIds);
-    if (safeIds.length === 0) return [];
-    const verified = await prisma.contact.findMany({
-      where: { id: { in: safeIds }, orgId },
-      select: { id: true },
-    });
-    return verified.map((c) => c.id);
+  // Patch spec để skip post-filter của shared resolver (giữ behavior cũ).
+  const specForMaterializer = { ...(spec as object), hasZalo: null, excludeBlocked: false };
+  const result = await resolveSegmentToContactIds(prisma, orgId, specForMaterializer);
+  if (result.rejected?.length) {
+    logger.warn(`[materializer] segmentSpec criteria rejected fields: ${result.rejected.join(', ')}`);
   }
-
-  if (s.kind === 'filter' && typeof s.criteria === 'object' && s.criteria !== null) {
-    // SECURITY FIX (A1): force orgId AND-scope, strip non-whitelisted fields.
-    // Previously `{ orgId, ...criteria }` allowed criteria.orgId override → cross-tenant leak.
-    const result = sanitizeContactCriteria(orgId, s.criteria);
-    if (!result.ok || !result.where) return [];
-    if (result.rejected?.length) {
-      logger.warn(`[materializer] segmentSpec criteria rejected fields: ${result.rejected.join(', ')}`);
-    }
-    const rows = await prisma.contact.findMany({
-      where: result.where,
-      select: { id: true },
-      take: 10000,
-    });
-    return rows.map((r) => r.id);
-  }
-
-  // import-batch: soft reference (table ships later) — skip silently for now
-  return [];
+  return result.contactIds;
 }
 
 export async function materializeFromEvent(

@@ -33,7 +33,7 @@ const ALLOWED_CONTACT_FIELDS = new Set([
   'province',
   'district',
   'ward',
-  // CRM tags (JSON array contains)
+  // CRM tags (legacy JSON array contains — slug strings)
   'tags',
   // Owner assignment
   'assignedUserId',
@@ -42,6 +42,14 @@ const ALLOWED_CONTACT_FIELDS = new Set([
   // Special: explicit { id: { in: [...] } } allowed for manual-style filters
   // (still scoped to orgId via AND).
   'id',
+  // Broadcasts Đợt 1 (2026-06-05) — extend whitelist cho 8 pre-set segment.
+  'engagementScore',
+  'priorityScore',
+  'birthDate',
+  'birthYear',
+  // NOTE: Tag CRM v2 (M57) KHÔNG qua kind=filter. Dùng kind=tag riêng để
+  // resolver server-controlled query `prisma.contactTag.findMany({ tagId, removedAt:null })`.
+  // Tránh leak relation traversal qua user input.
 ]);
 
 const ALLOWED_OPERATORS = new Set([

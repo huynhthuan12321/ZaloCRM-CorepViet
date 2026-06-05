@@ -1,19 +1,31 @@
-// Phase F — Broadcast CRUD routes.
+// ════════════════════════════════════════════════════════════════════════
+// Broadcasts CRUD routes — Refactored cho Đợt 1 (2026-06-05)
+// ════════════════════════════════════════════════════════════════════════
 //
-// Broadcast = one-shot mass send: 1 block + 1 segment + schedule + pacing.
-// State machine: draft → scheduled → running → completed | paused | cancelled.
+// Changes vs trước:
+//   - Gọi shared resolveSegmentToContactIds (5 kind: manual/filter/customer-list/tag/preset-segment)
+//   - Bỏ resolveSegmentContactIds duplicate (đã chuyển vào segment-resolver.ts)
+//   - Đổi prisma.block → prisma.block (schema actual name)
+//   - Thêm POST /preview-unsaved cho wizard (preview trước khi save)
+//   - Thêm GET /helpers/preset-segments + /helpers/customer-lists + /helpers/tags
+//   - Resume route giờ re-enqueue tick-0 cho worker BullMQ thật
+//   - Default pacing đổi sang ms (3000-10000) + hourStart/hourEnd + nickDayCap
 //
 // Routes:
-//   GET    /api/v1/automation/broadcasts          list
-//   GET    /api/v1/automation/broadcasts/:id      detail
-//   POST   /api/v1/automation/broadcasts          create (draft)
-//   PUT    /api/v1/automation/broadcasts/:id      update
-//   POST   /api/v1/automation/broadcasts/:id/start    draft|scheduled → running
-//   POST   /api/v1/automation/broadcasts/:id/pause    running → paused
-//   POST   /api/v1/automation/broadcasts/:id/resume   paused → running
-//   POST   /api/v1/automation/broadcasts/:id/cancel   any → cancelled
-//   POST   /api/v1/automation/broadcasts/:id/preview  dry-run: count recipients
-//   DELETE /api/v1/automation/broadcasts/:id      hard delete (draft only)
+//   GET    /broadcasts                       list
+//   GET    /broadcasts/:id                   detail
+//   POST   /broadcasts                       create (draft)
+//   PUT    /broadcasts/:id                   update
+//   POST   /broadcasts/:id/start             draft|scheduled → running
+//   POST   /broadcasts/:id/pause             running → paused
+//   POST   /broadcasts/:id/resume            paused → running
+//   POST   /broadcasts/:id/cancel            any → cancelled
+//   POST   /broadcasts/:id/preview           dry-run for existing broadcast
+//   POST   /broadcasts/preview-unsaved       dry-run for wizard (no DB write)
+//   DELETE /broadcasts/:id                   hard delete (draft only)
+//   GET    /broadcasts/helpers/preset-segments     list 8 pre-set segment
+//   GET    /broadcasts/helpers/customer-lists      lookup CRM lists
+//   GET    /broadcasts/helpers/tags                lookup Tag CRM v2
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { randomUUID } from 'node:crypto';
@@ -21,103 +33,51 @@ import { prisma } from '../../../shared/database/prisma-client.js';
 import { authMiddleware } from '../../auth/auth-middleware.js';
 import { requireRole } from '../../auth/role-middleware.js';
 import { logger } from '../../../shared/utils/logger.js';
-import { sanitizeContactCriteria, sanitizeManualContactIds } from '../engine/segment-sanitizer.js';
 import { getOwnerScope, applyOwnerScope } from '../../rbac/owner-scope.js';
-import { automationTaskStub as _automationTaskStub } from '../engine/_automation-task-stub.js';
+import { resolveSegmentToContactIds } from '../engine/segment-resolver.js';
+import { PRESET_SEGMENTS } from '../engine/broadcasts-preset-segments.js';
+import {
+  getBroadcastFireQueue,
+  buildBroadcastTickJobId,
+} from '../queues/queue-registry.js';
 
 const BASE = '/api/v1/automation/broadcasts';
 
-// Default pacing — anh chốt từ memory rules
+// Default pacing — Anh chốt 2026-06-05
 const DEFAULT_PACING = {
-  distributeAcrossNicks: true,
-  maxPerNickPerHour: 50, // dưới cap 300 msg/day/nick chia đều giờ
-  allowedHourRange: [6, 22] as [number, number],
-  randomDelayBetweenSends: { min: 15, max: 45 },
+  randomDelayBetweenSends: { min: 3_000, max: 10_000 }, // ms
+  hourStart: 6,
+  hourEnd: 22,
+  nickDayCap: 300,
+  excludeBlocked: true,
 };
-
-// Resolve segment to contactIds (mirrors campaign-materializer logic)
-async function resolveSegmentContactIds(orgId: string, spec: unknown): Promise<string[]> {
-  if (!spec || typeof spec !== 'object') return [];
-  const s = spec as Record<string, unknown>;
-
-  if (s.kind === 'manual' && Array.isArray(s.contactIds)) {
-    const safeIds = sanitizeManualContactIds(s.contactIds);
-    if (safeIds.length === 0) return [];
-    const verified = await prisma.contact.findMany({
-      where: { id: { in: safeIds }, orgId },
-      select: { id: true },
-    });
-    return verified.map((c) => c.id);
-  }
-  if (s.kind === 'filter' && typeof s.criteria === 'object' && s.criteria !== null) {
-    const result = sanitizeContactCriteria(orgId, s.criteria);
-    if (!result.ok || !result.where) return [];
-    if (result.rejected?.length) {
-      logger.warn(`[broadcast-routes] criteria rejected: ${result.rejected.join(', ')}`);
-    }
-    const rows = await prisma.contact.findMany({ where: result.where, select: { id: true }, take: 10000 });
-    return rows.map((r) => r.id);
-  }
-  if (s.kind === 'customer-list' && typeof s.listId === 'string') {
-    const entries = await prisma.customerListEntry.findMany({
-      where: {
-        customerListId: s.listId,
-        status: { in: ['enriched', 'validated'] },
-        phoneValid: true,
-      },
-      select: { phoneE164: true, contactId: true },
-      take: 50000,
-    });
-    const linkedContactIds = entries.map((e) => e.contactId).filter((id): id is string => Boolean(id));
-    const phones84 = entries
-      .filter((e) => !e.contactId && e.phoneE164)
-      .map((e) => e.phoneE164!.replace(/^\+/, ''));
-    if (linkedContactIds.length === 0 && phones84.length === 0) return [];
-    const allIds = new Set<string>(linkedContactIds);
-    if (phones84.length > 0) {
-      const matched = await prisma.contact.findMany({
-        where: { orgId, phoneNormalized: { in: phones84 } },
-        select: { id: true },
-        take: 50000,
-      });
-      for (const c of matched) allIds.add(c.id);
-    }
-    return Array.from(allIds);
-  }
-  return [];
-}
 
 export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
-  // List
+  // ── List ───────────────────────────────────────────────────────────────
   app.get(BASE, async (request: FastifyRequest) => {
     const user = request.user!;
     const q = request.query as Record<string, string | undefined>;
     const where: Record<string, unknown> = { orgId: user.orgId };
     if (q.state) where.state = q.state;
     if (q.channel) where.channel = q.channel;
-    // Phase Marketing Scope 2026-05-27
     const ownerScope = await getOwnerScope({
       userId: user.id, orgId: user.orgId, legacyRole: user.role, resource: 'broadcast',
     });
     Object.assign(where, applyOwnerScope(ownerScope));
-
     const broadcasts = await prisma.automationBroadcast.findMany({
       where,
       orderBy: [{ updatedAt: 'desc' }],
-      include: {
-        createdBy: { select: { id: true, fullName: true } },
-      },
+      include: { createdBy: { select: { id: true, fullName: true } } },
     });
     return { broadcasts };
   });
 
-  // Detail
+  // ── Detail ─────────────────────────────────────────────────────────────
   app.get(`${BASE}/:id`, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
-    // Phase Marketing Scope 2026-05-27: scope detail
     const ownerScope = await getOwnerScope({
       userId: user.id, orgId: user.orgId, legacyRole: user.role, resource: 'broadcast',
     });
@@ -125,27 +85,53 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     Object.assign(dWhere, applyOwnerScope(ownerScope));
     const bc = await prisma.automationBroadcast.findFirst({
       where: dWhere,
-      include: {
-        createdBy: { select: { id: true, fullName: true } },
-      },
+      include: { createdBy: { select: { id: true, fullName: true } } },
     });
     if (!bc) return reply.status(404).send({ error: 'broadcast not found' });
-
-    // Eager-load referenced block
     const block = await prisma.block.findFirst({
       where: { id: bc.blockId, orgId: user.orgId },
       select: { id: true, name: true, actionType: true, content: true, archivedAt: true },
     });
-
     return { ...bc, block };
   });
 
-  // Create (always starts as draft)
+  // ── Helpers (must be before /:id route to avoid path collision) ────────
+  app.get(`${BASE}/helpers/preset-segments`, async () => ({ segments: PRESET_SEGMENTS }));
+
+  app.get(`${BASE}/helpers/customer-lists`, async (request: FastifyRequest) => {
+    const user = request.user!;
+    const lists = await prisma.customerList.findMany({
+      where: { orgId: user.orgId, status: { in: ['processing', 'done'] }, archivedAt: null },
+      select: {
+        id: true, name: true, iconEmoji: true, sourceType: true, status: true,
+        totalEntries: true, hasZaloEntries: true, noZaloEntries: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return { lists };
+  });
+
+  app.get(`${BASE}/helpers/tags`, async (request: FastifyRequest) => {
+    const user = request.user!;
+    const tags = await prisma.tag.findMany({
+      where: { orgId: user.orgId, scope: 'crm', archivedAt: null },
+      select: {
+        id: true, name: true, slug: true, color: true, emoji: true, priority: true,
+        usageCount: true,
+      },
+      orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+      take: 200,
+    });
+    return { tags };
+  });
+
+  // ── Create (draft) ─────────────────────────────────────────────────────
   app.post(BASE, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
       const body = request.body as Record<string, any>;
-
       if (!body.name || typeof body.name !== 'string') {
         return reply.status(400).send({ error: 'name is required' });
       }
@@ -155,8 +141,6 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
       if (!body.segmentSpec || typeof body.segmentSpec !== 'object') {
         return reply.status(400).send({ error: 'segmentSpec is required' });
       }
-
-      // Validate block exists + not archived + actionType=send_message (broadcast = mass send)
       const block = await prisma.block.findFirst({
         where: { id: body.blockId, orgId: user.orgId },
         select: { id: true, actionType: true, archivedAt: true },
@@ -168,7 +152,6 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
           error: `broadcast requires send_message block (got '${block.actionType}')`,
         });
       }
-
       const bc = await prisma.automationBroadcast.create({
         data: {
           id: randomUUID(),
@@ -193,13 +176,12 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Update (draft state only — running broadcasts are immutable for safety)
+  // ── Update (draft only) ────────────────────────────────────────────────
   app.put(`${BASE}/:id`, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
       const { id } = request.params as { id: string };
       const body = request.body as Record<string, any>;
-
       const existing = await prisma.automationBroadcast.findFirst({
         where: { id, orgId: user.orgId },
         select: { state: true },
@@ -210,7 +192,6 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
           error: `broadcast in state '${existing.state}' — only draft can be edited. Cancel + clone to modify.`,
         });
       }
-
       const data: Record<string, unknown> = {};
       if (body.name !== undefined) data.name = body.name.trim();
       if (body.description !== undefined) data.description = body.description;
@@ -220,7 +201,6 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
       if (body.scheduledAt !== undefined) data.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
       if (body.recurringSpec !== undefined) data.recurringSpec = body.recurringSpec;
       if (body.pacing !== undefined) data.pacing = { ...DEFAULT_PACING, ...body.pacing };
-
       const bc = await prisma.automationBroadcast.update({ where: { id }, data });
       return bc;
     } catch (error) {
@@ -229,45 +209,71 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Preview — dry-run resolve segment to recipient count
+  // ── Preview dry-run for EXISTING broadcast ─────────────────────────────
   app.post(`${BASE}/:id/preview`, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
     const bc = await prisma.automationBroadcast.findFirst({
       where: { id, orgId: user.orgId },
-      select: { segmentSpec: true, blockId: true },
+      select: { segmentSpec: true },
     });
     if (!bc) return reply.status(404).send({ error: 'broadcast not found' });
-
-    const contactIds = await resolveSegmentContactIds(user.orgId, bc.segmentSpec);
-
-    // Filter: only contacts with at least one accepted Friend (send_message needs friend)
-    const friendableCount = contactIds.length === 0
+    const resolved = await resolveSegmentToContactIds(prisma, user.orgId, bc.segmentSpec);
+    const friendableCount = resolved.contactIds.length === 0
       ? 0
       : await prisma.contact.count({
           where: {
-            id: { in: contactIds },
+            id: { in: resolved.contactIds },
             orgId: user.orgId,
             acceptedNicksCount: { gt: 0 },
           },
         });
-
     return {
-      totalResolved: contactIds.length,
+      totalResolved: resolved.totalResolved,
       friendableRecipients: friendableCount,
-      nonFriendableSkipped: contactIds.length - friendableCount,
+      nonFriendableSkipped: resolved.contactIds.length - friendableCount,
+      skipReasons: resolved.skipped,
+      kind: resolved.kind,
+      rejected: resolved.rejected,
     };
   });
 
-  // Start — atomic-claim broadcast and enqueue tasks via shared fire helper.
-  // FIX A3: previously did find-then-update — concurrent scheduler + manual /start
-  // could double-fire. Now both code paths route through resolveAndEnqueue()
-  // which does updateMany({state: in [draft,scheduled,paused]}) → running atomically.
+  // ── Preview dry-run UNSAVED (wizard) ───────────────────────────────────
+  // Body: { segmentSpec, sampleSize? }
+  app.post(`${BASE}/preview-unsaved`, async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user!;
+    const body = request.body as Record<string, any>;
+    if (!body || typeof body.segmentSpec !== 'object') {
+      return reply.status(400).send({ error: 'segmentSpec is required' });
+    }
+    const resolved = await resolveSegmentToContactIds(prisma, user.orgId, body.segmentSpec);
+    const friendable = resolved.contactIds.length === 0
+      ? []
+      : await prisma.contact.findMany({
+          where: {
+            id: { in: resolved.contactIds },
+            orgId: user.orgId,
+            acceptedNicksCount: { gt: 0 },
+          },
+          select: { id: true, fullName: true, phoneNormalized: true, gender: true },
+          take: typeof body.sampleSize === 'number' ? Math.min(body.sampleSize, 50) : 20,
+        });
+    return {
+      totalResolved: resolved.totalResolved,
+      friendableRecipients: resolved.contactIds.length - (resolved.contactIds.length - friendable.length),
+      nonFriendableSkipped: resolved.contactIds.length - friendable.length,
+      skipReasons: resolved.skipped,
+      kind: resolved.kind,
+      rejected: resolved.rejected,
+      sample: friendable,
+    };
+  });
+
+  // ── Start ──────────────────────────────────────────────────────────────
   app.post(`${BASE}/:id/start`, { preHandler: requireRole('owner', 'admin') }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
       const { id } = request.params as { id: string };
-
       const bc = await prisma.automationBroadcast.findFirst({
         where: { id, orgId: user.orgId },
         select: { id: true, orgId: true, blockId: true, segmentSpec: true, pacing: true, state: true },
@@ -276,7 +282,6 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
       if (!['draft', 'scheduled', 'paused'].includes(bc.state)) {
         return reply.status(409).send({ error: `cannot start from state '${bc.state}'` });
       }
-
       const { resolveAndEnqueue } = await import('./fire-broadcast.js');
       const result = await resolveAndEnqueue({
         id: bc.id,
@@ -285,26 +290,27 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         segmentSpec: bc.segmentSpec,
         pacing: bc.pacing,
       });
-
       if (!result.claimed) {
         return reply.status(409).send({ error: 'broadcast already claimed by another process' });
       }
-      return { ok: true, recipientsEnqueued: result.recipients };
+      return {
+        ok: true,
+        recipientsEnqueued: result.recipients,
+        skipReasons: result.skipReasons,
+      };
     } catch (error) {
       logger.error('[broadcast] start error:', error);
       return reply.status(500).send({ error: 'Failed to start broadcast' });
     }
   });
 
-  // Pause — running → paused. Existing queued tasks stay queued but worker
-  // skips them when it sees Campaign.state='paused'.
+  // ── Pause ──────────────────────────────────────────────────────────────
   app.post(`${BASE}/:id/pause`, { preHandler: requireRole('owner', 'admin') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
     const bc = await prisma.automationBroadcast.findFirst({ where: { id, orgId: user.orgId }, select: { state: true } });
     if (!bc) return reply.status(404).send({ error: 'broadcast not found' });
     if (bc.state !== 'running') return reply.status(409).send({ error: `not running` });
-
     await prisma.$transaction([
       prisma.automationBroadcast.update({ where: { id }, data: { state: 'paused' } }),
       prisma.automationCampaign.updateMany({
@@ -312,17 +318,20 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         data: { state: 'paused' },
       }),
     ]);
+    // Worker tự stop khi check state mid-tick (KHÔNG cần xoá job — worker tự thấy state changed)
     return { ok: true };
   });
 
-  // Resume — paused → running
+  // ── Resume — re-enqueue worker tick để pickup từ resumeCursor ──────────
   app.post(`${BASE}/:id/resume`, { preHandler: requireRole('owner', 'admin') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
-    const bc = await prisma.automationBroadcast.findFirst({ where: { id, orgId: user.orgId }, select: { state: true } });
+    const bc = await prisma.automationBroadcast.findFirst({
+      where: { id, orgId: user.orgId },
+      select: { state: true, orgId: true },
+    });
     if (!bc) return reply.status(404).send({ error: 'broadcast not found' });
     if (bc.state !== 'paused') return reply.status(409).send({ error: `not paused` });
-
     await prisma.$transaction([
       prisma.automationBroadcast.update({ where: { id }, data: { state: 'running' } }),
       prisma.automationCampaign.updateMany({
@@ -330,16 +339,22 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         data: { state: 'active' },
       }),
     ]);
+    // Re-enqueue tick worker — pickup từ resumeCursor đã lưu
+    const resumeTickIdx = Date.now() % 1_000_000; // unique tick idx tránh dedup BullMQ
+    await getBroadcastFireQueue().add(
+      'tick',
+      { broadcastId: id, orgId: bc.orgId, tickIdx: resumeTickIdx },
+      { jobId: buildBroadcastTickJobId(id, resumeTickIdx) },
+    );
     return { ok: true };
   });
 
-  // Cancel — any → cancelled. Marks queued tasks as skipped so worker won't pick them.
+  // ── Cancel ─────────────────────────────────────────────────────────────
   app.post(`${BASE}/:id/cancel`, { preHandler: requireRole('owner', 'admin') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
     const bc = await prisma.automationBroadcast.findFirst({ where: { id, orgId: user.orgId }, select: { state: true } });
     if (!bc) return reply.status(404).send({ error: 'broadcast not found' });
-
     await prisma.$transaction([
       prisma.automationBroadcast.update({
         where: { id },
@@ -349,29 +364,19 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         where: { broadcastId: id, state: { in: ['active', 'paused'] } },
         data: { state: 'cancelled', completedAt: new Date() },
       }),
-      ((prisma as any).automationTask ?? _automationTaskStub).updateMany({
-        where: {
-          campaign: { broadcastId: id },
-          state: 'queued',
-        },
-        data: { state: 'skipped', skipReason: 'broadcast_cancelled' },
-      }),
     ]);
+    // Worker tự stop khi check state mid-tick
     return { ok: true };
   });
 
-  // Delete — only draft state
+  // ── Delete (draft only) ────────────────────────────────────────────────
   app.delete(`${BASE}/:id`, { preHandler: requireRole('owner', 'admin') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
     const bc = await prisma.automationBroadcast.findFirst({ where: { id, orgId: user.orgId }, select: { state: true } });
     if (!bc) return reply.status(404).send({ error: 'broadcast not found' });
     if (bc.state !== 'draft') return reply.status(409).send({ error: `cancel or complete first` });
-
     await prisma.automationBroadcast.delete({ where: { id } });
     return { ok: true };
   });
 }
-
-// (enqueueBroadcastTasks moved to fire-broadcast.ts — single source of truth
-//  per FIX A3. Use resolveAndEnqueue() instead.)

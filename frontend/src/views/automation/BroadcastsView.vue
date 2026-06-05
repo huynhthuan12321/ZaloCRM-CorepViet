@@ -1,612 +1,278 @@
+<!--
+  Broadcasts List View — Clone 1:1 pattern MucTieuListView (.mtl-*) → .mbl-*
+  Đợt 1 2026-06-05. HS brand tokens, 10 cột, sticky thead, NO side panel.
+-->
 <template>
-  <div class="broadcasts-view">
-    <header class="at-page-header">
-      <div>
-        <h1 class="at-page-title">Broadcast</h1>
-        <p class="at-page-subtitle">
-          Mass send qua Zalo cá nhân với pacing per-nick (cap, hour range, throttle).
-          Mỗi Broadcast = 1 Khối tin nhắn + 1 segment + lịch chạy.
-        </p>
+  <div class="mbl-page">
+    <div class="container">
+      <div class="crumb">
+        <a href="#" @click.prevent="goto('/marketing')">Marketing</a>
+        <span class="sep">/</span>
+        <span class="current">Broadcasts</span>
       </div>
-      <button class="at-btn at-btn--primary" @click="openCreate">
-        <v-icon size="18">mdi-plus</v-icon>
-        Broadcast mới
-      </button>
-    </header>
 
-    <!-- Filter bar -->
-    <div class="filter-bar">
-      <button
-        v-for="f in stateFilters"
-        :key="f.key"
-        class="filter-chip"
-        :class="{ 'is-active': stateFilter === f.key }"
-        @click="stateFilter = f.key"
-      >
-        {{ f.label }}
-        <span v-if="countByState[f.key]" class="filter-chip__count">{{ countByState[f.key] }}</span>
-      </button>
-    </div>
-
-    <!-- Loading -->
-    <div v-if="loading" class="at-empty">
-      <v-progress-circular indeterminate size="28" color="primary" />
-    </div>
-
-    <!-- Empty -->
-    <div v-else-if="filtered.length === 0" class="at-empty">
-      <v-icon size="48">mdi-bullhorn-outline</v-icon>
-      <div class="at-empty__title">{{ emptyMsg }}</div>
-      <p v-if="stateFilter === 'all'" class="at-empty__desc">
-        Tạo broadcast đầu tiên: pick 1 block send_message + segment (manual list / filter / customer-list).
-      </p>
-      <button v-if="stateFilter === 'all'" class="at-btn at-btn--primary" @click="openCreate">
-        <v-icon size="18">mdi-plus</v-icon>
-        Tạo broadcast
-      </button>
-    </div>
-
-    <!-- List -->
-    <div v-else class="bc-list">
-      <article v-for="bc in filtered" :key="bc.id" class="bc-card">
-        <div class="bc-card__head">
-          <div class="bc-card__title-block">
-            <span class="bc-state" :class="`bc-state--${bc.state}`">{{ stateLabel(bc.state) }}</span>
-            <h3 class="bc-card__title">{{ bc.name }}</h3>
-          </div>
-          <div class="bc-card__actions">
-            <button v-if="['draft','scheduled','paused'].includes(bc.state)" class="at-btn at-btn--primary at-btn--sm" @click="onStart(bc)">
-              <v-icon size="16">mdi-play</v-icon>
-              {{ bc.state === 'paused' ? 'Tiếp tục' : 'Chạy' }}
-            </button>
-            <button v-if="bc.state === 'running'" class="at-btn at-btn--secondary at-btn--sm" @click="onPause(bc)">
-              <v-icon size="16">mdi-pause</v-icon>
-              Tạm dừng
-            </button>
-            <button v-if="['running','paused','scheduled'].includes(bc.state)" class="at-btn at-btn--ghost at-btn--sm" @click="onCancel(bc)" style="color: var(--at-coral);">
-              <v-icon size="16">mdi-stop-circle-outline</v-icon>
-              Huỷ
-            </button>
-            <button v-if="bc.state === 'draft'" class="at-btn at-btn--ghost at-btn--sm" @click="openEdit(bc)">
-              <v-icon size="16">mdi-pencil-outline</v-icon>
-            </button>
-            <button v-if="bc.state === 'draft'" class="at-btn at-btn--ghost at-btn--sm" @click="onDelete(bc)" style="color: var(--at-coral);">
-              <v-icon size="16">mdi-delete-outline</v-icon>
-            </button>
-          </div>
+      <div class="topbar">
+        <div class="left">
+          <h1>📢 Broadcasts</h1>
+          <p class="sub">Gửi tin nhắn hàng loạt cho tệp khách hàng theo nhiều cách</p>
         </div>
-
-        <p v-if="bc.description" class="bc-card__desc">{{ bc.description }}</p>
-
-        <div class="bc-stats">
-          <div class="bc-stat">
-            <div class="bc-stat__label">Recipient</div>
-            <div class="bc-stat__value">{{ bc.totalRecipients }}</div>
-          </div>
-          <div class="bc-stat">
-            <div class="bc-stat__label">Đã gửi</div>
-            <div class="bc-stat__value">{{ bc.sentCount }}<span class="bc-stat__divider">/{{ bc.totalRecipients }}</span></div>
-          </div>
-          <div class="bc-stat">
-            <div class="bc-stat__label">Thất bại</div>
-            <div class="bc-stat__value">{{ bc.failedCount }}</div>
-          </div>
-          <div class="bc-stat">
-            <div class="bc-stat__label">Schedule</div>
-            <div class="bc-stat__value bc-stat__value--small">
-              {{ bc.scheduleKind === 'now' ? 'Chạy ngay' : bc.scheduledAt ? formatDate(bc.scheduledAt) : '—' }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Progress bar -->
-        <div v-if="bc.totalRecipients > 0" class="bc-progress">
-          <div
-            class="bc-progress__fill"
-            :style="{ width: `${Math.min(100, (bc.sentCount / bc.totalRecipients) * 100)}%` }"
-          />
-        </div>
-      </article>
-    </div>
-
-    <!-- Editor dialog -->
-    <v-dialog v-model="editorOpen" max-width="640" persistent>
-      <div v-if="draft" class="airtable-scope editor-card">
-        <div class="editor-card__head">
-          <div>
-            <div class="at-title-sm">{{ draft.id ? 'Sửa Broadcast' : 'Tạo Broadcast' }}</div>
-            <div class="at-caption">{{ draft.scheduleKind === 'now' ? 'Chạy ngay sau khi bấm Start' : 'Lên lịch' }}</div>
-          </div>
-          <button class="editor-card__close" @click="editorOpen = false"><v-icon>mdi-close</v-icon></button>
-        </div>
-        <hr class="at-hairline" />
-        <div class="editor-card__body">
-          <div class="form-field">
-            <label class="form-label">Tên broadcast</label>
-            <input v-model="draft.name" class="at-input" placeholder="Ví dụ: Tết 2026 — chúc mừng năm mới" />
-          </div>
-          <div class="form-field">
-            <label class="form-label">Mô tả (optional)</label>
-            <input v-model="draft.description" class="at-input" placeholder="Note nội bộ cho team" />
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Khối tin nhắn (send_message)</label>
-            <select v-model="draft.blockId" class="at-input">
-              <option :value="''">— Chọn Khối —</option>
-              <option v-for="b in sendMessageBlocks" :key="b.id" :value="b.id">{{ b.name }}</option>
-            </select>
-            <p v-if="sendMessageBlocks.length === 0" class="at-caption form-hint">
-              Chưa có Khối send_message. Tạo ở tab "Khối" trước.
-            </p>
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Segment (tệp KH nhận)</label>
-            <select v-model="segmentKind" class="at-input">
-              <option value="filter">Filter Contact (có Zalo + có status...)</option>
-              <option value="manual">Danh sách contactId thủ công</option>
-              <option value="customer-list">Tệp khách hàng (CustomerList)</option>
-            </select>
-            <textarea
-              v-if="segmentKind === 'manual'"
-              v-model="manualContactIdsText"
-              class="at-input"
-              style="min-height: 80px; padding: 10px;"
-              placeholder="Mỗi dòng 1 contactId"
-            />
-            <input
-              v-if="segmentKind === 'customer-list'"
-              v-model="customerListId"
-              class="at-input"
-              placeholder="CustomerList ID"
-            />
-            <p v-if="segmentKind === 'filter'" class="at-caption form-hint">
-              Mặc định filter "hasZalo=true + acceptedNicksCount > 0" (chỉ KH có thể nhận tin).
-            </p>
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Lịch chạy</label>
-            <select v-model="draft.scheduleKind" class="at-input">
-              <option value="now">Chạy ngay (sau khi bấm Start)</option>
-              <option value="scheduled">Lên lịch chạy 1 lần</option>
-            </select>
-            <input
-              v-if="draft.scheduleKind === 'scheduled'"
-              v-model="draft.scheduledAt"
-              type="datetime-local"
-              class="at-input"
-            />
-          </div>
-
-          <div class="form-row">
-            <div class="form-field">
-              <label class="form-label">Max msg/giờ/nick</label>
-              <input
-                v-model.number="pacing.maxPerNickPerHour"
-                type="number" min="1" max="300"
-                class="at-input"
-              />
-            </div>
-            <div class="form-field">
-              <label class="form-label">Giờ start–end (0-23)</label>
-              <div style="display: flex; gap: 8px;">
-                <input v-model.number="pacing.allowedHourRangeStart" type="number" min="0" max="23" class="at-input" />
-                <input v-model.number="pacing.allowedHourRangeEnd" type="number" min="0" max="23" class="at-input" />
-              </div>
-            </div>
-          </div>
-
-          <div v-if="error" class="form-error">{{ error }}</div>
-        </div>
-        <hr class="at-hairline" />
-        <div class="editor-card__foot">
-          <button class="at-btn at-btn--secondary" @click="editorOpen = false">Huỷ</button>
-          <button class="at-btn at-btn--primary" :disabled="saving" @click="onSave">
-            {{ saving ? 'Đang lưu...' : 'Lưu nháp' }}
-          </button>
+        <div class="actions">
+          <button class="btn btn-ghost" disabled title="Phase 2">📥 Nhập từ Excel</button>
+          <button class="btn btn-primary" @click="goto('/marketing/broadcasts/tao-moi')">+ Tạo Broadcast mới</button>
         </div>
       </div>
-    </v-dialog>
 
-    <v-snackbar v-model="toastOpen" :color="toastColor" timeout="3500" location="bottom right">
-      {{ toastMsg }}
-    </v-snackbar>
+      <div class="filter-bar">
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input class="search-input" v-model="searchText" placeholder="Tìm theo tên broadcast...">
+        </div>
+        <div class="chips">
+          <span v-for="c in chips" :key="c.key" class="chip" :class="{ active: stateFilter === c.key }" @click="stateFilter = c.key">
+            {{ c.label }} <span class="count">{{ chipCount(c.key) }}</span>
+          </span>
+        </div>
+        <div class="filter-spacer"></div>
+        <button class="btn btn-sm" @click="loadList">🔄 Cập nhật</button>
+      </div>
+
+      <div class="table-card">
+        <table class="mb10">
+          <thead>
+            <tr>
+              <th class="col-stt center">#</th>
+              <th class="col-created">Ngày tạo</th>
+              <th class="col-name">Broadcast</th>
+              <th class="col-audience">Đối tượng</th>
+              <th class="col-progress">Tiến độ</th>
+              <th class="col-rate">Tỷ lệ thành công</th>
+              <th class="col-reply right">Đã gửi</th>
+              <th class="col-status">Trạng thái</th>
+              <th class="col-schedule">Lịch gửi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading && items.length === 0">
+              <td colspan="9" class="empty-cell"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-desc">Đang tải…</div></div></td>
+            </tr>
+            <tr v-else-if="filtered.length === 0">
+              <td colspan="9" class="empty-cell">
+                <div class="empty-state">
+                  <div class="empty-icon">📢</div>
+                  <div class="empty-title">{{ searchText || stateFilter !== 'all' ? 'Không có broadcast khớp bộ lọc' : 'Chưa có broadcast nào' }}</div>
+                  <div class="empty-desc">{{ searchText || stateFilter !== 'all' ? 'Thử bỏ filter' : 'Tạo broadcast đầu tiên để gửi tin hàng loạt' }}</div>
+                  <button v-if="!searchText && stateFilter === 'all'" class="btn btn-primary" @click="goto('/marketing/broadcasts/tao-moi')">+ Tạo Broadcast đầu tiên</button>
+                </div>
+              </td>
+            </tr>
+            <tr v-for="(bc, idx) in filtered" :key="bc.id" @click="openDetail(bc.id)">
+              <td class="center" style="color:var(--mbl-text-mute);">{{ idx + 1 }}</td>
+              <td><div style="font-size:12px;">{{ fmtTime(bc.createdAt) }}</div><div style="font-size:10px;color:var(--mbl-text-3);">{{ fmtDate(bc.createdAt) }}</div></td>
+              <td>
+                <div class="row-name">{{ bc.name }}</div>
+                <div class="row-sub">
+                  <span class="aud-source-tag" :class="audClass(bc.segmentSpec.kind)">{{ audSourceLabel(bc.segmentSpec.kind) }}</span>
+                </div>
+              </td>
+              <td><div style="font-size:12px;">{{ audDesc(bc) }}</div></td>
+              <td>
+                <div class="ph">
+                  <div class="ph-head"><span class="ph-pct">{{ pct(bc.sentCount, bc.totalRecipients) }}%</span><span class="ph-frac">{{ bc.sentCount }}/{{ bc.totalRecipients }}</span></div>
+                  <div class="ph-bar"><div class="ph-fill" :style="{ width: pct(bc.sentCount, bc.totalRecipients) + '%' }"></div></div>
+                </div>
+              </td>
+              <td>
+                <div class="ph" v-if="bc.sentCount > 0">
+                  <div class="ph-head"><span class="ph-pct" style="color:var(--mbl-success);">{{ successPct(bc) }}%</span><span class="ph-frac">{{ bc.sentCount - bc.failedCount }}/{{ bc.sentCount }}</span></div>
+                  <div class="ph-bar"><div class="ph-fill success" :style="{ width: successPct(bc) + '%' }"></div></div>
+                </div>
+                <span v-else style="color:var(--mbl-text-mute);font-size:11px;">—</span>
+              </td>
+              <td class="right">
+                <div class="reply-num">{{ bc.sentCount }}</div>
+                <div class="reply-sub" v-if="bc.failedCount > 0">{{ bc.failedCount }} lỗi</div>
+              </td>
+              <td><span class="status" :class="`s-${bc.state}`">{{ stateLabel(bc.state) }}</span></td>
+              <td>
+                <div class="sched-main">{{ scheduleLabel(bc) }}</div>
+                <div class="sched-sub" v-if="bc.scheduledAt">{{ fmtTime(bc.scheduledAt) }}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { blocksApi, broadcastsApi } from '@/api/automation';
-import { getOrgParts } from '@/composables/use-org-timezone';
-import type { Broadcast, BroadcastState, SegmentSpec } from '@/api/automation/broadcasts';
-import type { Block } from '@/api/automation/types';
+import { useRouter } from 'vue-router';
+import { listBroadcasts, type Broadcast, type BroadcastState } from '@/api/automation/broadcasts';
 
-const broadcasts = ref<Broadcast[]>([]);
-const blocks = ref<Block[]>([]);
-const loading = ref(true);
+const router = useRouter();
+const items = ref<Broadcast[]>([]);
+const loading = ref(false);
+const searchText = ref('');
+const stateFilter = ref<'all' | BroadcastState>('all');
 
-const stateFilter = ref<BroadcastState | 'all'>('all');
-const stateFilters: Array<{ key: BroadcastState | 'all'; label: string }> = [
-  { key: 'all',       label: 'Tất cả' },
-  { key: 'draft',     label: 'Nháp' },
-  { key: 'scheduled', label: 'Lên lịch' },
-  { key: 'running',   label: 'Đang chạy' },
-  { key: 'paused',    label: 'Tạm dừng' },
-  { key: 'completed', label: 'Hoàn thành' },
-  { key: 'cancelled', label: 'Đã huỷ' },
+const chips: Array<{ key: 'all' | BroadcastState; label: string }> = [
+  { key: 'all', label: 'Tất cả' },
+  { key: 'running', label: '🟢 Đang chạy' },
+  { key: 'paused', label: '⏸ Tạm dừng' },
+  { key: 'completed', label: '✅ Hoàn tất' },
+  { key: 'scheduled', label: '🟡 Hẹn lịch' },
+  { key: 'draft', label: '📝 Nháp' },
 ];
 
-const editorOpen = ref(false);
-const saving = ref(false);
-const error = ref('');
-
-interface Draft {
-  id: string | null;
-  name: string;
-  description: string;
-  blockId: string;
-  scheduleKind: 'now' | 'scheduled';
-  scheduledAt: string;
-}
-const draft = ref<Draft | null>(null);
-const segmentKind = ref<'manual' | 'filter' | 'customer-list'>('filter');
-const manualContactIdsText = ref('');
-const customerListId = ref('');
-const pacing = ref({
-  maxPerNickPerHour: 50,
-  allowedHourRangeStart: 6,
-  allowedHourRangeEnd: 22,
-});
-
-const toastOpen = ref(false);
-const toastMsg = ref('');
-const toastColor = ref<'success' | 'error' | 'info'>('info');
-
-const sendMessageBlocks = computed(() =>
-  blocks.value.filter((b) => b.actionType === 'send_message' && !b.archivedAt),
-);
-
 const filtered = computed(() => {
-  if (stateFilter.value === 'all') return broadcasts.value;
-  return broadcasts.value.filter((b) => b.state === stateFilter.value);
+  return items.value.filter((bc) => {
+    if (stateFilter.value !== 'all' && bc.state !== stateFilter.value) return false;
+    if (searchText.value) {
+      const q = searchText.value.toLowerCase();
+      if (!bc.name.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
 });
 
-const countByState = computed(() => {
-  const out: Record<string, number> = {};
-  for (const b of broadcasts.value) out[b.state] = (out[b.state] ?? 0) + 1;
-  return out;
-});
-
-const emptyMsg = computed(() => {
-  if (stateFilter.value === 'all') return 'Chưa có broadcast nào';
-  return `Không có broadcast trạng thái "${stateLabel(stateFilter.value as BroadcastState)}"`;
-});
-
-function stateLabel(s: BroadcastState): string {
-  return {
-    draft: 'Nháp',
-    scheduled: 'Lên lịch',
-    running: 'Đang chạy',
-    paused: 'Tạm dừng',
-    completed: 'Hoàn thành',
-    cancelled: 'Đã huỷ',
-  }[s];
+function chipCount(key: 'all' | BroadcastState): number {
+  if (key === 'all') return items.value.length;
+  return items.value.filter((b) => b.state === key).length;
 }
 
-function showToast(msg: string, color: 'success' | 'error' | 'info' = 'info') {
-  toastMsg.value = msg; toastColor.value = color; toastOpen.value = true;
-}
-
-function formatDate(iso: string): string {
-  const p = getOrgParts(iso);
-  if (!p) return '';
-  return `${String(p.day).padStart(2, '0')}/${String(p.month).padStart(2, '0')} ${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
-}
-
-async function loadAll() {
+async function loadList() {
   loading.value = true;
-  try {
-    const [bcs, bks] = await Promise.all([
-      broadcastsApi.listBroadcasts(),
-      blocksApi.listBlocks({ limit: 500 }),
-    ]);
-    broadcasts.value = bcs;
-    blocks.value = bks;
-  } finally {
-    loading.value = false;
-  }
+  try { items.value = await listBroadcasts(); } finally { loading.value = false; }
 }
 
-onMounted(loadAll);
-
-function openCreate() {
-  draft.value = {
-    id: null,
-    name: '',
-    description: '',
-    blockId: '',
-    scheduleKind: 'now',
-    scheduledAt: '',
-  };
-  segmentKind.value = 'filter';
-  manualContactIdsText.value = '';
-  customerListId.value = '';
-  pacing.value = { maxPerNickPerHour: 50, allowedHourRangeStart: 6, allowedHourRangeEnd: 22 };
-  error.value = '';
-  editorOpen.value = true;
+function goto(path: string) { router.push(path); }
+function openDetail(id: string) { router.push(`/marketing/broadcasts/${id}`); }
+function fmtDate(s: string): string { const d = new Date(s); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
+function fmtTime(s: string): string { const d = new Date(s); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+function pct(a: number, b: number): number { return b === 0 ? 0 : Math.round((a / b) * 100); }
+function successPct(bc: Broadcast): number { return bc.sentCount === 0 ? 0 : Math.round(((bc.sentCount - bc.failedCount) / bc.sentCount) * 100); }
+function stateLabel(s: BroadcastState): string { return ({ draft: '📝 Nháp', scheduled: '🟡 Hẹn lịch', running: '🟢 Đang chạy', paused: '⏸ Tạm dừng', completed: '✅ Hoàn tất', cancelled: '❌ Đã huỷ' } as any)[s] || s; }
+function audClass(kind: string): string { return ({ manual: '', filter: 'filter', 'customer-list': 'file', tag: 'tag', 'preset-segment': 'preset' } as any)[kind] || ''; }
+function audSourceLabel(kind: string): string { return ({ manual: '✋ Thủ công', filter: '🔧 Filter', 'customer-list': '📁 Tệp KH', tag: '🏷 Tag', 'preset-segment': '⚡ Pre-set' } as any)[kind] || kind; }
+function audDesc(bc: Broadcast): string {
+  const s = bc.segmentSpec as any;
+  if (s.kind === 'customer-list') return `List #${(s.listId || '').slice(0, 8)}…`;
+  if (s.kind === 'tag') return `${(s.tagIds || []).length} tag (${s.match || 'any'})`;
+  if (s.kind === 'preset-segment') return s.presetKey;
+  if (s.kind === 'manual') return `${(s.contactIds || []).length} KH`;
+  return 'Filter tuỳ chỉnh';
+}
+function scheduleLabel(bc: Broadcast): string {
+  if (bc.scheduleKind === 'now') return '⚡ Gửi ngay';
+  if (bc.scheduleKind === 'scheduled') return '📅 Hẹn lịch';
+  return '🔄 Định kỳ';
 }
 
-function openEdit(bc: Broadcast) {
-  draft.value = {
-    id: bc.id,
-    name: bc.name,
-    description: bc.description ?? '',
-    blockId: bc.blockId,
-    scheduleKind: bc.scheduleKind as 'now' | 'scheduled',
-    scheduledAt: bc.scheduledAt ?? '',
-  };
-  segmentKind.value = (bc.segmentSpec.kind as 'manual' | 'filter' | 'customer-list') ?? 'filter';
-  if (bc.segmentSpec.kind === 'manual') manualContactIdsText.value = bc.segmentSpec.contactIds.join('\n');
-  if (bc.segmentSpec.kind === 'customer-list') customerListId.value = bc.segmentSpec.listId;
-  pacing.value = {
-    maxPerNickPerHour: bc.pacing.maxPerNickPerHour ?? 50,
-    allowedHourRangeStart: bc.pacing.allowedHourRange?.[0] ?? 6,
-    allowedHourRangeEnd: bc.pacing.allowedHourRange?.[1] ?? 22,
-  };
-  error.value = '';
-  editorOpen.value = true;
-}
-
-function buildSegmentSpec(): SegmentSpec | null {
-  if (segmentKind.value === 'manual') {
-    const ids = manualContactIdsText.value.split('\n').map((s) => s.trim()).filter(Boolean);
-    if (ids.length === 0) { error.value = 'Cần ít nhất 1 contactId'; return null; }
-    return { kind: 'manual', contactIds: ids };
-  }
-  if (segmentKind.value === 'customer-list') {
-    if (!customerListId.value.trim()) { error.value = 'Cần listId'; return null; }
-    return { kind: 'customer-list', listId: customerListId.value.trim() };
-  }
-  // filter — default: friendable contacts only
-  return { kind: 'filter', criteria: { acceptedNicksCount: { gt: 0 } } };
-}
-
-async function onSave() {
-  if (!draft.value) return;
-  error.value = '';
-  if (!draft.value.name.trim()) { error.value = 'Tên không được rỗng'; return; }
-  if (!draft.value.blockId) { error.value = 'Phải chọn block'; return; }
-
-  const segment = buildSegmentSpec();
-  if (!segment) return;
-
-  saving.value = true;
-  try {
-    const payload = {
-      name: draft.value.name.trim(),
-      description: draft.value.description,
-      blockId: draft.value.blockId,
-      segmentSpec: segment,
-      scheduleKind: draft.value.scheduleKind,
-      scheduledAt: draft.value.scheduledAt || undefined,
-      pacing: {
-        maxPerNickPerHour: pacing.value.maxPerNickPerHour,
-        allowedHourRange: [pacing.value.allowedHourRangeStart, pacing.value.allowedHourRangeEnd] as [number, number],
-        randomDelayBetweenSends: { min: 15, max: 45 },
-        distributeAcrossNicks: true,
-      },
-    };
-    if (draft.value.id) await broadcastsApi.updateBroadcast(draft.value.id, payload);
-    else                await broadcastsApi.createBroadcast(payload);
-    editorOpen.value = false;
-    await loadAll();
-    showToast('Đã lưu broadcast (state=draft). Bấm Chạy để fire.', 'success');
-  } catch (err: any) {
-    error.value = err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Lỗi';
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function onStart(bc: Broadcast) {
-  if (!confirm(`Chạy "${bc.name}" ngay? Engine sẽ resolve segment → enqueue tasks. Action không thể undo.`)) return;
-  try {
-    const r = await broadcastsApi.startBroadcast(bc.id);
-    showToast(`Đã enqueue ${r.recipientsEnqueued} recipient`, 'success');
-    await loadAll();
-  } catch (err: any) {
-    showToast(err?.response?.data?.error ?? 'Lỗi start', 'error');
-  }
-}
-
-async function onPause(bc: Broadcast) {
-  try {
-    await broadcastsApi.pauseBroadcast(bc.id);
-    showToast('Đã tạm dừng', 'success');
-    await loadAll();
-  } catch (err: any) {
-    showToast(err?.response?.data?.error ?? 'Lỗi pause', 'error');
-  }
-}
-
-async function onCancel(bc: Broadcast) {
-  if (!confirm(`Huỷ "${bc.name}"? Tasks queued sẽ bị skip, không thể resume.`)) return;
-  try {
-    await broadcastsApi.cancelBroadcast(bc.id);
-    showToast('Đã huỷ', 'success');
-    await loadAll();
-  } catch (err: any) {
-    showToast(err?.response?.data?.error ?? 'Lỗi cancel', 'error');
-  }
-}
-
-async function onDelete(bc: Broadcast) {
-  if (!confirm(`Xoá draft "${bc.name}"?`)) return;
-  try {
-    await broadcastsApi.deleteBroadcast(bc.id);
-    showToast('Đã xoá', 'success');
-    await loadAll();
-  } catch (err: any) {
-    showToast(err?.response?.data?.error ?? 'Lỗi delete', 'error');
-  }
-}
+onMounted(() => { loadList(); });
 </script>
 
 <style scoped>
-.broadcasts-view { max-width: 1280px; }
-
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: var(--at-s-lg);
-}
-.filter-chip {
-  background: var(--at-canvas);
-  color: var(--at-body);
-  border: 1px solid var(--at-hairline);
-  border-radius: var(--at-r-pill);
-  padding: 6px 12px;
+.mbl-page {
+  --mbl-brand: #1786be;
+  --mbl-brand-hover: #0f6fa0;
+  --mbl-brand-soft: #e4f1f8;
+  --mbl-ink: #141a24;
+  --mbl-text-2: #475066;
+  --mbl-text-3: #6b7488;
+  --mbl-text-mute: #97a0b3;
+  --mbl-line: #e7eaf0;
+  --mbl-line-strong: #cdd4e0;
+  --mbl-surface-2: #f7f9fc;
+  --mbl-surface-3: #f1f4f9;
+  --mbl-success: #12b76a;
+  --mbl-success-soft: #e7f7ef;
+  --mbl-warning-soft: #fdf3e2;
+  --mbl-danger: #f04438;
+  --mbl-danger-soft: #fdeceb;
+  --mbl-purple: #6554c0;
+  --mbl-purple-soft: #eae6ff;
+  --mbl-shadow-1: 0 1px 2px rgba(20, 26, 36, 0.05);
+  min-height: 100vh;
+  background: var(--mbl-surface-2);
+  padding: 24px;
   font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: inherit;
+  color: var(--mbl-ink);
 }
-.filter-chip.is-active {
-  background: var(--at-ink);
-  color: var(--at-on-primary);
-  border-color: var(--at-ink);
-}
-.filter-chip__count {
-  font-size: 11px;
-  background: rgba(255,255,255,0.15);
-  padding: 1px 7px;
-  border-radius: var(--at-r-pill);
-}
-.filter-chip:not(.is-active) .filter-chip__count {
-  background: var(--at-surface-soft);
-  color: var(--at-muted);
-}
-
-.bc-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--at-s-sm);
-}
-.bc-card {
-  background: var(--at-canvas);
-  border: 1px solid var(--at-hairline);
-  border-radius: var(--at-r-md);
-  padding: var(--at-s-md);
-}
-.bc-card__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--at-s-sm);
-  margin-bottom: var(--at-s-xs);
-}
-.bc-card__title-block { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.bc-card__title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0;
-  color: var(--at-ink);
-}
-.bc-card__desc {
-  font-size: 13px;
-  color: var(--at-muted);
-  margin: 4px 0 var(--at-s-sm);
-}
-.bc-card__actions { display: flex; gap: 4px; flex-wrap: wrap; }
-
-.bc-state {
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  padding: 3px 8px;
-  border-radius: var(--at-r-sm);
-}
-.bc-state--draft     { background: var(--at-surface-soft); color: var(--at-muted); }
-.bc-state--scheduled { background: #fdf3df; color: #7a5818; }
-.bc-state--running   { background: #e3ede4; color: #0a2e0e; }
-.bc-state--paused    { background: var(--at-cream); color: #7a5818; }
-.bc-state--completed { background: #dfeafc; color: var(--at-link-active); }
-.bc-state--cancelled { background: #fbe6dc; color: #7a2000; }
-
-.bc-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--at-s-sm);
-  padding: var(--at-s-sm) 0;
-}
-.bc-stat {
-  background: var(--at-surface-soft);
-  padding: 10px 12px;
-  border-radius: var(--at-r-sm);
-}
-.bc-stat__label {
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: var(--at-muted);
-}
-.bc-stat__value {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--at-ink);
-  margin-top: 2px;
-}
-.bc-stat__value--small { font-size: 13px; font-weight: 500; }
-.bc-stat__divider { color: var(--at-muted); font-size: 13px; }
-
-.bc-progress {
-  height: 4px;
-  background: var(--at-surface-soft);
-  border-radius: var(--at-r-pill);
-  overflow: hidden;
-  margin-top: var(--at-s-xs);
-}
-.bc-progress__fill {
-  height: 100%;
-  background: var(--at-forest);
-  transition: width 0.3s ease;
-}
-
-/* Editor */
-.editor-card { background: var(--at-canvas); border-radius: var(--at-r-md); overflow: hidden; }
-.editor-card__head { display: flex; align-items: center; gap: var(--at-s-sm); padding: var(--at-s-md); }
-.editor-card__close { margin-left: auto; background: transparent; border: 0; cursor: pointer; padding: 6px; min-width: 44px; min-height: 44px; }
-.editor-card__body { padding: var(--at-s-md); display: flex; flex-direction: column; gap: var(--at-s-sm); }
-.editor-card__foot { padding: var(--at-s-md); display: flex; justify-content: flex-end; gap: var(--at-s-xs); }
-
-.form-field { display: flex; flex-direction: column; gap: 6px; }
-.form-label { font-size: 13px; font-weight: 500; color: var(--at-ink); }
-.form-hint { margin-top: 2px; color: var(--at-muted); }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--at-s-sm); }
-
-.form-error {
-  padding: 10px 12px;
-  background: rgba(170, 45, 0, 0.08);
-  border: 1px solid rgba(170, 45, 0, 0.3);
-  border-radius: var(--at-r-sm);
-  font-size: 13px;
-  color: var(--at-coral);
-}
-
-@media (max-width: 767px) {
-  .bc-stats { grid-template-columns: repeat(2, 1fr); }
-  .bc-card__head { flex-direction: column; }
-  .bc-card__actions { width: 100%; }
-  .form-row { grid-template-columns: 1fr; }
-}
+.container { max-width: 1340px; margin: 0 auto; }
+.crumb { font-size: 12px; color: var(--mbl-text-3); margin-bottom: 8px; }
+.crumb a { color: var(--mbl-text-3); text-decoration: none; }
+.crumb a:hover { color: var(--mbl-brand); }
+.crumb .sep { margin: 0 6px; color: var(--mbl-text-mute); }
+.crumb .current { color: var(--mbl-text-2); font-weight: 500; }
+.topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 16px; }
+.topbar .left { flex: 1; }
+.topbar h1 { margin: 0 0 4px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.topbar .sub { margin: 0; font-size: 12px; color: var(--mbl-text-3); }
+.actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn { padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; border: 1px solid var(--mbl-line-strong); background: white; color: var(--mbl-ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: var(--mbl-surface-3); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--mbl-brand); color: white; border-color: var(--mbl-brand); }
+.btn-primary:hover { background: var(--mbl-brand-hover); border-color: var(--mbl-brand-hover); }
+.btn-ghost { background: transparent; border-color: var(--mbl-line); color: var(--mbl-text-2); }
+.btn-sm { padding: 6px 10px; font-size: 12px; }
+.filter-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--mbl-line); position: sticky; top: 0; z-index: 10; background: var(--mbl-surface-2); margin-bottom: 12px; }
+.search-wrap { position: relative; width: 320px; }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--mbl-text-3); font-size: 13px; }
+.search-input { width: 100%; padding: 8px 12px 8px 34px; border: 1px solid var(--mbl-line-strong); border-radius: 6px; font-size: 13px; background: white; }
+.search-input:focus { outline: none; border-color: var(--mbl-brand); box-shadow: 0 0 0 3px rgba(23,134,190,0.15); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { padding: 6px 12px; border-radius: 14px; font-size: 12px; font-weight: 500; background: white; border: 1px solid var(--mbl-line); color: var(--mbl-text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.chip:hover { background: var(--mbl-surface-3); }
+.chip.active { background: var(--mbl-brand-soft); border-color: var(--mbl-brand); color: var(--mbl-brand); font-weight: 600; }
+.chip .count { font-size: 11px; color: var(--mbl-text-3); background: rgba(0,0,0,0.04); padding: 1px 6px; border-radius: 8px; }
+.filter-spacer { flex: 1; }
+.table-card { background: white; border: 1px solid var(--mbl-line); border-radius: 6px; box-shadow: var(--mbl-shadow-1); overflow: visible; }
+.mb10 { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mb10 thead th { position: sticky; top: 0; z-index: 5; background: white; padding: 9px 9px; text-align: left; font-weight: 600; font-size: 12px; color: var(--mbl-text-3); text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--mbl-line); white-space: nowrap; }
+.mb10 tbody td { padding: 9px 9px; border-bottom: 1px solid var(--mbl-line); vertical-align: middle; }
+.mb10 tbody tr { cursor: pointer; height: 56px; }
+.mb10 tbody tr:hover { background: var(--mbl-surface-3); }
+.row-name { font-weight: 600; color: var(--mbl-ink); margin-bottom: 2px; }
+.row-sub { font-size: 11px; color: var(--mbl-text-3); }
+.center { text-align: center; }
+.right { text-align: right; }
+.col-stt { width: 36px; }
+.col-created { width: 96px; }
+.col-name { width: 17%; }
+.col-audience { width: 14%; }
+.col-progress { width: 13%; }
+.col-rate { width: 13%; }
+.col-reply { width: 80px; }
+.col-status { width: 110px; }
+.col-schedule { width: 116px; }
+.ph { display: flex; flex-direction: column; gap: 3px; }
+.ph-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
+.ph-pct { font-weight: 600; color: var(--mbl-ink); }
+.ph-frac { font-size: 11px; color: var(--mbl-text-3); }
+.ph-bar { height: 4px; background: var(--mbl-surface-3); border-radius: 2px; overflow: hidden; }
+.ph-fill { height: 100%; background: var(--mbl-brand); border-radius: 2px; }
+.ph-fill.success { background: var(--mbl-success); }
+.reply-num { font-size: 14px; font-weight: 700; color: var(--mbl-ink); }
+.reply-sub { font-size: 11px; color: var(--mbl-text-3); }
+.sched-main { font-size: 12px; font-weight: 500; }
+.sched-sub { font-size: 10px; color: var(--mbl-text-3); }
+.status { padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; display: inline-block; }
+.s-running { background: var(--mbl-success-soft); color: #157f3c; }
+.s-scheduled { background: var(--mbl-warning-soft); color: #974f00; }
+.s-paused { background: var(--mbl-surface-3); color: var(--mbl-text-2); }
+.s-completed { background: var(--mbl-brand-soft); color: var(--mbl-brand); }
+.s-draft { background: var(--mbl-surface-3); color: var(--mbl-text-3); }
+.s-cancelled { background: var(--mbl-danger-soft); color: var(--mbl-danger); }
+.aud-source-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: var(--mbl-surface-3); color: var(--mbl-text-2); border: 1px solid var(--mbl-line); }
+.aud-source-tag.file { background: var(--mbl-brand-soft); color: var(--mbl-brand); }
+.aud-source-tag.tag { background: var(--mbl-purple-soft); color: var(--mbl-purple); }
+.aud-source-tag.preset { background: var(--mbl-warning-soft); color: #974f00; }
+.aud-source-tag.filter { background: var(--mbl-success-soft); color: #157f3c; }
+.empty-cell { padding: 0 !important; }
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 48px 24px; }
+.empty-icon { font-size: 36px; }
+.empty-title { font-size: 14px; font-weight: 600; }
+.empty-desc { font-size: 13px; color: var(--mbl-text-3); text-align: center; margin-bottom: 8px; }
 </style>

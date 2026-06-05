@@ -373,6 +373,11 @@ async function bootstrap() {
         startInternalNotifyWorker();
         startOutboxSweeper(5 * 60_000); // 5 phút sweep cycle (v4 Fix #1)
         startStatsReconcileCron();      // 02:30 VN daily reconcile drift
+
+        // Broadcasts Đợt 1 (2026-06-05) — worker E2E gửi tin hàng loạt
+        const { startBroadcastFireWorker } = await import('./modules/automation/queues/broadcast-fire-worker.js');
+        startBroadcastFireWorker();
+
         logger.info('[luong-muc-tieu] BullMQ workers + sweeper + cron started');
       } catch (err) {
         logger.error(`[luong-muc-tieu] failed to start workers: ${(err as Error).message}`);

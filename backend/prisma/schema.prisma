@@ -2178,8 +2178,18 @@ model AutomationBroadcast {
   startedAt       DateTime? @map("started_at")
   completedAt     DateTime? @map("completed_at")
   createdById     String    @map("created_by_id")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Broadcasts Đợt 1 (2026-06-05): worker E2E + resume cursor.
+  // resumeCursor = last sent contactId — worker pause/resume picks up where it left off.
+  resumeCursor    String?   @map("resume_cursor")
+  // workerStats — Json blob worker tự ghi: { perNickSent: { nickId: count }, lastTickAt, lastError, ... }
+  workerStats     Json?     @map("worker_stats")
+  // variantSpec / abTestStats — placeholder for Đợt 2 A/B test. Đợt 1 chưa dùng.
+  variantSpec     Json?     @map("variant_spec")
+  abTestStats     Json?     @map("ab_test_stats")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   org       Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   createdBy User                 @relation("BroadcastCreatedBy", fields: [createdById], references: [id])

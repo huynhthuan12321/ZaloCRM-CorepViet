@@ -1452,6 +1452,10 @@ function buildSubmitPayload() {
 }
 
 async function submit() {
+  // 2026-06-05 — FIX double-submit (Anh phát hiện: bấm tạo NHIỀU bản trùng "Ngoán Mai").
+  // Re-entry guard: nếu đang gửi rồi thì bỏ qua click thừa. Vue cập nhật :disabled ở
+  // next-tick nên trong khoảng đó nút vẫn bấm được → guard JS chặn chắc chắn.
+  if (submitting.value) return;
   if (!canNextStep1.value || !canNextStep2.value || !canNextStep3.value) {
     alert('Form chưa đủ thông tin. Quay lại các bước trước để bổ sung.');
     return;
@@ -1477,7 +1481,7 @@ async function submit() {
         segmentSpec: { skipRules: fullPayload.skipRules },
       };
       await api.patch(`/automation/triggers/${editingTriggerId.value}`, patchBody);
-      router.push(`/marketing/triggers/${editingTriggerId.value}`);
+      await router.push(`/marketing/triggers/${editingTriggerId.value}`);
       return;
     }
 
@@ -1490,12 +1494,16 @@ async function submit() {
     if (form.value.startMode === 'now') {
       await api.post(`/automation/triggers/${triggerId}/activate`);
     }
-    router.push(`/marketing/triggers/${triggerId}`);
+    // 2026-06-05 — AWAIT push (trước fire-and-forget): nếu điều hướng chậm/bị huỷ,
+    // anh thấy "không chuyển trang" rồi bấm lại → tạo trùng. await để chắc đi tới
+    // trang chi tiết; giữ submitting=true tới lúc rời trang (KHÔNG reset ở finally
+    // cho nhánh thành công — tránh nút sống lại cho bấm thêm trước khi route đổi).
+    await router.push(`/marketing/triggers/${triggerId}`);
+    return;
   } catch (err: any) {
+    submitting.value = false;
     const verb = isEditMode.value ? 'Lưu' : 'Tạo';
     alert(`${verb} Mục tiêu thất bại: ` + (err?.response?.data?.error ?? err?.message ?? 'unknown'));
-  } finally {
-    submitting.value = false;
   }
 }
 

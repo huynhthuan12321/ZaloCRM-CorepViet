@@ -28,6 +28,8 @@ export const QUEUE_NAMES = {
   FRIEND_INVITE: 'friend-invite',
   SEQUENCE_STEP: 'sequence-step',
   INTERNAL_NOTIFY: 'internal-notify',
+  // Broadcasts Đợt 1 (2026-06-05) — worker E2E gửi tin hàng loạt
+  BROADCAST_FIRE: 'broadcast-fire',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -78,6 +80,15 @@ export function getQueue(name: QueueName): Queue {
 export const getFriendInviteQueue = () => getQueue(QUEUE_NAMES.FRIEND_INVITE);
 export const getSequenceStepQueue = () => getQueue(QUEUE_NAMES.SEQUENCE_STEP);
 export const getInternalNotifyQueue = () => getQueue(QUEUE_NAMES.INTERNAL_NOTIFY);
+export const getBroadcastFireQueue = () => getQueue(QUEUE_NAMES.BROADCAST_FIRE);
+
+// Broadcasts jobId — `bc-${broadcastId}` cho job tổng + `bc-${broadcastId}-${contactId}` cho từng job nhỏ
+export function buildBroadcastJobId(broadcastId: string): string {
+  return `bc-${broadcastId}`;
+}
+export function buildBroadcastTickJobId(broadcastId: string, tickIdx: number): string {
+  return `bc-${broadcastId}-tick-${tickIdx}`;
+}
 
 /**
  * Build deterministic jobId — verify POC spike 2026-06-01:
