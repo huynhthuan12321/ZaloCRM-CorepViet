@@ -164,7 +164,10 @@ model User {
   permissionGroupId            String?              @map("permission_group_id")
   permissionGroup              PermissionGroup?     @relation(fields: [permissionGroupId], references: [id], onDelete: SetNull)
   departmentMember             DepartmentMember?
-  // Phase Riêng Tư 2026-05-22 — PIN-gated visual privacy cho main nicks của user
+  // Phase Riêng Tư — visual privacy gate cho main nicks của user.
+  // @deprecated 2026-06-06: chuyển sang OTP qua Zalo, KHÔNG còn PIN. privacyPinHash thành
+  //   dead column (giữ tạm, migration drop để task dọn riêng). privacyFailedCount/LockedUntil
+  //   VẪN DÙNG cho OTP (sai 5 lần → lock 30 phút).
   privacyPinHash               String?              @map("privacy_pin_hash")
   privacyFailedCount           Int                  @default(0) @map("privacy_failed_count")
   privacyLockedUntil           DateTime?            @map("privacy_locked_until")

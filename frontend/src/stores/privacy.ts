@@ -86,9 +86,12 @@ export const usePrivacyStore = defineStore('privacy', {
       const { data } = await api.get<OtpStatus>('/privacy/otp/status');
       return data;
     },
-    /** Sinh + gửi OTP 4 số qua Zalo nick nội bộ. */
-    async requestOtp(durationMinutes: 5 | 15 | 480 | 720): Promise<RequestOtpResult> {
-      const { data } = await api.post<RequestOtpResult>('/privacy/otp/request', { durationMinutes });
+    /** Sinh + gửi OTP 4 số qua Zalo nick nội bộ. context nêu rõ hành động gạt nick. */
+    async requestOtp(
+      durationMinutes: 5 | 15 | 480 | 720,
+      context?: { action: 'enable' | 'disable' | 'unlock'; nickName?: string },
+    ): Promise<RequestOtpResult> {
+      const { data } = await api.post<RequestOtpResult>('/privacy/otp/request', { durationMinutes, context });
       return data;
     },
     /** Verify OTP → server set HttpOnly cookie session. */

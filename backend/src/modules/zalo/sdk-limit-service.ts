@@ -24,9 +24,14 @@ export const DEFAULT_SDK_LIMITS: Record<OpCategory, CategoryLimit> = {
   group_admin:   { daily: 50,   burst: 5,  burstWindowMs: 60_000 },
   group_read:    { daily: 1000, burst: 20, burstWindowMs: 30_000 },
   friend_action: { daily: 30,   burst: 8,  burstWindowMs: 60_000 },
-  friend_read:   { daily: 500,  burst: 10, burstWindowMs: 30_000 },
+  friend_read:   { daily: 500,  burst: 10, burstWindowMs: 30_000 }, // online/recommend/sent-req còn lại
   profile:       { daily: 10,   burst: 3,  burstWindowMs: 60_000 },
   query:         { daily: 2000, burst: 30, burstWindowMs: 30_000 },
+  // 2026-06-06 (Anh chốt) — tách findUser + đồng bộ danh bạ ra khỏi friend_read.
+  // friend_lookup CAO (tìm SĐT→UID là việc chính của chiến dịch, cần nhiều).
+  // contact_sync THẤP (đồng bộ danh bạ nền chỉ vài lần/ngày khi reconnect).
+  friend_lookup: { daily: 1000, burst: 15, burstWindowMs: 30_000 },
+  contact_sync:  { daily: 100,  burst: 5,  burstWindowMs: 60_000 },
 };
 
 export const ALL_CATEGORIES = Object.keys(DEFAULT_SDK_LIMITS) as OpCategory[];

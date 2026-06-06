@@ -67,7 +67,10 @@ export async function registerPrivacyRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/v1/privacy/otp/request', { preHandler: authMiddleware }, async (request, reply) => {
     const user = (request as any).user;
     if (!user) return reply.status(401).send({ error: 'unauthorized' });
-    const body = (request.body ?? {}) as { durationMinutes?: number };
+    const body = (request.body ?? {}) as {
+      durationMinutes?: number;
+      context?: { action?: 'enable' | 'disable' | 'unlock'; nickName?: string };
+    };
     if (!body.durationMinutes) {
       return reply.status(400).send({ error: 'Cần durationMinutes' });
     }
@@ -78,6 +81,9 @@ export async function registerPrivacyRoutes(app: FastifyInstance): Promise<void>
         durationMinutes: body.durationMinutes,
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'] ?? null,
+        context: body.context?.action
+          ? { action: body.context.action, nickName: body.context.nickName }
+          : undefined,
       });
       return reply.send(result);
     } catch (e: any) {

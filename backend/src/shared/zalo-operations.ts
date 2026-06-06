@@ -34,7 +34,10 @@ export type OpCategory =
   | 'group_admin'   // create, rename, avatar, settings, add/remove members, deputy, transfer, block
   | 'group_read'    // list, info, members, polls, invite links, pending
   | 'friend_action' // add, accept, reject, cancel, remove, block, alias
-  | 'friend_read'   // list, find, online, recommendations, sent requests
+  // 2026-06-06 (Anh chốt) — TÁCH friend_read cũ thành 3 nhóm để quota không ăn lẫn:
+  | 'friend_lookup' // findUser (Tìm SĐT→UID — việc của chiến dịch gửi lời mời)
+  | 'contact_sync'  // getAllFriends (đọc/đồng bộ danh bạ — chạy nền khi reconnect)
+  | 'friend_read'   // còn lại: online, recommendations, sent requests, alias list
   | 'profile'       // update name, avatar, status
   | 'query';        // getUserInfo, getGroupInfo — read-only
 
@@ -160,10 +163,9 @@ async function exec<T>(opts: ExecOptions, fn: (api: any) => Promise<T>): Promise
     try {
       const result = await fn(instance.api);
 
-      // Record successful operation
+      // Record successful operation. (getAllFriends giờ là category 'contact_sync'
+      // nên đã tự đếm vào rl:daily:nick:contact_sync — không cần recordOperation riêng.)
       zaloRateLimiter.recordSend(accountId, category);
-      // 2026-06-06 — đếm riêng "đồng bộ danh bạ" (getAllFriends) cho dashboard metric.
-      if (operation === 'getAllFriends') void zaloRateLimiter.recordOperation(accountId, 'contact_sync');
 
       // 4. Emit Socket.IO event if configured
       if (opts.io && opts.socketEvent) {
@@ -534,12 +536,16 @@ async function sharePoll(accountId: string, pollId: string) {
 
 // ─── Friend Operations ──────────────────────────────────────────────────────
 async function getAllFriends(accountId: string) {
-  return exec({ accountId, category: 'friend_read', operation: 'getAllFriends' },
+  // 2026-06-06 — đọc/đồng bộ danh bạ: category riêng 'contact_sync' (chạy nền,
+  // KHÔNG ăn quota tìm khách của chiến dịch).
+  return exec({ accountId, category: 'contact_sync', operation: 'getAllFriends' },
     (api) => api.getAllFriends());
 }
 
 async function findUser(accountId: string, query: string) {
-  return exec({ accountId, category: 'friend_read', operation: 'findUser' },
+  // 2026-06-06 — Tìm SĐT→UID: category riêng 'friend_lookup' (việc của chiến dịch
+  // gửi lời mời, tách khỏi đồng bộ danh bạ nền).
+  return exec({ accountId, category: 'friend_lookup', operation: 'findUser' },
     (api) => api.findUser(query));
 }
 

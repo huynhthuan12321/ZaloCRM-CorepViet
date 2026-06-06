@@ -44,8 +44,9 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     items: [
       { id: 'profile', label: 'Hồ sơ của tôi', icon: '👤', route: '/settings/personal/profile', permission: 'everyone' },
       { id: 'password', label: 'Đổi mật khẩu', icon: '🔑', route: '/settings/personal/password', permission: 'everyone' },
-      // Phase Riêng Tư 2026-05-22 — per-user PIN gate (Privacy phase)
-      { id: 'privacy', label: 'Riêng tư & PIN', icon: '🔒', route: '/settings/privacy', permission: 'everyone', aliases: ['privacy', 'pin', 'riêng tư', 'blur', 'nick chính'] },
+      // Phase Riêng Tư — 2026-06-06: trang riêng /settings/privacy GỠ, trỏ thẳng tab Privacy
+      // trong trang Zalo (nơi quản lý Riêng tư DUY NHẤT). Unlock qua OTP Zalo, không còn PIN.
+      { id: 'privacy', label: 'Riêng tư', icon: '🔒', route: '/settings/channels/zalo?tab=privacy', permission: 'everyone', aliases: ['privacy', 'otp', 'riêng tư', 'blur', 'nick chính'] },
       { id: 'notifications', label: 'Thông báo của tôi', icon: '🔔', route: '/settings/channels/zalo?tab=internal-contact', permission: 'everyone', aliases: ['internal contact', 'liên lạc nội bộ', 'system notify', 'thông báo zalo'] },
       { id: 'theme', label: 'Giao diện', icon: '🎨', route: '/settings/personal/theme', permission: 'everyone', comingSoon: true },
       { id: 'sessions', label: 'Phiên đăng nhập', icon: '📱', route: '/settings/personal/sessions', permission: 'everyone', comingSoon: true },

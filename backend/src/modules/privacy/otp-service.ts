@@ -92,6 +92,15 @@ async function resolveZaloTarget(userId: string, orgId: string): Promise<ZaloTar
   return { senderId: org.systemNotifyZaloAccountId, targetUid: recipient.threadIdInSenderView };
 }
 
+// ── OTP context: nêu rõ hành động trong tin OTP (anh chốt 2026-06-06) ───────
+// Khi sale gạt 1 nick Thường↔Riêng tư, tin OTP phải nêu CỤ THỂ nick nào + bật/tắt
+// + nhân viên owner thao tác. Khi chỉ mở khoá để xem → tin mặc định.
+export interface OtpContext {
+  action: 'enable' | 'disable' | 'unlock';
+  nickName?: string;   // tên nick đang được gạt
+  ownerName?: string;  // tên nhân viên owner thao tác
+}
+
 // ── Send OTP message via Zalo ──────────────────────────────────────────────
 
 async function sendOtpMessage(args: {
@@ -99,14 +108,31 @@ async function sendOtpMessage(args: {
   targetUid: string;
   otp: string;
   durationMinutes: number;
+  context?: OtpContext;
 }): Promise<void> {
   const durationText = formatDurationText(args.durationMinutes);
-  const markup = `🔐 Mã mở khóa Riêng tư:
+  const ctx = args.context;
 
+  // Dòng tiêu đề + dòng mô tả hành động theo context.
+  let heading = '🔐 Mã mở khóa Riêng tư:';
+  let actionLine = '';
+  if (ctx && (ctx.action === 'enable' || ctx.action === 'disable') && ctx.nickName) {
+    const verb = ctx.action === 'enable' ? 'BẬT' : 'TẮT';
+    const verbColor = ctx.action === 'enable' ? 'red' : 'orange';
+    heading = ctx.action === 'enable'
+      ? '🔒 Mã xác nhận BẬT chế độ Riêng tư:'
+      : '🔓 Mã xác nhận TẮT chế độ Riêng tư:';
+    actionLine = `Thao tác: {${verbColor}}${verb} Riêng tư{/${verbColor}} cho nick **${ctx.nickName}**`;
+    if (ctx.ownerName) actionLine += `\nNhân viên thực hiện: **${ctx.ownerName}**`;
+    actionLine += '\n';
+  }
+
+  const markup = `${heading}
+${actionLine}
 # {red}${args.otp}{/red}
 
 Có hiệu lực {orange}5 phút{/orange}.
-Thời gian unlock đã chọn: **${durationText}**
+Thời gian mở khoá đã chọn: **${durationText}**
 
 > *Nếu không phải anh/chị yêu cầu, vui lòng bỏ qua tin này.*`;
   const formatted = formatMessage(markup);
@@ -190,15 +216,17 @@ export async function requestOtp(args: {
   durationMinutes: number;
   ipAddress?: string | null;
   userAgent?: string | null;
+  /** Context hành động (gạt nick) để tin OTP nêu cụ thể — anh chốt 2026-06-06. */
+  context?: { action: 'enable' | 'disable' | 'unlock'; nickName?: string };
 }): Promise<RequestOtpResult> {
   if (!(DURATIONS_MIN as readonly number[]).includes(args.durationMinutes)) {
     throw new PrivacyOtpError(400, 'INVALID_DURATION', 'Thời gian session phải là 5/15/480/720 phút');
   }
 
-  // Check user lock state (reuse User.privacyLockedUntil từ PIN cũ)
+  // Check user lock state (reuse User.privacyLockedUntil từ PIN cũ) + lấy tên owner cho tin OTP.
   const user = await prisma.user.findUnique({
     where: { id: args.userId },
-    select: { privacyLockedUntil: true },
+    select: { privacyLockedUntil: true, fullName: true },
   });
   if (!user) throw new PrivacyOtpError(404, 'USER_NOT_FOUND', 'User không tồn tại');
   if (user.privacyLockedUntil && user.privacyLockedUntil > new Date()) {
@@ -263,6 +291,9 @@ export async function requestOtp(args: {
       targetUid: target.targetUid,
       otp,
       durationMinutes: args.durationMinutes,
+      context: args.context
+        ? { action: args.context.action, nickName: args.context.nickName, ownerName: user.fullName ?? undefined }
+        : undefined,
     });
   } catch (err) {
     logger.error(`[privacy-otp] send OTP fail user=${args.userId}: ${String(err)}`);

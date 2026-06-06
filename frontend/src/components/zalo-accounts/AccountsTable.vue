@@ -143,7 +143,8 @@
               </div>
               <template v-for="m in [
                   { cat: 'friend_action', ic: '🤝', lb: 'Kết bạn' },
-                  { cat: 'friend_read', ic: '🔍', lb: 'Tìm SĐT' },
+                  { cat: 'friend_lookup', ic: '🔍', lb: 'Tìm SĐT' },
+                  { cat: 'contact_sync', ic: '🔄', lb: 'Đồng bộ DB' },
                   { cat: 'message', ic: '💌', lb: 'Tin nhắn' },
                 ]" :key="m.cat">
                 <div class="sdk-row" :class="sdkBar(acct, m.cat).cls" :title="`${m.lb}: ${sdkBar(acct, m.cat).used}/${sdkBar(acct, m.cat).cap}`">
@@ -152,10 +153,6 @@
                   <div class="sbar"><i :style="{ width: sdkBar(acct, m.cat).pct + '%' }"></i></div>
                 </div>
               </template>
-              <div class="sdk-row" title="Số lần đồng bộ danh bạ từ Zalo">
-                <span class="sk">🔄 Đồng bộ</span>
-                <span class="sv">{{ acct.contactSyncToday ?? 0 }}</span>
-              </div>
             </div>
           </td>
           <td>

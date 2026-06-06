@@ -62,7 +62,6 @@
               <div class="sdkd-val">{{ formatNum(sdkUsed(m.cat)) }}<small>/{{ formatNum(sdkCap(m.cat)) }}</small></div>
               <div class="sdkd-bar"><i :style="{ width: sdkPct(m.cat) + '%' }"></i></div>
             </div>
-            <div class="sdkd-extra">🔄 Đồng bộ danh bạ: <b>{{ formatNum(account.contactSyncToday ?? 0) }}</b> lượt hôm nay</div>
           </div>
         </section>
 
@@ -261,7 +260,8 @@ const props = defineProps<{
 // 2026-06-06 — SDK quota rows trong panel chi tiết.
 const SDK_ROWS = [
   { cat: 'friend_action', ic: '🤝', lb: 'Gửi kết bạn' },
-  { cat: 'friend_read', ic: '🔍', lb: 'Tìm SĐT→UID + đọc danh bạ' },
+  { cat: 'friend_lookup', ic: '🔍', lb: 'Tìm SĐT → UID' },
+  { cat: 'contact_sync', ic: '🔄', lb: 'Đồng bộ danh bạ' },
   { cat: 'message', ic: '💌', lb: 'Gửi tin nhắn' },
   { cat: 'reaction', ic: '❤️', lb: 'Thả cảm xúc' },
   { cat: 'query', ic: '👁️', lb: 'Xem thông tin' },

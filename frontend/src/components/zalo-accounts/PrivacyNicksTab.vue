@@ -53,7 +53,7 @@
         <h2 class="ptab-title">Nick Riêng tư của tôi</h2>
         <p class="ptab-sub">
           Default mọi nick là "Thường". Toggle sang "Riêng tư" → admin + sale khác sẽ thấy
-          content bị làm mờ. Chỉ bạn unlock được bằng PIN.
+          content bị làm mờ. Chỉ bạn unlock được qua mã OTP gửi về Zalo.
         </p>
       </div>
       <div class="ptab-counter" :class="{ full: privateCount >= maxPrivacyNicks }">
@@ -90,8 +90,13 @@
 
     <div v-if="errorMsg" class="ptab-error" @click="errorMsg = ''">⚠ {{ errorMsg }} <span class="dismiss">✕</span></div>
 
-    <!-- OTP unlock modal (2026-06-06 thay PIN dialog + setup dialog) -->
-    <PrivacyUnlockOtpModal :open="unlockOpen" @close="unlockOpen = false" @unlocked="onUnlocked" />
+    <!-- OTP unlock modal — context nêu rõ nick + bật/tắt (anh chốt 2026-06-06) -->
+    <PrivacyUnlockOtpModal
+      :open="unlockOpen"
+      :context="unlockContext"
+      @close="onUnlockClose"
+      @unlocked="onUnlocked"
+    />
   </div>
 </template>
 
@@ -99,7 +104,6 @@
 import { ref, computed, onMounted, onUnmounted, h, defineComponent } from 'vue';
 import { api } from '@/api/index';
 import { usePrivacyStore } from '@/stores/privacy';
-import { useAuthStore } from '@/stores/auth';
 import PrivacyUnlockOtpModal from '@/components/privacy/PrivacyUnlockOtpModal.vue';
 
 interface MyNick {
@@ -113,7 +117,6 @@ interface MyNick {
 }
 
 const store = usePrivacyStore();
-const auth = useAuthStore();
 
 const nicks = ref<MyNick[]>([]);
 const loading = ref(true);
@@ -189,25 +192,24 @@ async function loadAll() {
   }
 }
 
-// Phase Privacy v2 2026-05-23: toggle privacy mode REQUIRE PIN confirm.
-// - Nếu chưa setup PIN → mở SetupPinDialog (mode='setup'). User setup xong → tự động unlock.
-// - Nếu hasPin + chưa unlock → mở UnlockDialog. User unlock xong → flip mode.
-// - Nếu hasPin + đã unlock → flip thẳng (đã có session, không cần re-confirm).
+// Anh chốt 2026-06-06: MỖI lần gạt 1 nick Thường↔Riêng tư đều bắt nhập OTP mới
+// (kể cả đang trong phiên unlock). Tin OTP nêu cụ thể nick + bật/tắt + owner.
 async function onToggleRequest(nick: MyNick) {
   if (submittingId.value) return;
-  if (!store.hasPin) {
-    pendingToggle.value = nick;
-    setupMode.value = 'setup';
-    setupOpen.value = true;
-    return;
-  }
-  if (!store.isUnlocked) {
-    pendingToggle.value = nick;
-    unlockOpen.value = true;
-    return;
-  }
-  await doFlipNick(nick);
+  pendingToggle.value = nick;
+  unlockOpen.value = true;
 }
+
+// Context cho OTP modal: nick đang gạt + hành động (bật=enable / tắt=disable Riêng tư).
+const unlockContext = computed<{ action: 'enable' | 'disable' | 'unlock'; nickName?: string }>(() => {
+  const n = pendingToggle.value;
+  if (!n) return { action: 'unlock' };
+  // privacyMode='main' = đang Riêng tư → gạt sẽ TẮT (disable); ngược lại BẬT (enable).
+  return {
+    action: n.privacyMode === 'main' ? 'disable' : 'enable',
+    nickName: n.displayName || 'Nick chưa đặt tên',
+  };
+});
 
 async function doFlipNick(nick: MyNick) {
   submittingId.value = nick.id;
@@ -224,26 +226,25 @@ async function doFlipNick(nick: MyNick) {
 }
 
 function onUnlocked() {
-  // Sau khi unlock thành công → flip nick đang pending nếu có
+  // Sau khi nhập OTP đúng → flip nick đang pending. Đóng modal.
+  unlockOpen.value = false;
   if (pendingToggle.value) {
     doFlipNick(pendingToggle.value);
     pendingToggle.value = null;
   }
 }
 
-function onSetupDone() {
-  // Sau khi setup PIN xong → reload status + flip pending nick
-  store.fetchStatus(true).then(() => {
-    if (pendingToggle.value) {
-      // Setup xong CHƯA unlock — user cần mở khoá tiếp
-      unlockOpen.value = true;
-    }
-  });
+function onUnlockClose() {
+  // Đóng modal mà chưa nhập OTP → huỷ pending toggle (không flip).
+  unlockOpen.value = false;
+  pendingToggle.value = null;
 }
 
-function onOpenUnlock() { unlockOpen.value = true; }
-function onOpenSetup() { setupMode.value = 'setup'; setupOpen.value = true; }
-function onOpenChangePin() { setupMode.value = 'change'; setupOpen.value = true; }
+// Mở khoá thuần (nút "🔓 Mở khoá" ở card) — không gắn nick nào, context mặc định.
+function onOpenUnlock() {
+  pendingToggle.value = null;
+  unlockOpen.value = true;
+}
 
 async function onLock() {
   await store.lock();
@@ -318,14 +319,30 @@ const NickRow = defineComponent({
             n.friendCount > 0 ? h('span', { class: 'nr-uid' }, [' · 👥 ' + n.friendCount + ' bạn']) : null,
           ]),
         ]),
-        h('button', {
-          class: ['nr-toggle', isMain ? 'on' : 'off'],
-          disabled: props.submitting,
-          onClick: () => emit('toggle'),
-          title: isMain ? 'Đang Riêng tư — click để chuyển Thường (yêu cầu PIN)' : 'Đang Thường — click để chuyển Riêng tư (yêu cầu PIN)',
+        // Segmented switch 2 ô rõ ràng: 🔓 Thường (trái) | 🔒 Riêng tư (phải).
+        // Ô đang chọn sáng màu. Click ô KIA → emit toggle (sẽ bắt OTP). Anh chốt 2026-06-06.
+        h('div', {
+          class: ['nr-seg', { disabled: props.submitting }],
+          role: 'group',
         }, [
-          h('span', { class: 'nr-toggle-track' }, [ h('span', { class: 'nr-toggle-thumb' }) ]),
-          h('span', { class: 'nr-toggle-label' }, isMain ? 'Riêng tư' : 'Thường'),
+          h('button', {
+            class: ['nr-seg-opt', 'normal', { active: !isMain }],
+            disabled: props.submitting,
+            onClick: () => { if (isMain) emit('toggle'); }, // chỉ gạt khi đang Riêng tư
+            title: isMain ? 'Gạt về Thường (cần nhập OTP)' : 'Đang để Thường',
+          }, [
+            h('span', { class: 'nr-seg-icon' }, '🔓'),
+            h('span', { class: 'nr-seg-label' }, 'Thường'),
+          ]),
+          h('button', {
+            class: ['nr-seg-opt', 'private', { active: isMain }],
+            disabled: props.submitting,
+            onClick: () => { if (!isMain) emit('toggle'); }, // chỉ gạt khi đang Thường
+            title: isMain ? 'Đang để Riêng tư' : 'Gạt sang Riêng tư (cần nhập OTP)',
+          }, [
+            h('span', { class: 'nr-seg-icon' }, '🔒'),
+            h('span', { class: 'nr-seg-label' }, 'Riêng tư'),
+          ]),
         ]),
       ]);
     };
@@ -412,14 +429,32 @@ const NickRow = defineComponent({
 :deep(.nr-set-internal):hover, :deep(.nr-clear-internal):hover { background: #EEF0FF; border-style: solid; }
 :deep(.nr-clear-internal) { color: #B91C1C; border-color: #FCA5A5; }
 :deep(.nr-clear-internal:hover) { background: #FEF2F2; }
-:deep(.nr-toggle) { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: none; cursor: pointer; padding: 4px 0; font-family: inherit; }
-:deep(.nr-toggle-track) { width: 38px; height: 22px; border-radius: 9999px; background: #D1D5DB; position: relative; transition: background 0.15s; }
-:deep(.nr-toggle-thumb) { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform 0.15s; }
-:deep(.nr-toggle.on .nr-toggle-track) { background: #5E6AD2; }
-:deep(.nr-toggle.on .nr-toggle-thumb) { transform: translateX(16px); }
-:deep(.nr-toggle-label) { font-size: 12px; font-weight: 600; color: #374151; min-width: 60px; text-align: left; }
-:deep(.nr-toggle.on .nr-toggle-label) { color: #5E6AD2; }
-:deep(.nr-toggle:disabled) { opacity: 0.5; cursor: not-allowed; }
+/* Segmented switch Thường | Riêng tư (anh chốt 2026-06-06) — rõ gạt bên nào là gì */
+:deep(.nr-seg) {
+  display: inline-flex; align-items: stretch; gap: 0;
+  background: #F1F3F5; border: 1px solid #E2E5E9; border-radius: 10px;
+  padding: 3px; flex-shrink: 0;
+}
+:deep(.nr-seg.disabled) { opacity: 0.55; pointer-events: none; }
+:deep(.nr-seg-opt) {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border: none; background: transparent; cursor: pointer;
+  border-radius: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: #6B7280; transition: all 0.15s; white-space: nowrap;
+}
+:deep(.nr-seg-opt:hover:not(.active)) { color: #374151; background: rgba(0,0,0,0.03); }
+:deep(.nr-seg-icon) { font-size: 13px; line-height: 1; }
+/* Ô "Thường" active — xanh dương dịu (an toàn, mở) */
+:deep(.nr-seg-opt.normal.active) {
+  background: #FFFFFF; color: #1D4ED8;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.18);
+}
+/* Ô "Riêng tư" active — hổ phách/đỏ (cảnh báo, khoá) */
+:deep(.nr-seg-opt.private.active) {
+  background: #FFFFFF; color: #B45309;
+  box-shadow: 0 1px 3px rgba(180, 83, 9, 0.2);
+}
+:deep(.nr-seg-opt:disabled) { cursor: not-allowed; }
 
 .ptab-error { position: fixed; bottom: 24px; right: 24px; background: #FEF2F2; color: #B91C1C; border: 1px solid #FCA5A5; padding: 12px 18px; border-radius: 10px; font-size: 13px; display: flex; align-items: center; gap: 12px; cursor: pointer; box-shadow: 0 8px 24px rgba(185, 28, 28, 0.15); z-index: 1000; max-width: 480px; }
 .ptab-error .dismiss { color: #DC2626; font-weight: 700; }

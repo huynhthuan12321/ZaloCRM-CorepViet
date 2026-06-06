@@ -85,10 +85,13 @@ import { api } from '@/api/index';
 const props = defineProps<{ nicks: Array<{ id: string; displayName: string | null }> }>();
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>();
 
-type Cat = 'message' | 'reaction' | 'chat_action' | 'group_admin' | 'group_read' | 'friend_action' | 'friend_read' | 'profile' | 'query';
+type Cat = 'message' | 'reaction' | 'chat_action' | 'group_admin' | 'group_read' | 'friend_action' | 'friend_lookup' | 'contact_sync' | 'friend_read' | 'profile' | 'query';
 const CAT_LABEL: Record<string, { nm: string; ds: string }> = {
   friend_action: { nm: 'Gửi lời mời kết bạn', ds: 'gửi/thu hồi lời mời' },
-  friend_read: { nm: 'Tìm SĐT→UID + đọc danh bạ', ds: 'findUser, đồng bộ bạn' },
+  // 2026-06-06 (Anh chốt) — tách findUser + đồng bộ danh bạ riêng.
+  friend_lookup: { nm: 'Tìm SĐT → UID', ds: 'findUser — tìm khách cho chiến dịch' },
+  contact_sync: { nm: 'Đồng bộ danh bạ', ds: 'getAllFriends — tải bạn bè từ Zalo (chạy nền)' },
+  friend_read: { nm: 'Đọc khác (lời mời/gợi ý)', ds: 'online, recommendations, sent-requests' },
   message: { nm: 'Gửi tin nhắn', ds: 'tin sale + bot gửi đi' },
   reaction: { nm: 'Thả cảm xúc', ds: 'tim, like, hoa...' },
   chat_action: { nm: 'Thao tác hội thoại', ds: 'đọc, gõ, ghim...' },
@@ -98,7 +101,7 @@ const CAT_LABEL: Record<string, { nm: string; ds: string }> = {
   group_admin: { nm: 'Quản trị nhóm', ds: 'thêm/xoá thành viên' },
 };
 const GROUPS = [
-  { title: '🤝 Kết bạn', cats: ['friend_action', 'friend_read'] as Cat[] },
+  { title: '🤝 Kết bạn & tìm khách', cats: ['friend_action', 'friend_lookup', 'contact_sync', 'friend_read'] as Cat[] },
   { title: '💌 Tin nhắn & tương tác', cats: ['message', 'reaction', 'chat_action'] as Cat[] },
   { title: '🔍 Đọc thông tin', cats: ['query', 'profile'] as Cat[] },
   { title: '👥 Nhóm Zalo', cats: ['group_read', 'group_admin'] as Cat[] },

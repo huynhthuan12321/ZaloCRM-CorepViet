@@ -99,8 +99,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'rbac/departments',       name: 'Settings.RbacDepartments',       component: () => import('@/views/rbac/DepartmentsView.vue') },
       { path: 'rbac/permission-groups', name: 'Settings.RbacPermissionGroups',  component: () => import('@/views/rbac/PermissionGroupsView.vue') },
       { path: 'rbac/users',             name: 'Settings.RbacUsers',             component: () => import('@/views/rbac/UsersRbacView.vue') },
-      // Phase Riêng Tư 2026-05-22 — per-user privacy page (vào nhóm Cá nhân ở sidebar)
-      { path: 'privacy',                name: 'Settings.Privacy',               component: () => import('@/views/privacy/PrivacySettingsView.vue') },
+      // Phase Riêng Tư: trang /settings/privacy GỠ 2026-06-06 (trùng với tab Privacy
+      // trong /settings/channels/zalo). Quản lý Riêng tư giờ DUY NHẤT ở tab Privacy.
 
       // ⚙ CRM Config
       { path: 'crm/statuses',    name: 'Settings.Statuses',    component: () => import('@/components/settings/StatusManagement.vue') },
