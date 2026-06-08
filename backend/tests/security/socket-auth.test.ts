@@ -6,8 +6,9 @@
  *
  * Dùng fake io/app để test thuần logic, không cần socket thật / prisma.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { registerSocketAuth, getSocketAuth } from '../../src/shared/realtime/socket-auth.js';
+import { config } from '../../src/config/index.js';
 
 type MwFn = (socket: any, next: (err?: Error) => void) => void;
 type ConnFn = (socket: any) => void;
@@ -92,5 +93,38 @@ describe('socket-auth io.use()', () => {
     expect(socket.join).toHaveBeenCalledWith('org:org-A');
     // KHÔNG bao giờ join theo giá trị client gửi (vd org-EVIL).
     expect(socket.join).not.toHaveBeenCalledWith('org:org-EVIL');
+  });
+});
+
+describe('socket-auth C2 — gate legacy token', () => {
+  afterEach(() => {
+    config.socketRequireAccessTyp = false;
+  });
+
+  it('gate OFF (mặc định): legacy token (không typ) -> CHẤP NHẬN', () => {
+    config.socketRequireAccessTyp = false;
+    const { io, getMw } = makeIo();
+    registerSocketAuth(io, makeApp(() => ({ id: 'u1', orgId: 'org-A', role: 'sale' })));
+    const next = vi.fn();
+    getMw()(makeSocket('legacy'), next);
+    expect(next).toHaveBeenCalledWith(); // không lỗi
+  });
+
+  it('gate ON: legacy token (không typ) -> TỪ CHỐI', () => {
+    config.socketRequireAccessTyp = true;
+    const { io, getMw } = makeIo();
+    registerSocketAuth(io, makeApp(() => ({ id: 'u1', orgId: 'org-A', role: 'sale' })));
+    const next = vi.fn();
+    getMw()(makeSocket('legacy'), next);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
+  });
+
+  it('gate ON: access token (typ:access) -> CHẤP NHẬN', () => {
+    config.socketRequireAccessTyp = true;
+    const { io, getMw } = makeIo();
+    registerSocketAuth(io, makeApp(() => ({ id: 'u1', orgId: 'org-A', role: 'sale', typ: 'access' })));
+    const next = vi.fn();
+    getMw()(makeSocket('valid'), next);
+    expect(next).toHaveBeenCalledWith();
   });
 });

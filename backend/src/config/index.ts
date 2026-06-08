@@ -124,4 +124,9 @@ export const config = {
     const v = (envValue('CSP_MODE') || 'report-only').toLowerCase();
     return v === 'enforce' || v === 'off' ? v : 'report-only';
   })() as 'report-only' | 'enforce' | 'off',
+
+  // C2 2026-06-08 — bật để socket handshake TỪ CHỐI token legacy (thiếu typ:'access').
+  // Mặc định false trong giai đoạn cutover (token 7d cũ còn lưu hành). Bật true SAU
+  // khi bump jwtTokenVersion toàn bộ + telemetry xác nhận legacy hết (mọi socket ≤15').
+  socketRequireAccessTyp: (envValue('SOCKET_REQUIRE_ACCESS_TYP') || 'false').toLowerCase() === 'true',
 };

@@ -5,7 +5,7 @@
  */
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
-import { authMiddleware } from './auth-middleware.js';
+import { authMiddleware, requireActiveUser } from './auth-middleware.js';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../shared/utils/logger.js';
@@ -13,6 +13,8 @@ import { normalizePhone } from '../../shared/utils/phone.js';
 
 export async function userRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
+  // C1 2026-06-08 — re-check isActive DB (đóng cửa sổ 15' cho quản lý user nhạy cảm).
+  app.addHook('preHandler', requireActiveUser);
 
   // GET /api/v1/users — list all users in org
   // Phase Marketing+Analytics Scope 2026-05-27: sale member chỉ thấy fullName + role

@@ -51,3 +51,27 @@ export async function authMiddleware(
     enterTenantContext(request.authCtx);
   }
 }
+
+/**
+ * Phase 3 C1 2026-06-08 — preHandler RE-CHECK `isActive` ở DB cho route NHẠY CẢM
+ * (user/RBAC/org management). authMiddleware (10A) bỏ check tv/isActive cho access
+ * token để nhanh → user bị khoá còn ~15' quyền. requireActiveUser đóng cửa sổ đó
+ * cho các hành động nguy hiểm: 1 DB hit, chỉ áp route admin (low-freq).
+ *
+ * Dùng SAU authMiddleware: app.addHook('preHandler', requireActiveUser).
+ */
+export async function requireActiveUser(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  const claim = request.user;
+  if (!claim?.id) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
+  const dbUser = await runSystemQuery(() =>
+    prisma.user.findUnique({ where: { id: claim.id }, select: { isActive: true } }),
+  );
+  if (!dbUser || !dbUser.isActive) {
+    return reply.status(401).send({ error: 'Tài khoản đã bị khoá', code: 'user_inactive' });
+  }
+}

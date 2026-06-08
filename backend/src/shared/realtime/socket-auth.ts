@@ -19,6 +19,7 @@
 import type { Server, Socket } from 'socket.io';
 import type { FastifyInstance } from 'fastify';
 import { logger } from '../utils/logger.js';
+import { config } from '../../config/index.js';
 
 export interface SocketAuthCtx {
   userId: string;
@@ -53,7 +54,14 @@ export function registerSocketAuth(io: Server, app: FastifyInstance): void {
         orgId: string;
         role: string;
         exp?: number;
+        typ?: string;
       }>(authToken);
+
+      // C2 2026-06-08 — sau cutover, từ chối token legacy (thiếu typ:'access') để
+      // socket không sống lâu hơn SLA 15' bằng token 7d cũ. Gate qua env.
+      if (config.socketRequireAccessTyp && payload.typ !== 'access') {
+        return next(new Error('legacy_token_rejected'));
+      }
 
       socket.data.authCtx = {
         userId: payload.id,
