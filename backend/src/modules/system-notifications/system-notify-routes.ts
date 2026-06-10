@@ -50,6 +50,7 @@ async function listRecipientRows(orgId: string) {
       fullName: true,
       email: true,
       phone: true,
+      avatarUrl: true,
       role: true,
       permissionGroup: { select: { id: true, name: true, isSystem: true } },
       departmentMember: {
@@ -73,6 +74,7 @@ async function listRecipientRows(orgId: string) {
         fullName: user.fullName,
         email: user.email,
         phone: user.phone,
+        avatarUrl: user.avatarUrl,
         role: user.role,
         departmentMember: user.departmentMember,
         permissionGroup: user.permissionGroup,
