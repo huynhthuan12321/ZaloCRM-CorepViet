@@ -26,6 +26,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { TagScope, TagSource } from '@prisma/client';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
+import { getZaloScope } from '../zalo/zalo-scope.js';
 import { logger } from '../../shared/utils/logger.js';
 import {
   addFriendTag,
@@ -99,11 +100,18 @@ export async function registerTagRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ tags: enriched });
   });
 
-  // GET /tags/zalo-accounts — list nick zalo của org cho filter dropdown (Friend tab)
+  // GET /tags/zalo-accounts — list nick zalo cho filter dropdown (Friend tab).
+  // 2026-06-10 FIX: thêm getZaloScope (chỉ nick user được phép) + ẩn nick đã xóa mềm.
+  // Bug cũ: chỉ lọc orgId → sale thường thấy nick ngoài quyền + nick đã archived.
   app.get('/zalo-accounts', async (req: FastifyRequest, reply: FastifyReply) => {
     const user = req.user!;
+    const scope = await getZaloScope(user.id, user.orgId, user.role);
     const accounts = await prisma.zaloAccount.findMany({
-      where: { orgId: user.orgId },
+      where: {
+        orgId: user.orgId,
+        archivedAt: null,
+        ...(scope.isOrgAdmin ? {} : { id: { in: scope.accessibleIds } }),
+      },
       select: { id: true, displayName: true, phone: true, avatarUrl: true, status: true },
       orderBy: { displayName: 'asc' },
     });

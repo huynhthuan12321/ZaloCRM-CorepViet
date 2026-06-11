@@ -18,6 +18,8 @@ export interface ZaloAccount {
   phone: string | null;
   sessionData: any;
   ownerUserId: string;
+  // Owner (chủ nick) — backend /zalo-accounts trả kèm. Dùng cho nhóm/lọc theo người dùng.
+  owner?: { id: string; fullName: string | null; email: string } | null;
   createdAt: string;
   proxyUrl?: string | null; // masked by backend
   hasProxy?: boolean;

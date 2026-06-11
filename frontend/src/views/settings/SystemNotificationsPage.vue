@@ -14,13 +14,14 @@
       </v-btn>
     </div>
 
+    <!-- 2026-06-10: gộp còn 3 tab — 'Cấu hình gửi' cũ (1 dropdown) dồn vào đầu
+         tab 'Nhân viên nhận' vì cùng luồng: chọn nick gửi → xem ai nhận. -->
     <v-tabs v-model="activeTab" class="sn-tabs" color="primary" density="comfortable">
-      <v-tab value="config">⚙️ Cấu hình gửi</v-tab>
-      <v-tab value="welcome">📨 Tin chào mừng</v-tab>
       <v-tab value="people">
         👥 Nhân viên nhận
         <span class="sn-tab-cnt">{{ recipients.length }}</span>
       </v-tab>
+      <v-tab value="welcome">📨 Tin chào mừng</v-tab>
       <v-tab value="logs">
         📜 Lịch sử gửi
         <span class="sn-tab-cnt">{{ logTotal }}</span>
@@ -28,45 +29,7 @@
     </v-tabs>
 
     <v-window v-model="activeTab" class="sn-window">
-      <!-- ════ TAB 1: CẤU HÌNH GỬI ════ -->
-      <v-window-item value="config">
-    <v-card variant="outlined" class="pa-4 mb-4 notify-card">
-      <div class="d-flex flex-wrap align-start ga-4">
-        <v-select
-          v-model="senderId"
-          :items="senderOptions"
-          item-title="label"
-          item-value="value"
-          label="Nick Zalo gửi thông báo hệ thống"
-          variant="outlined"
-          density="comfortable"
-          clearable
-          hide-details="auto"
-          :loading="loadingSettings || savingSender"
-          class="sender-select"
-          @update:model-value="saveSender"
-        />
-        <v-chip v-if="selectedSender" :color="selectedSender.status === 'connected' ? 'success' : 'warning'" variant="tonal" class="mt-2">
-          {{ selectedSender.status === 'connected' ? 'Đang connected' : 'Offline' }}
-        </v-chip>
-        <v-chip v-else color="grey" variant="tonal" class="mt-2">Chưa chọn nick gửi</v-chip>
-      </div>
-      <div class="text-caption text-medium-emphasis mt-3">
-        Khi đổi nick gửi, bảng "Nhân viên nhận" sẽ kiểm tra mapping UID riêng cho nick mới. UID cũ của nick khác không dùng chung.
-      </div>
-      <v-alert v-if="senderError" type="error" density="compact" class="mt-3">{{ senderError }}</v-alert>
-    </v-card>
-
-    <!-- KPI tình trạng kênh -->
-    <div class="sn-kpi-grid">
-      <div class="sn-kpi green"><div class="sn-kpi-val">{{ summary.ready || 0 }}</div><div class="sn-kpi-lbl">✅ Sẵn sàng nhận</div></div>
-      <div class="sn-kpi amber"><div class="sn-kpi-val">{{ (summary.uid_not_found || 0) + (summary.missing_internal_phone || 0) }}</div><div class="sn-kpi-lbl">🟡 Chưa có UID</div></div>
-      <div class="sn-kpi red"><div class="sn-kpi-val">{{ (summary.missing_internal_contact || 0) + (summary.lookup_failed || 0) + (summary.sender_disconnected || 0) }}</div><div class="sn-kpi-lbl">🔴 Thiếu nick / lỗi</div></div>
-      <div class="sn-kpi"><div class="sn-kpi-val">{{ recipients.length }}</div><div class="sn-kpi-lbl">Tổng nhân viên</div></div>
-    </div>
-      </v-window-item>
-
-      <!-- ════ TAB 2: TIN CHÀO MỪNG ════
+      <!-- ════ TAB: TIN CHÀO MỪNG ════
            Atlas v3 2026-06-08 (anh chốt): sao chép "edit block view Zalo" — soạn WYSIWYG
            (bôi đậm/màu/cỡ) bên trái + bong bóng Zalo render LIVE bên phải. KHÔNG gõ **markup**. -->
       <v-window-item value="welcome">
@@ -196,86 +159,136 @@
 
       <!-- ════ TAB 3: NHÂN VIÊN NHẬN ════ -->
       <v-window-item value="people">
-    <!-- KPI -->
+    <!-- ── Cấu hình nick gửi (gộp từ tab Cấu hình cũ 2026-06-10) ── -->
+    <div class="sn-sender-bar">
+      <!-- Avatar nick hệ thống đang chọn (load từ danh sách nick Zalo) -->
+      <img v-if="selectedSender?.avatarUrl" :src="selectedSender.avatarUrl" class="sn-nick-ava sn-nick-ava-lg" :alt="selectedSender.displayName || 'Nick'" />
+      <span v-else-if="selectedSender" class="sn-nick-ava sn-nick-ava-lg sn-nick-ava-ph">🔔</span>
+      <v-select
+        v-model="senderId"
+        :items="senderOptions"
+        item-title="label"
+        item-value="value"
+        label="Nick Zalo gửi thông báo hệ thống"
+        variant="outlined"
+        density="compact"
+        clearable
+        hide-details="auto"
+        :loading="loadingSettings || savingSender"
+        class="sender-select"
+        @update:model-value="saveSender"
+      >
+        <!-- Avatar nick trong từng dòng dropdown -->
+        <template #item="{ item, props: itemProps }">
+          <v-list-item v-bind="itemProps">
+            <template #prepend>
+              <img v-if="nickAvatar(item.value)" :src="nickAvatar(item.value)!" class="sn-nick-ava" alt="nick avatar" />
+              <span v-else class="sn-nick-ava sn-nick-ava-ph">🔔</span>
+            </template>
+          </v-list-item>
+        </template>
+      </v-select>
+      <v-chip v-if="selectedSender" :color="selectedSender.status === 'connected' ? 'success' : 'warning'" variant="flat" size="small" class="sn-sender-chip">
+        <v-icon start size="14">{{ selectedSender.status === 'connected' ? 'mdi-check-circle' : 'mdi-pause-circle' }}</v-icon>
+        {{ selectedSender.status === 'connected' ? 'Đang kết nối' : 'Offline' }}
+      </v-chip>
+      <v-chip v-else color="grey" variant="tonal" size="small" class="sn-sender-chip">Chưa chọn nick gửi</v-chip>
+      <v-spacer />
+      <v-btn
+        color="primary"
+        variant="flat"
+        size="small"
+        :loading="recheckingAll"
+        :disabled="!senderId || recheckingAll"
+        prepend-icon="mdi-refresh"
+        @click="recheckAll"
+      >
+        Check hàng loạt
+      </v-btn>
+    </div>
+    <div class="sn-sender-hint">
+      <v-icon size="14" class="mr-1">mdi-information-outline</v-icon>
+      Đổi nick gửi thì bấm <strong>Check hàng loạt</strong> để dò lại UID theo góc nhìn nick mới (UID cũ của nick khác không dùng chung).
+    </div>
+    <v-alert v-if="senderError" type="error" density="compact" class="mb-3">{{ senderError }}</v-alert>
+
+    <!-- KPI (2026-06-10: theo cơ chế Check Live) -->
     <div class="sn-kpi-grid">
-      <div class="sn-kpi green"><div class="sn-kpi-val">{{ summary.ready || 0 }}</div><div class="sn-kpi-lbl">✅ Đã có UID</div></div>
-      <div class="sn-kpi amber"><div class="sn-kpi-val">{{ (summary.uid_not_found || 0) + (summary.missing_internal_phone || 0) }}</div><div class="sn-kpi-lbl">🟡 Chưa có UID</div></div>
-      <div class="sn-kpi red"><div class="sn-kpi-val">{{ (summary.missing_internal_contact || 0) + (summary.lookup_failed || 0) + (summary.sender_disconnected || 0) }}</div><div class="sn-kpi-lbl">🔴 Lỗi / thiếu nick</div></div>
+      <div class="sn-kpi green"><div class="sn-kpi-val">{{ summary.ready || 0 }}</div><div class="sn-kpi-lbl">✅ Sẵn sàng nhận</div></div>
+      <div class="sn-kpi amber"><div class="sn-kpi-val">{{ (summary.uid_not_found || 0) + (summary.missing_internal_contact || 0) + (summary.missing_internal_phone || 0) }}</div><div class="sn-kpi-lbl">🟡 Chưa Check Live</div></div>
+      <div class="sn-kpi red"><div class="sn-kpi-val">{{ (summary.lookup_failed || 0) + (summary.sender_disconnected || 0) + (summary.missing_system_sender || 0) }}</div><div class="sn-kpi-lbl">🔴 Lỗi / offline</div></div>
       <div class="sn-kpi"><div class="sn-kpi-val">{{ recipients.length }}</div><div class="sn-kpi-lbl">Tổng nhân viên</div></div>
     </div>
 
     <v-alert v-if="lookupError" type="error" density="compact" class="mb-3">{{ lookupError }}</v-alert>
     <v-alert v-if="lookupSuccess" type="success" density="compact" class="mb-3">{{ lookupSuccess }}</v-alert>
 
-    <!-- Atlas v3 2026-06-08: bỏ modal Placeholders + Preview — chip chèn biến + bong bóng
-         Zalo render LIVE đã nằm ngay trong tab "Tin chào mừng". -->
-
-
-    <v-card variant="outlined" class="notify-card">
-      <v-table density="comfortable" class="recipient-table">
+    <!-- ── Bảng nhân viên nhận (redesign Atlas v2 2026-06-10) ── -->
+    <div class="sn-table-card">
+      <table class="sn-rtable">
         <thead>
           <tr>
             <th>Nhân viên</th>
-            <th>Phòng ban</th>
-            <th>Chức vụ</th>
-            <th>Nick liên lạc nội bộ</th>
-            <th>UID góc nhìn nick gửi</th>
+            <th>Phòng ban / Chức vụ</th>
+            <th>SĐT nhân viên</th>
+            <th>UID (góc nhìn nick gửi)</th>
             <th>Trạng thái</th>
-            <th class="text-right">Action</th>
+            <th class="ta-right">Hành động</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in recipients" :key="row.user.id">
+          <tr v-for="row in recipients" :key="row.user.id" class="sn-rrow">
             <td>
-              <div class="font-weight-medium">{{ row.user.fullName }}</div>
-              <div class="text-caption text-medium-emphasis">{{ row.user.email }}</div>
-            </td>
-            <td>{{ row.user.departmentMember?.department?.name || 'Chưa gán' }}</td>
-            <td>
-              <div>{{ row.user.departmentMember?.deptRole || roleLabel(row.user.role) }}</div>
-              <div v-if="row.user.permissionGroup?.name" class="text-caption text-medium-emphasis">
-                {{ row.user.permissionGroup.name }}
+              <div class="sn-emp">
+                <img v-if="row.user.avatarUrl" :src="row.user.avatarUrl" class="sn-emp-avatar-img" :alt="row.user.fullName" />
+                <span v-else class="sn-emp-avatar">{{ (row.user.fullName || '?').charAt(0).toUpperCase() }}</span>
+                <div class="sn-emp-info">
+                  <div class="sn-emp-name">{{ row.user.fullName }}</div>
+                  <div class="sn-emp-mail">{{ row.user.email }}</div>
+                </div>
               </div>
             </td>
             <td>
-              <div class="font-weight-medium">{{ row.internalContactNick?.displayName || 'Chưa chọn' }}</div>
-              <div class="text-caption text-medium-emphasis">
-                {{ row.internalContactNick?.phone || 'Chưa có SĐT' }}
-              </div>
+              <div class="sn-dept">{{ row.user.departmentMember?.department?.name || 'Chưa gán' }}</div>
+              <div class="sn-role">{{ row.user.departmentMember?.deptRole || roleLabel(row.user.role) }}<template v-if="row.user.permissionGroup?.name"> · {{ row.user.permissionGroup.name }}</template></div>
             </td>
             <td>
-              <span v-if="row.recipient.threadIdInSenderView" class="uid-text">{{ row.recipient.threadIdInSenderView }}</span>
-              <span v-else class="text-medium-emphasis">Chưa có</span>
+              <span v-if="row.user.phone" class="sn-phone">{{ formatVnPhone(row.user.phone) }}</span>
+              <v-chip v-else size="x-small" color="warning" variant="tonal">Chưa có SĐT</v-chip>
             </td>
             <td>
-              <v-chip size="small" :color="statusColor(row.recipient.status)" variant="tonal">
+              <code v-if="row.recipient.threadIdInSenderView" class="sn-uid">{{ row.recipient.threadIdInSenderView }}</code>
+              <span v-else class="sn-uid-empty">—</span>
+            </td>
+            <td>
+              <v-chip size="small" :color="statusColor(row.recipient.status)" variant="tonal" class="sn-status-chip">
                 {{ statusLabel(row.recipient.status) }}
               </v-chip>
-              <div v-if="row.recipient.error" class="text-caption text-medium-emphasis mt-1">
-                {{ row.recipient.error }}
-              </div>
+              <div v-if="row.recipient.error" class="recipient-err">{{ row.recipient.error }}</div>
             </td>
-            <td class="text-right">
+            <td class="ta-right">
               <v-btn
                 size="small"
                 variant="tonal"
+                color="primary"
+                prepend-icon="mdi-account-search"
                 :loading="lookupUserId === row.user.id"
                 :disabled="!canLookup(row)"
                 @click="lookupUid(row)"
               >
-                Tìm UID
+                Check Live
               </v-btn>
             </td>
           </tr>
           <tr v-if="!loadingRecipients && recipients.length === 0">
-            <td colspan="7" class="text-center text-medium-emphasis py-6">Chưa có nhân viên để kiểm tra.</td>
+            <td colspan="6" class="sn-rempty">Chưa có nhân viên để kiểm tra.</td>
           </tr>
           <tr v-if="loadingRecipients">
-            <td colspan="7" class="text-center text-medium-emphasis py-6">Đang tải danh sách...</td>
+            <td colspan="6" class="sn-rempty">Đang tải danh sách...</td>
           </tr>
         </tbody>
-      </v-table>
-    </v-card>
+      </table>
+    </div>
       </v-window-item>
 
       <!-- ════ TAB 4: LỊCH SỬ GỬI (2026-06-04 Anh chốt) ════
@@ -434,6 +447,85 @@
       </v-window-item>
     </v-window>
 
+    <!-- Popup kết quả Check Live (2026-06-10) -->
+    <v-dialog v-model="checkLiveDialog" max-width="480">
+      <v-card v-if="checkLiveResult" class="pa-2">
+        <v-card-title class="d-flex align-center ga-2">
+          <template v-if="checkLiveResult.verdict === 'pass'">
+            <v-icon color="success">mdi-check-circle</v-icon> UID đúng
+          </template>
+          <template v-else-if="checkLiveResult.verdict === 'updated'">
+            <v-icon color="info">mdi-autorenew</v-icon> Đã cập nhật UID mới
+          </template>
+          <template v-else-if="checkLiveResult.verdict === 'name_mismatch'">
+            <v-icon color="error">mdi-alert</v-icon> Cảnh báo: UID lệch người
+          </template>
+          <template v-else>
+            <v-icon color="warning">mdi-account-question</v-icon> Không tìm thấy Zalo
+          </template>
+        </v-card-title>
+        <v-card-text>
+          <div class="mb-2"><strong>Nhân viên:</strong> {{ checkLiveResult.userName }}</div>
+          <div v-if="checkLiveResult.verdict === 'pass'" class="text-success">
+            UID khớp đúng người (<strong>{{ checkLiveResult.zaloName }}</strong>). Sẵn sàng nhận thông báo.
+          </div>
+          <div v-else-if="checkLiveResult.verdict === 'updated'">
+            <div class="text-info mb-1">UID đã thay đổi và được cập nhật lại cho đúng.</div>
+            <div class="text-caption">UID cũ: <code>{{ checkLiveResult.previousUid || '—' }}</code></div>
+            <div class="text-caption">UID mới: <code>{{ checkLiveResult.uid }}</code> (<strong>{{ checkLiveResult.zaloName }}</strong>)</div>
+          </div>
+          <div v-else-if="checkLiveResult.verdict === 'name_mismatch'" class="text-error">
+            UID tìm được trỏ tới <strong>"{{ checkLiveResult.zaloName }}"</strong> — KHÔNG khớp nhân viên
+            <strong>"{{ checkLiveResult.userName }}"</strong>. Đã CHẶN để tránh gửi nhầm.
+            Kiểm tra lại SĐT nhân viên hoặc danh bạ nick gửi.
+          </div>
+          <div v-else class="text-warning">
+            {{ checkLiveResult.error || 'SĐT này không có tài khoản Zalo.' }}
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="checkLiveDialog = false">Đóng</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Popup kết quả Check hàng loạt -->
+    <v-dialog v-model="recheckAllDialog" max-width="560">
+      <v-card v-if="recheckAllResult" class="pa-2">
+        <v-card-title class="d-flex align-center ga-2">
+          <v-icon color="primary">mdi-refresh</v-icon> Kết quả check hàng loạt
+        </v-card-title>
+        <v-card-text>
+          <div class="d-flex flex-wrap ga-2 mb-3">
+            <v-chip size="small" color="success" variant="tonal">✅ Đúng: {{ recheckAllResult.summary.ready || 0 }}</v-chip>
+            <v-chip size="small" color="info" variant="tonal">🔄 Đã đổi UID: {{ recheckAllResult.summary.updated || 0 }}</v-chip>
+            <v-chip size="small" color="error" variant="tonal">⚠️ Lệch người: {{ recheckAllResult.summary.mismatch || 0 }}</v-chip>
+            <v-chip size="small" color="warning" variant="tonal">Không Zalo: {{ recheckAllResult.summary.no_zalo || 0 }}</v-chip>
+            <v-chip size="small" variant="tonal">Lỗi tra: {{ recheckAllResult.summary.failed || 0 }}</v-chip>
+          </div>
+          <div v-if="recheckAllResult.changes.length" class="text-caption text-medium-emphasis mb-1">Thay đổi đáng chú ý:</div>
+          <v-list v-if="recheckAllResult.changes.length" density="compact">
+            <v-list-item v-for="(c, i) in recheckAllResult.changes" :key="i">
+              <template #prepend>
+                <v-icon size="small" :color="c.verdict === 'updated' ? 'info' : 'error'">
+                  {{ c.verdict === 'updated' ? 'mdi-autorenew' : 'mdi-alert' }}
+                </v-icon>
+              </template>
+              <v-list-item-title class="text-body-2">
+                {{ c.userName }} → {{ c.verdict === 'updated' ? 'cập nhật UID mới' : 'LỆCH người' }} ({{ c.zaloName }})
+              </v-list-item-title>
+            </v-list-item>
+          </v-list>
+          <div v-else class="text-success text-body-2">Tất cả UID đã đúng, không có thay đổi.</div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="recheckAllDialog = false">Đóng</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- Panel chi tiết tin -->
     <v-dialog v-model="showLogDetail" max-width="560">
       <v-card v-if="detailLog" class="pa-1">
@@ -503,6 +595,8 @@ interface RecipientRow {
     id: string;
     fullName: string;
     email: string;
+    phone?: string | null;
+    avatarUrl?: string | null;
     role: string;
     departmentMember: { deptRole: string | null; department: { id: string; name: string; path: string } | null } | null;
     permissionGroup: { id: string; name: string; isSystem: boolean } | null;
@@ -518,8 +612,8 @@ interface RecipientRow {
   };
 }
 
-// 2026-06-04 — Atlas v2 redesign: tab ngang.
-const activeTab = ref<'config' | 'welcome' | 'people' | 'logs'>('config');
+// 2026-06-04 — Atlas v2 redesign: tab ngang. 2026-06-10: gộp còn 3 tab, mặc định 'people'.
+const activeTab = ref<'welcome' | 'people' | 'logs'>('people');
 
 const loadingSettings = ref(false);
 const loadingRecipients = ref(false);
@@ -717,6 +811,12 @@ const senderOptions = computed(() => nicks.value.map((nick) => ({
 
 const selectedSender = computed(() => nicks.value.find((nick) => nick.id === senderId.value) || null);
 
+// Lookup avatar nick theo id (cho slot v-select, type-safe — không dùng item.raw)
+function nickAvatar(id: string | null | undefined): string | null {
+  if (!id) return null;
+  return nicks.value.find((n) => n.id === id)?.avatarUrl || null;
+}
+
 async function fetchSettings() {
   loadingSettings.value = true;
   senderError.value = '';
@@ -757,34 +857,72 @@ async function saveSender(value: unknown) {
   }
 }
 
+// Check Live (2026-06-10): nút chỉ cần user CÓ SĐT (bỏ phụ thuộc nick nội bộ cũ).
 function canLookup(row: RecipientRow) {
-  return Boolean(senderId.value && row.internalContactNick?.id && row.internalContactNick?.phone && lookupUserId.value !== row.user.id);
+  return Boolean(senderId.value && row.user.phone && lookupUserId.value !== row.user.id);
 }
+
+// Popup kết quả Check Live
+const checkLiveDialog = ref(false);
+const checkLiveResult = ref<{
+  verdict: string; userName: string; zaloName: string | null;
+  uid: string | null; previousUid: string | null; changed: boolean; error: string | null;
+} | null>(null);
 
 async function lookupUid(row: RecipientRow) {
   lookupUserId.value = row.user.id;
   lookupError.value = '';
   lookupSuccess.value = '';
   try {
-    const { data } = await api.post(`/system-notifications/recipients/${row.user.id}/lookup-uid`);
+    const { data } = await api.post(`/system-notifications/recipients/${row.user.id}/check-live`);
     const recipient = data.recipient;
     if (recipient) {
       row.recipient = {
         id: recipient.id,
         status: recipient.status,
         error: recipient.error,
-        conversationId: recipient.conversationId,
+        conversationId: recipient.conversationId ?? row.recipient.conversationId,
         threadIdInSenderView: recipient.threadIdInSenderView,
         lastVerifiedAt: recipient.lastVerifiedAt,
       };
     }
-    lookupSuccess.value = data.found ? `Đã lưu UID cho ${row.user.fullName}` : `Chưa tìm thấy UID cho ${row.user.fullName}`;
+    // Mở popup báo admin kết quả (đúng/đổi UID/lệch tên/không có Zalo)
+    checkLiveResult.value = {
+      verdict: data.verdict,
+      userName: data.userName ?? row.user.fullName,
+      zaloName: data.zaloName ?? null,
+      uid: data.uid ?? null,
+      previousUid: data.previousUid ?? null,
+      changed: Boolean(data.changed),
+      error: data.error ?? null,
+    };
+    checkLiveDialog.value = true;
     await fetchRecipients();
   } catch (err: any) {
-    lookupError.value = err?.response?.data?.error || 'Lỗi tìm UID';
+    lookupError.value = err?.response?.data?.error || 'Lỗi Check Live';
     await fetchRecipients();
   } finally {
     lookupUserId.value = null;
+  }
+}
+
+// Check hàng loạt khi đổi nick gửi
+const recheckingAll = ref(false);
+const recheckAllResult = ref<{ summary: Record<string, number>; changes: Array<{ userName: string | null; verdict: string; zaloName: string | null }> } | null>(null);
+const recheckAllDialog = ref(false);
+
+async function recheckAll() {
+  recheckingAll.value = true;
+  lookupError.value = '';
+  try {
+    const { data } = await api.post('/system-notifications/recipients/recheck-all');
+    recheckAllResult.value = { summary: data.summary, changes: data.changes ?? [] };
+    recheckAllDialog.value = true;
+    await fetchRecipients();
+  } catch (err: any) {
+    lookupError.value = err?.response?.data?.error || 'Lỗi check hàng loạt';
+  } finally {
+    recheckingAll.value = false;
   }
 }
 
@@ -796,20 +934,31 @@ function statusColor(status: string) {
 }
 
 function statusLabel(status: string) {
+  // 2026-06-10: nhãn theo cơ chế MỚI (Check Live), bỏ khái niệm "nick nội bộ" cũ.
   return ({
-    ready: 'Đã có UID',
+    ready: 'Sẵn sàng nhận',
     missing_system_sender: 'Chưa chọn nick gửi',
-    missing_internal_contact: 'Chưa chọn nick nội bộ',
-    missing_internal_phone: 'Nick nội bộ thiếu SĐT',
+    missing_internal_contact: 'Chưa Check Live',
+    missing_internal_phone: 'Thiếu SĐT',
     sender_disconnected: 'Nick gửi offline',
-    uid_not_found: 'Chưa có UID',
+    uid_not_found: 'Chưa có UID / lệch',
     lookup_failed: 'Lỗi tìm UID',
-    invalid: 'Invalid',
+    invalid: 'Chưa kiểm tra',
   } as Record<string, string>)[status] || status;
 }
 
 function roleLabel(role: string) {
   return ({ owner: 'Chủ tổ chức', admin: 'Admin', member: 'Nhân viên' } as Record<string, string>)[role] || role;
+}
+
+// Format SĐT kiểu Việt Nam: 84365925267 → 0365 925 267 (đồng bộ ContactsView).
+function formatVnPhone(phone: string | null | undefined): string {
+  if (!phone) return '—';
+  let s = String(phone).replace(/\D/g, '');
+  if (s.startsWith('84') && s.length === 11) s = '0' + s.slice(2);
+  else if (s.length === 9 && !s.startsWith('0')) s = '0' + s;
+  if (s.length === 10 || s.length === 11) return s.slice(0, 4) + ' ' + s.slice(4, 7) + ' ' + s.slice(7);
+  return phone;
 }
 
 async function fetchOrgConfig() {
@@ -1190,6 +1339,114 @@ onMounted(async () => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
+/* Text lỗi/cảnh báo lệch người — giới hạn 2 dòng, không vỡ layout HD 1366 */
+.recipient-err {
+  max-width: 260px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #b45309;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ══════ Tab Nhân viên nhận — gộp cấu hình + bảng redesign (2026-06-10) ══════ */
+.sn-sender-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.sn-sender-chip { font-weight: 600; }
+.sn-sender-hint {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 0 2px 16px;
+}
+/* Avatar nick hệ thống trong dropdown */
+.sn-nick-opt { display: flex; align-items: center; gap: 8px; }
+.sn-nick-ava {
+  width: 24px; height: 24px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.sn-nick-ava-ph { background: #e0f2fe; font-size: 13px; }
+.sn-nick-ava-lg { width: 38px; height: 38px; border: 1px solid #e5e7eb; }
+
+/* Bảng redesign — Atlas v2: header nền nhạt, hàng thoáng, hover, zebra nhẹ */
+.sn-table-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow-x: auto;  /* HD 1366: bảng dày → cuộn ngang, cột Hành động không bị cắt */
+  background: #fff;
+}
+.sn-rtable {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.sn-rtable thead th {
+  text-align: left;
+  padding: 11px 16px;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+.sn-rtable td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+.sn-rrow:last-child td { border-bottom: none; }
+.sn-rrow:hover td { background: #f8fafc; }
+.ta-right { text-align: right; }
+
+/* Cột nhân viên: avatar + tên + email */
+.sn-emp { display: flex; align-items: center; gap: 10px; }
+.sn-emp-avatar,
+.sn-emp-avatar-img {
+  width: 34px; height: 34px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.sn-emp-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; font-weight: 600; font-size: 14px;
+}
+.sn-emp-avatar-img { object-fit: cover; border: 1px solid #e5e7eb; }
+.sn-emp-name { font-weight: 600; color: #1e293b; }
+.sn-emp-mail { font-size: 11.5px; color: #94a3b8; }
+.sn-dept { color: #334155; }
+.sn-role { font-size: 11.5px; color: #94a3b8; margin-top: 1px; }
+.sn-phone { font-weight: 600; color: #1e293b; font-variant-numeric: tabular-nums; }
+
+/* UID badge gọn */
+.sn-uid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+.sn-uid-empty { color: #cbd5e1; }
+.sn-status-chip { font-weight: 600; }
+.sn-rempty { text-align: center; color: #94a3b8; padding: 32px 0; }
 
 /* ══════ Atlas v3 — Tin chào mừng kiểu "edit block Zalo" (2026-06-08) ══════
    2 cột: soạn WYSIWYG trái + bong bóng Zalo render LIVE phải. Copy hệ token bubble

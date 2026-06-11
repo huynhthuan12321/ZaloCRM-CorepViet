@@ -769,9 +769,9 @@ async function autoLookupZaloForLead(args: {
     };
   }
 
-  // Pick first OWN connected nick of sale
+  // Pick first OWN connected nick of sale (2026-06-10: bỏ nick đã xóa mềm)
   const myNick = await prisma.zaloAccount.findFirst({
-    where: { ownerUserId: args.saleUserId, orgId: args.orgId, status: 'connected' },
+    where: { ownerUserId: args.saleUserId, orgId: args.orgId, status: 'connected', archivedAt: null },
     orderBy: { lastConnectedAt: 'desc' },
     select: { id: true, displayName: true },
   });

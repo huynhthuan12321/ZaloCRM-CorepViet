@@ -679,10 +679,11 @@ export function useChat() {
     socket = createAppSocket();
 
     socket.on('chat:message', (data: { message: Message; conversationId: string; _privacyMeta?: { privacyMode?: string; ownerUserId?: string | null } }) => {
-      // PRIVACY 2026-05-22 — backend kèm _privacyMeta cho mỗi event, FE đánh dấu
-      // redacted client-side khi non-owner để blur hiệu lực ngay realtime (tránh
-      // bug "tin mới không bị mờ" anh báo). Server không gửi raw content cho
-      // non-owner conv (đã có gate), nên đây chỉ là safety belt cho UI.
+      // PRIVACY 2026-06-11 — Server GIỜ redact server-side trước khi emit (emit-chat.ts):
+      // non-owner nhận bản đã blur, chính chủ đã unlock nhận bản thật ở room riêng.
+      // Đoạn dưới chỉ còn là LỚP 2 (safety belt) đánh dấu redacted để UI blur — KHÔNG
+      // còn là lớp bảo vệ duy nhất. (Trước 2026-06-11: server gửi raw content, FE tự
+      // blur → mở DevTools là đọc được. Đã vá.)
       const meta = data._privacyMeta;
       if (meta?.privacyMode === 'main') {
         const myId = currentUserIdForPrivacy();

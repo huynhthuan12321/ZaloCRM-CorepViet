@@ -163,7 +163,8 @@ export async function registerPrivacyRoutes(app: FastifyInstance): Promise<void>
     const userId = user.userId ?? user.id;
 
     const nicks = await prisma.zaloAccount.findMany({
-      where: { orgId: user.orgId, ownerUserId: userId },
+      // 2026-06-10: ẩn nick đã xóa mềm khỏi list cấu hình Riêng tư của user.
+      where: { orgId: user.orgId, ownerUserId: userId, archivedAt: null },
       select: {
         id: true,
         zaloUid: true,
@@ -206,6 +207,18 @@ export async function registerPrivacyRoutes(app: FastifyInstance): Promise<void>
     const userId = user.userId ?? user.id;
     if (account.ownerUserId !== userId) {
       return reply.status(403).send({ error: 'Chỉ owner của nick mới flip privacy mode' });
+    }
+
+    // 2026-06-11 — MỞ LẠI bật mới Riêng tư sau khi vá xong 3 đợt lỗ lộ nội dung
+    // (realtime redact server-side + scope org + list/search redact + leak-guard).
+    // Mặc định MỞ; chỉ khóa khẩn khi set env PRIVACY_LOCK_NEW=1 (cờ kill-switch nếu
+    // phát hiện lỗ mới). Vẫn luôn cho TẮT (mode='sub').
+    const privacyNewLocked = process.env.PRIVACY_LOCK_NEW === '1';
+    if (privacyNewLocked && body.mode === 'main' && account.privacyMode !== 'main') {
+      return reply.status(423).send({
+        error: 'Tính năng Riêng tư đang tạm khóa bật mới (kill-switch bảo mật).',
+        code: 'PRIVACY_FEATURE_LOCKED',
+      });
     }
 
     // Hard cap khi flip sang 'main' (Phase Privacy v2 2026-05-23).

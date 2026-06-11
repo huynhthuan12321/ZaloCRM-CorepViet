@@ -6,7 +6,8 @@ import { normalizePhone } from '../../shared/utils/phone.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
-import { resolveSystemNotifyRecipient, sendSystemNotificationToUser } from './system-notify-service.js';
+import { getZaloScope } from '../zalo/zalo-scope.js';
+import { resolveSystemNotifyRecipient, sendSystemNotificationToUser, resolveUidBySenderFindUser } from './system-notify-service.js';
 import { DEFAULT_WELCOME_TEMPLATE, buildWelcomeMessage, validateTemplate, toZaloStyles } from './welcome-message-builder.js';
 import { formatMessage } from '../../shared/text-formatter.js';
 import { uploadBuffer } from '../../shared/storage/minio-client.js';
@@ -49,6 +50,8 @@ async function listRecipientRows(orgId: string) {
       id: true,
       fullName: true,
       email: true,
+      phone: true,
+      avatarUrl: true,
       role: true,
       permissionGroup: { select: { id: true, name: true, isSystem: true } },
       departmentMember: {
@@ -71,6 +74,8 @@ async function listRecipientRows(orgId: string) {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
+        phone: user.phone,
+        avatarUrl: user.avatarUrl,
         role: user.role,
         departmentMember: user.departmentMember,
         permissionGroup: user.permissionGroup,
@@ -96,20 +101,29 @@ export async function systemNotifyRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: requireGrant('settings', 'access') },
     async (request: FastifyRequest) => {
       const currentUser = request.user!;
-      const [org, nicks] = await Promise.all([
-        prisma.organization.findUnique({
-          where: { id: currentUser.orgId },
-          select: {
-            systemNotifyZaloAccountId: true,
-            systemNotifyNick: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, status: true } },
-          },
-        }),
-        prisma.zaloAccount.findMany({
-          where: { orgId: currentUser.orgId },
-          select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, phone: true, status: true },
-          orderBy: [{ status: 'asc' }, { displayName: 'asc' }],
-        }),
-      ]);
+      // 2026-06-10 FIX: dropdown chọn nick gửi — getZaloScope (Trưởng phòng/HR không
+      // thấy nick ngoài quyền) + ẩn nick đã xóa mềm. Union với nick gửi hiện tại để
+      // nick đang chọn vẫn render (dù org-wide ngoài scope cá nhân).
+      const scope = await getZaloScope(currentUser.id, currentUser.orgId, currentUser.role);
+      const org = await prisma.organization.findUnique({
+        where: { id: currentUser.orgId },
+        select: {
+          systemNotifyZaloAccountId: true,
+          systemNotifyNick: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, status: true } },
+        },
+      });
+      const allowIds = scope.isOrgAdmin
+        ? null
+        : Array.from(new Set([...scope.accessibleIds, ...(org?.systemNotifyZaloAccountId ? [org.systemNotifyZaloAccountId] : [])]));
+      const nicks = await prisma.zaloAccount.findMany({
+        where: {
+          orgId: currentUser.orgId,
+          archivedAt: null,
+          ...(allowIds ? { id: { in: allowIds } } : {}),
+        },
+        select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, phone: true, status: true },
+        orderBy: [{ status: 'asc' }, { displayName: 'asc' }],
+      });
 
       return {
         systemNotifyZaloAccountId: org?.systemNotifyZaloAccountId ?? null,
@@ -175,8 +189,13 @@ export async function systemNotifyRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ── POST /recipients/:userId/check-live ───────────────────────────────────
+  // CHECK LIVE (2026-06-10 CEO-review): nick gửi findUser(SĐT user) → UID đúng
+  // góc nhìn nick gửi → đối chiếu TÊN → khớp: set ready + lưu UID; lệch: trả
+  // mismatch + KHÔNG set ready (chống gửi nhầm người như "Song Hào"/"Văn Vỹ").
+  // Thay route lookup-uid cũ (dùng nick nội bộ user tự chọn → nguồn sai).
   app.post(
-    '/api/v1/system-notifications/recipients/:userId/lookup-uid',
+    '/api/v1/system-notifications/recipients/:userId/check-live',
     { preHandler: requireGrant('settings', 'edit') },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const currentUser = request.user!;
@@ -189,121 +208,183 @@ export async function systemNotifyRoutes(app: FastifyInstance): Promise<void> {
         }),
         prisma.user.findFirst({
           where: { id: userId, orgId: currentUser.orgId, isActive: true },
-          select: {
-            id: true,
-            internalContactZaloAccountId: true,
-            internalContactNick: { select: { id: true, phone: true } },
-          },
+          select: { id: true, fullName: true, phone: true },
         }),
       ]);
 
       const senderId = org?.systemNotifyZaloAccountId ?? null;
-      const internalId = targetUser?.internalContactZaloAccountId ?? null;
 
       if (!targetUser) return reply.status(404).send({ error: 'User không tồn tại trong org' });
       if (!senderId) return reply.status(400).send({ error: 'Org chưa chọn nick gửi thông báo hệ thống', status: 'missing_system_sender' });
-      if (!internalId || !targetUser.internalContactNick) {
+      if (!targetUser.phone) {
         await resolveSystemNotifyRecipient(currentUser.orgId, userId);
-        return reply.status(400).send({ error: 'User chưa chọn nick liên lạc nội bộ', status: 'missing_internal_contact' });
+        return reply.status(400).send({ error: 'Nhân viên chưa có SĐT để tìm UID', status: 'missing_internal_phone' });
       }
 
       const sender = await prisma.zaloAccount.findFirst({
         where: { id: senderId, orgId: currentUser.orgId },
-        select: { id: true, status: true, sessionData: true },
+        select: { id: true, status: true },
       });
-      if (!sender || sender.status !== 'connected' || !sender.sessionData) {
+      if (!sender || sender.status !== 'connected') {
         await resolveSystemNotifyRecipient(currentUser.orgId, userId);
         return reply.status(400).send({ error: 'Nick gửi hệ thống đang offline', status: 'sender_disconnected' });
       }
 
-      const phone = normalizePhone(targetUser.internalContactNick.phone);
-      if (!phone) {
-        await resolveSystemNotifyRecipient(currentUser.orgId, userId);
-        return reply.status(400).send({ error: 'Nick liên lạc nội bộ chưa có SĐT để tìm UID', status: 'missing_internal_phone' });
+      // Lấy UID hiện đang lưu (để báo admin biết có thay đổi không)
+      const existing = await prisma.systemNotifyRecipient.findUnique({
+        where: { targetUserId_senderZaloAccountId: { targetUserId: userId, senderZaloAccountId: senderId } },
+        select: { threadIdInSenderView: true },
+      });
+      const previousUid = existing?.threadIdInSenderView ?? null;
+
+      const phone = normalizePhone(targetUser.phone) || targetUser.phone;
+      const outcome = await resolveUidBySenderFindUser(senderId, phone, targetUser.fullName);
+      await logPhoneSearch({
+        orgId: currentUser.orgId, accountId: senderId, userId: currentUser.id, phone,
+        result: outcome.result === 'found' ? 'found_zalo' : outcome.result,
+        foundUid: outcome.uid, errorCode: outcome.errorCode,
+      });
+
+      // Không tìm thấy UID
+      if (!outcome.uid) {
+        const recipient = await prisma.systemNotifyRecipient.upsert({
+          where: { targetUserId_senderZaloAccountId: { targetUserId: userId, senderZaloAccountId: senderId } },
+          create: {
+            orgId: currentUser.orgId, targetUserId: userId, senderZaloAccountId: senderId,
+            status: outcome.result === 'lookup_failed' ? 'lookup_failed' : 'uid_not_found',
+            error: outcome.errorMessage, lastVerifiedAt: new Date(),
+          },
+          update: {
+            status: outcome.result === 'lookup_failed' ? 'lookup_failed' : 'uid_not_found',
+            error: outcome.errorMessage, lastVerifiedAt: new Date(),
+          },
+        });
+        return reply.status(outcome.result === 'lookup_failed' ? 503 : 200).send({
+          ok: false, found: false, verdict: outcome.result === 'lookup_failed' ? 'lookup_failed' : 'no_zalo',
+          error: outcome.errorMessage, recipient,
+        });
       }
 
-      try {
-        const result = await zaloOps.findUser(senderId, phone);
-        const u = (result as Record<string, unknown>) || {};
-        const uid = String(u.uid || u.userId || '') || null;
+      // Tìm thấy UID nhưng TÊN LỆCH → CHẶN, không set ready, báo admin
+      if (!outcome.nameMatched) {
+        const recipient = await prisma.systemNotifyRecipient.upsert({
+          where: { targetUserId_senderZaloAccountId: { targetUserId: userId, senderZaloAccountId: senderId } },
+          create: {
+            orgId: currentUser.orgId, targetUserId: userId, senderZaloAccountId: senderId,
+            status: 'uid_not_found',
+            error: `UID tìm được trỏ tới "${outcome.zaloName}" — KHÔNG khớp nhân viên "${targetUser.fullName}". Đã chặn để tránh gửi nhầm.`,
+            lastVerifiedAt: new Date(),
+          },
+          update: {
+            status: 'uid_not_found',
+            error: `UID tìm được trỏ tới "${outcome.zaloName}" — KHÔNG khớp nhân viên "${targetUser.fullName}". Đã chặn để tránh gửi nhầm.`,
+            lastVerifiedAt: new Date(),
+          },
+        });
+        return reply.send({
+          ok: false, found: true, verdict: 'name_mismatch',
+          uid: outcome.uid, zaloName: outcome.zaloName, userName: targetUser.fullName,
+          previousUid, changed: previousUid !== outcome.uid, recipient,
+        });
+      }
 
-        if (!uid) {
-          await logPhoneSearch({ orgId: currentUser.orgId, accountId: senderId, userId: currentUser.id, phone, result: 'no_zalo', foundUid: null, errorCode: null });
-          const recipient = await prisma.systemNotifyRecipient.upsert({
-            where: { targetUserId_senderZaloAccountId: { targetUserId: userId, senderZaloAccountId: senderId } },
-            create: {
-              orgId: currentUser.orgId,
-              targetUserId: userId,
-              senderZaloAccountId: senderId,
-              internalContactZaloAccountId: internalId,
-              status: 'uid_not_found',
-              error: 'Không tìm thấy UID từ SĐT nick nội bộ',
-            },
-            update: {
-              internalContactZaloAccountId: internalId,
-              threadIdInSenderView: null,
-              status: 'uid_not_found',
-              error: 'Không tìm thấy UID từ SĐT nick nội bộ',
-              lastVerifiedAt: new Date(),
-            },
+      // Khớp tên → set ready + lưu UID đúng
+      const recipient = await prisma.systemNotifyRecipient.upsert({
+        where: { targetUserId_senderZaloAccountId: { targetUserId: userId, senderZaloAccountId: senderId } },
+        create: {
+          orgId: currentUser.orgId, targetUserId: userId, senderZaloAccountId: senderId,
+          threadIdInSenderView: outcome.uid, status: 'ready', error: null, lastVerifiedAt: new Date(),
+        },
+        update: {
+          threadIdInSenderView: outcome.uid, status: 'ready', error: null, lastVerifiedAt: new Date(),
+        },
+      });
+      return reply.send({
+        ok: true, found: true,
+        verdict: previousUid && previousUid !== outcome.uid ? 'updated' : 'pass',
+        uid: outcome.uid, zaloName: outcome.zaloName, userName: targetUser.fullName,
+        previousUid, changed: previousUid !== outcome.uid, recipient,
+      });
+    },
+  );
+
+  // ── POST /recipients/recheck-all ──────────────────────────────────────────
+  // CHECK HÀNG LOẠT (2026-06-10): re-resolve UID toàn bộ recipient theo nick gửi
+  // HIỆN TẠI. Backup khi đổi nick gửi (nick chết / đổi số) — mọi UID per-viewer
+  // đổi theo nick mới. Chạy tuần tự (findUser có rate limit), bỏ qua user no-phone.
+  app.post(
+    '/api/v1/system-notifications/recipients/recheck-all',
+    { preHandler: requireGrant('settings', 'edit') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const currentUser = request.user!;
+      const org = await prisma.organization.findUnique({
+        where: { id: currentUser.orgId },
+        select: { systemNotifyZaloAccountId: true },
+      });
+      const senderId = org?.systemNotifyZaloAccountId ?? null;
+      if (!senderId) return reply.status(400).send({ error: 'Org chưa chọn nick gửi thông báo hệ thống', status: 'missing_system_sender' });
+
+      const sender = await prisma.zaloAccount.findFirst({
+        where: { id: senderId, orgId: currentUser.orgId }, select: { id: true, status: true },
+      });
+      if (!sender || sender.status !== 'connected') {
+        return reply.status(400).send({ error: 'Nick gửi hệ thống đang offline', status: 'sender_disconnected' });
+      }
+
+      const users = await prisma.user.findMany({
+        where: { orgId: currentUser.orgId, isActive: true, phone: { not: null } },
+        select: { id: true, fullName: true, phone: true },
+        orderBy: { fullName: 'asc' },
+      });
+
+      const summary = { total: users.length, ready: 0, updated: 0, mismatch: 0, no_zalo: 0, failed: 0, skipped: 0 };
+      const changes: Array<{ userName: string | null; verdict: string; zaloName: string | null }> = [];
+
+      for (const u of users) {
+        const phone = normalizePhone(u.phone) || u.phone!;
+        const existing = await prisma.systemNotifyRecipient.findUnique({
+          where: { targetUserId_senderZaloAccountId: { targetUserId: u.id, senderZaloAccountId: senderId } },
+          select: { threadIdInSenderView: true },
+        });
+        const previousUid = existing?.threadIdInSenderView ?? null;
+        const outcome = await resolveUidBySenderFindUser(senderId, phone, u.fullName);
+        await logPhoneSearch({
+          orgId: currentUser.orgId, accountId: senderId, userId: currentUser.id, phone,
+          result: outcome.result === 'found' ? 'found_zalo' : outcome.result, foundUid: outcome.uid, errorCode: outcome.errorCode,
+        });
+
+        if (outcome.result === 'lookup_failed') { summary.failed++; continue; }
+        if (!outcome.uid) {
+          summary.no_zalo++;
+          await prisma.systemNotifyRecipient.upsert({
+            where: { targetUserId_senderZaloAccountId: { targetUserId: u.id, senderZaloAccountId: senderId } },
+            create: { orgId: currentUser.orgId, targetUserId: u.id, senderZaloAccountId: senderId, status: 'uid_not_found', error: outcome.errorMessage, lastVerifiedAt: new Date() },
+            update: { status: 'uid_not_found', error: outcome.errorMessage, lastVerifiedAt: new Date() },
           });
-          return { found: false, recipient };
+          continue;
         }
-
-        await logPhoneSearch({ orgId: currentUser.orgId, accountId: senderId, userId: currentUser.id, phone, result: 'found_zalo', foundUid: uid, errorCode: null });
-        const recipient = await prisma.systemNotifyRecipient.upsert({
-          where: { targetUserId_senderZaloAccountId: { targetUserId: userId, senderZaloAccountId: senderId } },
-          create: {
-            orgId: currentUser.orgId,
-            targetUserId: userId,
-            senderZaloAccountId: senderId,
-            internalContactZaloAccountId: internalId,
-            threadIdInSenderView: uid,
-            status: 'ready',
-            error: null,
-            lastVerifiedAt: new Date(),
-          },
-          update: {
-            internalContactZaloAccountId: internalId,
-            threadIdInSenderView: uid,
-            status: 'ready',
-            error: null,
-            lastVerifiedAt: new Date(),
-          },
+        if (!outcome.nameMatched) {
+          summary.mismatch++;
+          changes.push({ userName: u.fullName, verdict: 'name_mismatch', zaloName: outcome.zaloName });
+          await prisma.systemNotifyRecipient.upsert({
+            where: { targetUserId_senderZaloAccountId: { targetUserId: u.id, senderZaloAccountId: senderId } },
+            create: { orgId: currentUser.orgId, targetUserId: u.id, senderZaloAccountId: senderId, status: 'uid_not_found', error: `UID trỏ tới "${outcome.zaloName}" KHÔNG khớp "${u.fullName}"`, lastVerifiedAt: new Date() },
+            update: { status: 'uid_not_found', error: `UID trỏ tới "${outcome.zaloName}" KHÔNG khớp "${u.fullName}"`, lastVerifiedAt: new Date() },
+          });
+          continue;
+        }
+        const changed = previousUid !== null && previousUid !== outcome.uid;
+        if (changed) { summary.updated++; changes.push({ userName: u.fullName, verdict: 'updated', zaloName: outcome.zaloName }); }
+        else summary.ready++;
+        await prisma.systemNotifyRecipient.upsert({
+          where: { targetUserId_senderZaloAccountId: { targetUserId: u.id, senderZaloAccountId: senderId } },
+          create: { orgId: currentUser.orgId, targetUserId: u.id, senderZaloAccountId: senderId, threadIdInSenderView: outcome.uid, status: 'ready', error: null, lastVerifiedAt: new Date() },
+          update: { threadIdInSenderView: outcome.uid, status: 'ready', error: null, lastVerifiedAt: new Date() },
         });
-
-        return {
-          found: true,
-          uid,
-          zaloName: String(u.zaloName || u.zalo_name || u.displayName || u.display_name || '') || null,
-          username: String(u.username || '') || null,
-          globalId: String(u.globalId || '') || null,
-          avatar: String(u.avatar || '') || null,
-          recipient,
-        };
-      } catch (err: unknown) {
-        const e = err as { code?: string; message?: string };
-        const result = e?.code === 'NOT_CONNECTED' || e?.code === 'RATE_LIMITED' ? 'rate_limited' : 'no_zalo';
-        await logPhoneSearch({ orgId: currentUser.orgId, accountId: senderId, userId: currentUser.id, phone, result, foundUid: null, errorCode: e?.code ?? null });
-        const recipient = await prisma.systemNotifyRecipient.upsert({
-          where: { targetUserId_senderZaloAccountId: { targetUserId: userId, senderZaloAccountId: senderId } },
-          create: {
-            orgId: currentUser.orgId,
-            targetUserId: userId,
-            senderZaloAccountId: senderId,
-            internalContactZaloAccountId: internalId,
-            status: 'lookup_failed',
-            error: e?.message || String(err),
-          },
-          update: {
-            internalContactZaloAccountId: internalId,
-            status: 'lookup_failed',
-            error: e?.message || String(err),
-            lastVerifiedAt: new Date(),
-          },
-        });
-        return reply.status(503).send({ found: false, status: 'lookup_failed', error: recipient.error, recipient });
       }
+
+      logger.info(`[system-notify] recheck-all org=${currentUser.orgId}: ${JSON.stringify(summary)}`);
+      return { ok: true, summary, changes };
     },
   );
 

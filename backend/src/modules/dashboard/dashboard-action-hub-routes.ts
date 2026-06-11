@@ -63,7 +63,7 @@ async function splitByPrivacy(
   countFn: (zaloAccountIds: string[]) => Promise<number>,
 ): Promise<PrivacySplit> {
   const nicks = await prisma.zaloAccount.findMany({
-    where: { orgId, ownerUserId },
+    where: { orgId, ownerUserId, archivedAt: null },
     select: { id: true, privacyMode: true },
   });
   const publicIds = nicks.filter((n) => n.privacyMode === 'sub').map((n) => n.id);
@@ -202,7 +202,7 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
       // Urgent list — top 5 conversation chưa rep, chỉ nick public (privacy blur
       // ở client cho main-nick, BE không trả nội dung của main-nick)
       const publicNicks = await prisma.zaloAccount.findMany({
-        where: { orgId: viewer.orgId, ownerUserId: targetUserId, privacyMode: 'sub' },
+        where: { orgId: viewer.orgId, ownerUserId: targetUserId, privacyMode: 'sub', archivedAt: null },
         select: { id: true },
       });
       // Urgent list — CRM rule 2026-05-29: "🔥 Cần rep gấp" chỉ rep với user 1-1.
@@ -255,7 +255,7 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
 
       // Quota nick — count msg today + friend req today per nick (public only)
       const quotaNicks = await prisma.zaloAccount.findMany({
-        where: { orgId: viewer.orgId, ownerUserId: targetUserId },
+        where: { orgId: viewer.orgId, ownerUserId: targetUserId, archivedAt: null },
         select: {
           id: true,
           displayName: true,
@@ -443,9 +443,9 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
             }),
           ]);
 
-          // Has private nick?
+          // Has private nick? (2026-06-10: bỏ nick đã xóa mềm)
           const privateCount = await prisma.zaloAccount.count({
-            where: { orgId: viewer.orgId, ownerUserId: u.id, privacyMode: 'main' },
+            where: { orgId: viewer.orgId, ownerUserId: u.id, privacyMode: 'main', archivedAt: null },
           });
 
           return {
@@ -529,13 +529,14 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
       // Nick health 50 nick
       const [nicksHealthy, nicksOverlimit, nicksBanned, nicksOffline, nicksPrivate, totalNicks] =
         await Promise.all([
-          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, status: 'connected' } }),
+          // 2026-06-10: nick health KPI bỏ nick đã xóa mềm (archivedAt).
+          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, status: 'connected', archivedAt: null } }),
           // overlimit: TODO — chưa có flag, tạm 0
           Promise.resolve(0),
-          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, status: 'banned' } }),
-          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, status: 'disconnected' } }),
-          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, privacyMode: 'main' } }),
-          prisma.zaloAccount.count({ where: { orgId: viewer.orgId } }),
+          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, status: 'banned', archivedAt: null } }),
+          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, status: 'disconnected', archivedAt: null } }),
+          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, privacyMode: 'main', archivedAt: null } }),
+          prisma.zaloAccount.count({ where: { orgId: viewer.orgId, archivedAt: null } }),
         ]);
 
       // Department ranking — chốt tháng + DT (DT chưa có schema, để 0)

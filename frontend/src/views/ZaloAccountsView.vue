@@ -44,17 +44,16 @@
           ({{ privacyCounter.used }}/{{ privacyCounter.max }})
         </span>
       </button>
+      <!-- GỠ 2026-06-10 (CEO-review): tab "Sửa nick nhận thông báo" (setup thủ công)
+           đã bỏ — gây bug gửi nhầm UID. Nick nhận giờ chỉ đến từ luồng tạo user bằng SĐT
+           + Check Live ở trang Thông báo hệ thống. Ẩn nút, không cho vào tab. -->
       <button
-        v-if="canManageZalo"
+        v-if="false"
         class="za-tab"
         :class="{ active: activeTab === 'internal-contact' }"
         @click="setTab('internal-contact')"
-        title="Chỉ admin/owner — sale không truy cập tab này. Dùng để sửa nick nhận thông báo sau khi đã tạo user."
       >
         🏠 Sửa nick nhận thông báo
-        <span v-if="internalContactBadge" class="za-tab-counter" :class="{ full: !internalContactReady }">
-          {{ internalContactBadge }}
-        </span>
       </button>
     </div>
 
@@ -72,9 +71,16 @@
 
     <!-- ===== TAB ĐƠN GIẢN: grid card ===== -->
     <template v-if="viewMode === 'simple'">
+      <!-- Mục 1 (2026-06-11): chuyển nhóm theo trạng thái ↔ theo người dùng -->
+      <div class="za-groupby">
+        <span class="za-groupby-lbl">Nhóm theo:</span>
+        <button class="za-groupby-opt" :class="{ active: simpleGroupBy === 'status' }" @click="simpleGroupBy = 'status'">Trạng thái</button>
+        <button class="za-groupby-opt" :class="{ active: simpleGroupBy === 'owner' }" @click="simpleGroupBy = 'owner'">Người dùng</button>
+      </div>
       <NickGridCards
         :accounts="visibleAccounts"
         :reconnecting-ids="reconnectingIds"
+        :group-by="simpleGroupBy"
         @reconnect="onCardReconnect"
         @delete="onConfirmDelete"
         @disconnect="onCardDisconnect"
@@ -306,6 +312,8 @@ function limitFor(nickId: string, category: string): number {
 // Local UI state
 // 2026-06-09: sub-tab Đơn giản (grid card sale) / Nâng cao (bảng admin). Mặc định Đơn giản.
 const viewMode = ref<'simple' | 'advanced'>('simple');
+// Mục 1 (2026-06-11): nhóm grid card theo trạng thái (mặc định) hoặc theo người dùng.
+const simpleGroupBy = ref<'status' | 'owner'>('status');
 // Wizard kết nối 4 bước (thay 2 dialog Add+QR cũ).
 const wizardOpen = ref(false);
 const wizardStep = ref<'phone' | 'confirm' | 'qr' | 'done'>('phone');
@@ -334,8 +342,10 @@ const reconnectingIds = ref<Set<string>>(new Set());
 // RBAC 2026-06-08 — quản lý nick + sửa liên lạc nội bộ của sale theo grants 'zalo_account.edit'
 // (owner/admin tự bypass). Thay cho check legacy role.
 const canManageZalo = computed(() => authStore.canAccess('zalo_account', 'edit'));
+// GỠ 2026-06-10 (CEO-review): bỏ 'internal-contact' khỏi tab hợp lệ — URL hack
+// ?tab=internal-contact sẽ rơi về 'manage'. Cơ chế setup thủ công đã gỡ.
 type TabKey = 'manage' | 'privacy' | 'internal-contact';
-const VALID_TABS: TabKey[] = ['manage', 'privacy', 'internal-contact'];
+const VALID_TABS: TabKey[] = ['manage', 'privacy'];
 const activeTab = ref<TabKey>(VALID_TABS.includes(route.query.tab as TabKey) ? (route.query.tab as TabKey) : 'manage');
 function setTab(t: TabKey) {
   activeTab.value = t;
@@ -573,7 +583,7 @@ async function onCardReconnect(account: any) {
   }
 }
 function onConfirmDelete(account: any) {
-  // Mở modal xác nhận (giống tab nâng cao) — có checkbox "Xoá khỏi CRM".
+  // Mở modal xác nhận (giống tab nâng cao) — có checkbox "Xoá khỏi CRM" (purge).
   deleteTargetId.value = account.id;
   deletePurge.value = false;
   showDeleteDialog.value = true;
@@ -774,6 +784,17 @@ onMounted(async () => {
   color: #5E6AD2; background: #FFFFFF;
   box-shadow: 0 1px 2px rgba(16,24,40,.08);
 }
+
+/* Mục 1 — gạt nhóm theo trạng thái / người dùng (atlas v2) */
+.za-groupby { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+.za-groupby-lbl { font-size: 12.5px; color: #6b7280; font-weight: 600; margin-right: 2px; }
+.za-groupby-opt {
+  background: #fff; border: 1px solid #e5e7eb; cursor: pointer;
+  padding: 6px 14px; font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: #6b7280; border-radius: 8px; transition: all .15s;
+}
+.za-groupby-opt:hover { border-color: #c7d2fe; color: #374151; }
+.za-groupby-opt.active { background: #eef0ff; border-color: #5e6ad2; color: #5e6ad2; }
 
 /* Phase 4 redesign 2026-05-22: filter chip Phòng ban + group-by toggle */
 .chip-multi { position: relative; }

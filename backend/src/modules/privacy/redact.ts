@@ -126,6 +126,36 @@ export async function shouldRedactContactPii(
 }
 
 /**
+ * Batch: trả Set các contactId "phạm" — tức có ≥1 Friend row thuộc nick main mà
+ * viewer KHÔNG phải owner-đã-unlock. Dùng cho list/search endpoint để redact PII
+ * mà KHÔNG gọi shouldRedactContactPii từng contact (tránh N+1). 1 query duy nhất.
+ *
+ * 2026-06-11 (audit Đợt 2). Fail-closed: thiếu orgId → coi như tất cả phạm.
+ */
+export async function buildOffendingContactIds(
+  contactIds: string[],
+  ctx: PrivacyContext,
+): Promise<Set<string>> {
+  if (!ctx.orgId) return new Set(contactIds); // không có org context → redact hết
+  if (contactIds.length === 0) return new Set();
+  const rows = await prisma.friend.findMany({
+    where: {
+      orgId: ctx.orgId,
+      contactId: { in: contactIds },
+      zaloAccount: {
+        orgId: ctx.orgId,
+        privacyMode: 'main',
+        // Owner-đã-unlock → nick của mình không "phạm". Nếu chưa unlock thì kể cả
+        // nick mình cũng phạm (chưa mở khóa thì chưa xem).
+        ownerUserId: ctx.privacyUnlocked && ctx.viewerUserId ? { not: ctx.viewerUserId } : undefined,
+      },
+    },
+    select: { contactId: true },
+  });
+  return new Set(rows.map((r) => r.contactId).filter((id): id is string => !!id));
+}
+
+/**
  * Redact Contact object — CODEX REVIEW P1 #2 FIX: allowlist pattern.
  * Chỉ trả ID + score/metadata aggregate. Mọi PII strip.
  *
@@ -180,24 +210,59 @@ export function redactContact(contact: any, ctx?: PrivacyContext): any {
 }
 
 /**
- * Redact Friend row — blur display name + alias nếu thuộc main-nick non-owned.
+ * Redact Friend row — blur MỌI field content/PII nếu thuộc main-nick non-owned.
+ *
+ * 2026-06-11 (audit C7/H4/H11): trước đây chỉ blur aliasInNick + zaloUidInNick →
+ * còn lộ preview tin nhắn (lastInbound/OutboundPreview), tên Zalo KH (zaloDisplayName),
+ * định danh (zaloGlobalId/zaloUsername), avatar, và Contact PII nhúng. Giờ blur hết
+ * theo allowlist-ish (giữ metadata an toàn, blur content-bearing).
+ *
+ * Fail-closed: nếu privacyMode undefined (select thiếu) → coi như main → redact.
  */
 export function redactFriend<T extends {
   aliasInNick?: string | null;
   zaloUidInNick?: string | null;
 }>(
-  friend: T & { zaloAccount: { privacyMode: string; ownerUserId: string } },
+  friend: T & { zaloAccount?: { privacyMode?: string; ownerUserId?: string | null } | null },
   ctx: PrivacyContext,
 ): T & { redacted?: boolean } {
-  if (friend.zaloAccount.privacyMode !== 'main') return friend;
-  const isOwner = friend.zaloAccount.ownerUserId === ctx.viewerUserId;
-  if (isOwner && ctx.privacyUnlocked) return friend;
-  return {
-    ...friend,
-    aliasInNick: BLUR_TOKEN,
-    zaloUidInNick: null,
-    redacted: true,
-  } as any;
+  const pm = friend.zaloAccount?.privacyMode;
+  // Nick 'sub' (Thường) rõ ràng → không blur. Mọi trường hợp còn lại (main HOẶC
+  // undefined do select thiếu) → đi tiếp để fail-closed.
+  if (pm === 'sub') return friend;
+  if (pm === 'main' || pm === undefined) {
+    const isOwner = !!ctx.viewerUserId && friend.zaloAccount?.ownerUserId === ctx.viewerUserId;
+    if (pm === 'main' && isOwner && ctx.privacyUnlocked) return friend;
+    // Blur content-bearing + PII. Giữ id/timestamp/counter/score (metadata an toàn).
+    const f = friend as any;
+    const redactedContact = f.contact
+      ? {
+          ...f.contact,
+          fullName: BLUR_TOKEN,
+          crmName: f.contact.crmName != null ? BLUR_TOKEN : f.contact.crmName,
+          phone: null,
+          email: null,
+          avatarUrl: null,
+          redacted: true,
+        }
+      : f.contact;
+    return {
+      ...friend,
+      aliasInNick: BLUR_TOKEN,
+      zaloUidInNick: null,
+      // Preview tin nhắn — KHÔNG để lộ nội dung trao đổi.
+      lastInboundPreview: f.lastInboundPreview != null ? BLUR_TOKEN : f.lastInboundPreview,
+      lastOutboundPreview: f.lastOutboundPreview != null ? BLUR_TOKEN : f.lastOutboundPreview,
+      // Danh tính Zalo của KH.
+      zaloDisplayName: f.zaloDisplayName != null ? BLUR_TOKEN : f.zaloDisplayName,
+      zaloGlobalId: null,
+      zaloUsername: null,
+      zaloAvatarUrl: null,
+      contact: redactedContact,
+      redacted: true,
+    } as any;
+  }
+  return friend;
 }
 
 /**

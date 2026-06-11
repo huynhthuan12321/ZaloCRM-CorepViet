@@ -178,6 +178,20 @@
           <button class="ml-create-btn" type="button" @click="startCreate">
             <span>＋</span> Tạo thư mục mới
           </button>
+
+          <!-- Mục 2: nút nhỏ gọn tự tạo thư mục theo nick — tooltip rê chuột -->
+          <button
+            class="ml-sync-btn"
+            type="button"
+            :disabled="syncing"
+            title="Tự tạo một thư mục cho mỗi người dùng có nick Zalo, gom các nick của họ. Đồng bộ thông minh — không xoá thư mục bạn đã chỉnh tay."
+            @click="onSyncByOwner"
+          >
+            <svg v-if="!syncing" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17v-6h-6"/><path d="M21 7a9 9 0 0 0-15-3M3 17a9 9 0 0 0 15 3"/></svg>
+            <span v-else class="ml-sync-spin">⟳</span>
+            {{ syncing ? 'Đang cập nhật…' : 'Cập nhật thư mục theo nick' }}
+          </button>
+          <div v-if="syncMsg" class="ml-sync-msg">{{ syncMsg }}</div>
         </div>
 
         <!-- RIGHT: nick grid + edit -->
@@ -208,9 +222,16 @@
                 <span>Chọn nick thuộc thư mục</span>
                 <span class="selected-count">{{ formAccountIds.size }} đã chọn</span>
               </div>
-              <div class="ml-nick-search">
-                <span class="ic">🔍</span>
-                <input v-model="nickSearch" type="text" placeholder="Tìm nick..." />
+              <div class="ml-nick-controls">
+                <!-- Mục 3: lọc nick grid theo user -->
+                <select v-model="nickOwnerFilter" class="ml-owner-select">
+                  <option value="all">Tất cả người dùng</option>
+                  <option v-for="o in ownerOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
+                </select>
+                <div class="ml-nick-search">
+                  <span class="ic">🔍</span>
+                  <input v-model="nickSearch" type="text" placeholder="Tìm nick..." />
+                </div>
               </div>
             </div>
 
@@ -224,16 +245,23 @@
                 :key="acc.id"
                 type="button"
                 class="nick-card"
-                :class="{ selected: formAccountIds.has(acc.id) }"
+                :class="[nickStateClass(acc), { selected: formAccountIds.has(acc.id) }]"
                 @click="toggleAccount(acc.id)"
               >
                 <div class="nick-check"><span v-if="formAccountIds.has(acc.id)">✓</span></div>
-                <img v-if="acc.avatarUrl" :src="acc.avatarUrl" class="nick-avatar-img" :alt="acc.displayName || ''" />
-                <div v-else class="nick-avatar" :style="{ background: accountGradient(acc.id) }">{{ initials(acc.displayName) }}</div>
-                <div class="nick-name" :title="acc.displayName || ''">{{ acc.displayName || 'Chưa đặt tên' }}</div>
-                <div class="nick-meta">
-                  <span class="dot" :class="{ red: (acc.liveStatus || acc.status) !== 'connected' }"></span>
-                  {{ (acc.liveStatus || acc.status) === 'connected' ? 'Active' : 'Offline' }}
+                <div class="nick-head">
+                  <img v-if="acc.avatarUrl" :src="acc.avatarUrl" class="nick-avatar-img" :alt="acc.displayName || ''" />
+                  <div v-else class="nick-avatar" :style="{ background: accountGradient(acc.id) }">{{ initials(acc.displayName) }}</div>
+                  <div class="nick-id">
+                    <div class="nick-name" :title="acc.displayName || ''">{{ acc.displayName || 'Chưa đặt tên' }}</div>
+                    <div class="nick-phone">{{ acc.phone || '— chưa có SĐT' }}</div>
+                  </div>
+                </div>
+                <div class="nick-foot">
+                  <span class="nick-status" :class="nickStateClass(acc)">
+                    <span class="dot"></span>{{ nickStateLabel(acc) }}
+                  </span>
+                  <span v-if="acc.owner" class="nick-owner" :title="acc.owner.fullName || acc.owner.email">{{ lastWord(acc.owner.fullName || acc.owner.email) }}</span>
                 </div>
               </button>
             </div>
@@ -393,14 +421,66 @@ const editingFolder = computed<AccountFolder | null>(() => {
   return folders.value.find((x) => x.id === selectedFolderId.value) || null;
 });
 
+// 2026-06-11 (mục 3) — lọc nick grid theo user (owner). Dropdown phía trên grid.
+const nickOwnerFilter = ref<string>('all');
+const ownerOptions = computed(() => {
+  const map = new Map<string, string>();
+  for (const a of accounts.value) {
+    const oid = (a as any).ownerUserId ?? a.owner?.id;
+    if (oid && !map.has(oid)) map.set(oid, a.owner?.fullName || a.owner?.email || 'Không tên');
+  }
+  return Array.from(map.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((x, y) => x.name.localeCompare(y.name));
+});
+
 const filteredAccounts = computed<ZaloAccount[]>(() => {
   const q = nickSearch.value.trim().toLowerCase();
-  if (!q) return accounts.value;
-  return accounts.value.filter((a) =>
-    (a.displayName || '').toLowerCase().includes(q) ||
-    (a.phone || '').toLowerCase().includes(q)
-  );
+  const owner = nickOwnerFilter.value;
+  return accounts.value.filter((a) => {
+    if (owner !== 'all') {
+      const oid = (a as any).ownerUserId ?? a.owner?.id;
+      if (oid !== owner) return false;
+    }
+    if (!q) return true;
+    return (
+      (a.displayName || '').toLowerCase().includes(q) ||
+      (a.phone || '').toLowerCase().includes(q)
+    );
+  });
 });
+
+// Trạng thái nick → class viền + nhãn (atlas v2). connected=online, qr_pending=pending, còn lại=offline.
+function nickStateClass(a: ZaloAccount): string {
+  const s = (a as any).liveStatus ?? a.status;
+  if (s === 'connected') return 'is-online';
+  if (s === 'qr_pending') return 'is-pending';
+  return 'is-offline';
+}
+function nickStateLabel(a: ZaloAccount): string {
+  const s = (a as any).liveStatus ?? a.status;
+  if (s === 'connected') return 'Online';
+  if (s === 'qr_pending') return 'Chờ đăng nhập';
+  return 'Offline';
+}
+
+// ─── Mục 2: nút Cập nhật thư mục theo nick (sync-by-owner) ───────────────
+const syncing = ref(false);
+const syncMsg = ref('');
+async function onSyncByOwner() {
+  if (syncing.value) return;
+  syncing.value = true;
+  syncMsg.value = '';
+  try {
+    const r = await props.filters.syncFoldersByOwner();
+    syncMsg.value = `Đã tạo ${r.createdFolders} thư mục, thêm ${r.addedMembers} nick (${r.ownersWithNicks} người dùng có nick).`;
+    setTimeout(() => { syncMsg.value = ''; }, 6000);
+  } catch {
+    syncMsg.value = 'Cập nhật thất bại, vui lòng thử lại.';
+  } finally {
+    syncing.value = false;
+  }
+}
 
 const canSave = computed(() => {
   if (!formName.value.trim()) return false;
@@ -495,6 +575,13 @@ function initials(name: string | null): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0][0]?.toUpperCase() || '?';
   return (parts[0][0] + (parts[parts.length - 1][0] || '')).toUpperCase();
+}
+
+// Tên ngắn của owner cho chip góc card (vd "Phạm Chí Thành" → "Thành").
+function lastWord(name: string | null | undefined): string {
+  if (!name) return '';
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] || '';
 }
 
 const AVATAR_GRADIENTS = [
@@ -1034,6 +1121,53 @@ onMounted(() => {
 }
 .ml-create-btn:hover { border-color: #5E6AD2; background: #EEF0FF; }
 
+/* Mục 2 — nút Cập nhật thư mục theo nick (nhỏ gọn, atlas v2 indigo) */
+.ml-sync-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 12px;
+  margin-top: 6px;
+  background: #5E6AD2;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  justify-content: center;
+  transition: background 0.12s;
+}
+.ml-sync-btn:hover:not(:disabled) { background: #4f5bc4; }
+.ml-sync-btn:disabled { opacity: 0.7; cursor: default; }
+.ml-sync-spin { display: inline-block; animation: ml-spin 0.8s linear infinite; }
+@keyframes ml-spin { to { transform: rotate(360deg); } }
+.ml-sync-msg {
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: #047857;
+  background: #e6f7ef;
+  border: 1px solid #a7f3d0;
+  border-radius: 7px;
+  padding: 6px 9px;
+  line-height: 1.4;
+}
+
+/* Mục 3 — dropdown lọc nick theo user */
+.ml-nick-controls { display: flex; align-items: center; gap: 8px; }
+.ml-owner-select {
+  border: 1px solid #E4E5E9;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: #374151;
+  background: #fff;
+  font-family: inherit;
+  max-width: 170px;
+}
+
 .ml-edit {
   padding: 20px 24px;
   overflow-y: auto;
@@ -1154,89 +1288,98 @@ onMounted(() => {
   font-style: italic;
 }
 
+/* Mục 3 — picker grid 3 ô/hàng (atlas v2): avatar + tên + SĐT + status + viền màu */
 .nick-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 @media (max-width: 720px) {
-  .nick-grid { grid-template-columns: repeat(3, 1fr); }
+  .nick-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 .nick-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 14px 8px 12px;
+  gap: 8px;
+  padding: 11px 12px;
   background: white;
-  border: 1.5px solid #E4E5E9;
-  border-radius: 8px;
+  border: 2px solid #E4E5E9;
+  border-radius: 12px;
   cursor: pointer;
   position: relative;
-  transition: all 0.12s;
-  text-align: center;
+  transition: box-shadow 0.12s, transform 0.12s;
+  text-align: left;
   font-family: inherit;
 }
 .nick-card:hover {
-  border-color: #D4D6DB;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
 }
-.nick-card.selected {
-  border-color: #5E6AD2;
-  background: #EEF0FF;
-  box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.15);
-}
+/* Viền theo trạng thái (atlas v2 thật) */
+.nick-card.is-online  { border-color: #12b76a; }
+.nick-card.is-pending { border-color: #f5a524; }
+.nick-card.is-offline { border-color: #f04438; }
+.nick-card.selected { background: #f5f7ff; box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.18); }
+
 .nick-card .nick-check {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid #E4E5E9;
-  border-radius: 5px;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #cbd5e1;
+  border-radius: 6px;
   background: white;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 .nick-card.selected .nick-check { background: #5E6AD2; border-color: #5E6AD2; }
+
+.nick-card .nick-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .nick-card .nick-avatar,
 .nick-card .nick-avatar-img {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   font-family: inherit;
   object-fit: cover;
 }
+.nick-card .nick-id { min-width: 0; }
 .nick-card .nick-name {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #1F2D3D;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  width: 100%;
 }
-.nick-card .nick-meta {
-  font-size: 10px;
-  color: #97A0AC;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.nick-card .nick-phone {
+  font-size: 12px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
 }
-.nick-card .nick-meta .dot { width: 4px; height: 4px; border-radius: 50%; background: #10B981; }
-.nick-card .nick-meta .dot.red { background: #EF4444; }
+.nick-card .nick-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.nick-card .nick-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+}
+.nick-card .nick-status .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.nick-card .nick-status.is-online  { background: #e6f7ef; color: #047857; }
+.nick-card .nick-status.is-pending { background: #fef4e6; color: #b45309; }
+.nick-card .nick-status.is-offline { background: #fde8e6; color: #b42318; }
+.nick-card .nick-owner { font-size: 10.5px; color: #94a3b8; white-space: nowrap; }
 
 /* ═════════ FOOTER ═════════ */
 .modal-footer {

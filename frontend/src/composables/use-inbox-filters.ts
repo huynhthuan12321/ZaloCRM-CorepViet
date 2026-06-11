@@ -195,6 +195,14 @@ export function useInboxFilters() {
     await fetchFolders();
   }
 
+  // 2026-06-11 — Tự tạo thư mục theo nick: mỗi sale có nick → 1 thư mục (đồng bộ
+  // thông minh, không xóa chỉnh tay). Trả { ownersWithNicks, createdFolders, addedMembers }.
+  async function syncFoldersByOwner() {
+    const { data } = await api.post('/account-folders/sync-by-owner');
+    await fetchFolders();
+    return data as { ok: boolean; ownersWithNicks: number; createdFolders: number; addedMembers: number };
+  }
+
   // ─── Preset API ───────────────────────────────────────────────────────
   async function fetchPresets() {
     const { data } = await api.get('/filter-presets');
@@ -530,6 +538,7 @@ export function useInboxFilters() {
     deleteFolder,
     setFolderMembers,
     reorderFolders,
+    syncFoldersByOwner,
     // Preset API
     fetchPresets,
     createPreset,

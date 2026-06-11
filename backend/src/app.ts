@@ -59,6 +59,7 @@ import { zaloDashboardRoutes } from './modules/zalo/zalo-dashboard-routes.js';
 import { zaloPool } from './modules/zalo/zalo-pool.js';
 import { registerZaloSocketHandlers } from './modules/zalo/zalo-socket.js';
 import { registerSocketAuth } from './shared/realtime/socket-auth.js';
+import { registerPrivacyLeakGuard } from './modules/privacy/privacy-leak-guard.js';
 import { registerSecurityHeaders } from './shared/security/security-headers.js';
 import { notificationRoutes } from './modules/notifications/notification-routes.js';
 import { searchRoutes } from './modules/search/search-routes.js';
@@ -186,6 +187,11 @@ async function bootstrap() {
 
   // Register chat Socket.IO event handlers
   registerChatSocketHandlers(io);
+
+  // PRIVACY 2026-06-11 (Đợt 3.1) — guard giám sát rò rỉ: onSend toàn cục, quét
+  // response route content/mixed, CẢNH BÁO (không tự sửa) nếu nick main chưa redact.
+  // Đăng ký TRƯỚC routes để áp cho mọi route đăng ký sau.
+  registerPrivacyLeakGuard(app);
 
   // ── Routes ────────────────────────────────────────────────────────────────
 
@@ -360,9 +366,8 @@ async function bootstrap() {
       const { startAutoTagsAggregateCron } = await import('./modules/tags/contact-autotags-dirty.js');
       startAutoTagsAggregateCron();
     }
-    // Phase Internal Contact 2-method 2026-05-23 — cleanup pending handshake > 7 ngày (3am daily)
-    const { startInternalContactCleanupCron } = await import('./modules/system-notifications/internal-contact-service.js');
-    startInternalContactCleanupCron();
+    // XÓA 2026-06-10 (CEO-review): cron cleanup handshake pending — cơ chế setup nick
+    // nội bộ thủ công đã gỡ bỏ (gây bug gửi nhầm UID). Không còn handshake pending để dọn.
     // Phase Lead Pool 2026-05-24 — auto-return expired leads 2am daily
     startLeadPoolCron();
     // Phase Multi-Source Lead Ads 2026-05-27 — outbox worker (LISTEN/NOTIFY + 30s poll)

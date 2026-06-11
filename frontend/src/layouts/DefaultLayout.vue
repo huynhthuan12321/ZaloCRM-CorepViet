@@ -46,28 +46,19 @@
               <v-icon icon="mdi-cog-outline" size="16" class="ic-svg" />Cài đặt<span class="caret">▾</span>
             </button>
           </template>
-          <v-list density="compact" min-width="240">
-            <v-list-item to="/settings/personal/profile" title="Hồ sơ của tôi" prepend-icon="mdi-account-circle-outline" />
-            <!-- RBAC 2026-06-08 — lọc per-item theo grants; subheader/divider chỉ hiện khi nhóm còn item con. -->
-            <template v-if="showOrgGroup">
-              <v-divider />
-              <v-list-subheader>Tổ chức &amp; Nhân sự</v-list-subheader>
-              <v-list-item v-if="authStore.canAccess('user')" to="/settings/team/users" title="Nhân viên" prepend-icon="mdi-account-cog-outline" />
-              <v-list-item v-if="authStore.canAccess('department')" to="/settings/team/teams" title="Đội nhóm" prepend-icon="mdi-account-group-outline" />
-              <v-list-item v-if="authStore.canAccess('permission_group')" to="/settings/team/roles" title="Vai trò &amp; Phân quyền" prepend-icon="mdi-shield-account-outline" />
-            </template>
-            <template v-if="showCrmGroup">
-              <v-divider />
-              <v-list-subheader>CRM &amp; Kênh</v-list-subheader>
-              <v-list-item v-if="authStore.canAccess('settings')" to="/settings/crm/tags" title="Tag CRM" prepend-icon="mdi-tag-multiple-outline" />
-              <v-list-item v-if="authStore.canAccess('settings')" to="/settings/crm/scoring" title="Lead scoring" prepend-icon="mdi-chart-line" />
-              <v-list-item v-if="authStore.canAccess('zalo_account')" to="/settings/channels/zalo" title="Tài khoản Zalo" prepend-icon="mdi-cellphone-link" />
-              <v-list-item v-if="authStore.canAccess('settings')" to="/settings/channels/integrations" title="Tích hợp" prepend-icon="mdi-connection" />
-            </template>
-            <template v-if="authStore.canAccess('webhook')">
-              <v-divider />
-              <v-list-item to="/settings/dev/api" title="API &amp; Webhook" prepend-icon="mdi-api" />
-            </template>
+          <!-- Dropdown = LỐI TẮT (2026-06-10 CEO-review): 7 mục hay dùng, route mới
+               đồng bộ sidebar (bỏ /settings/team/* legacy + Tag cũ). Lọc theo grants.
+               Đầy đủ menu ở "Xem tất cả cài đặt". -->
+          <v-list density="compact" min-width="248">
+            <v-list-subheader>Lối tắt hay dùng</v-list-subheader>
+            <v-list-item to="/settings/personal/profile" title="Hồ sơ của tôi" prepend-icon="mdi-account-outline" />
+            <v-list-item v-if="authStore.canAccess('user')" to="/settings/rbac/users" title="Nhân viên" prepend-icon="mdi-account-group-outline" />
+            <v-list-item v-if="authStore.canAccess('permission_group')" to="/settings/rbac/permission-groups" title="Phân quyền" prepend-icon="mdi-shield-account-outline" />
+            <v-divider />
+            <v-list-item v-if="authStore.canAccess('zalo_account')" to="/settings/channels/zalo" title="Tài khoản Zalo" prepend-icon="mdi-cellphone-link" />
+            <v-list-item v-if="authStore.canAccess('settings')" to="/settings/crm/tags-v2" title="Nhãn KH" prepend-icon="mdi-tag-multiple-outline" />
+            <v-list-item v-if="authStore.canAccess('settings')" to="/settings/org/system-notifications" title="Thông báo hệ thống" prepend-icon="mdi-bell-cog-outline" />
+            <v-list-item v-if="authStore.canAccess('settings')" to="/settings/channels/facebook-leadads" title="Facebook Lead Ads" prepend-icon="mdi-facebook" />
             <v-divider />
             <v-list-item to="/settings" title="Xem tất cả cài đặt" prepend-icon="mdi-cog-outline" />
           </v-list>
@@ -266,13 +257,8 @@ const visiblePrimaryTabs = computed(() => {
   }
   return tabs;
 });
-// Subheader nhóm trong dropdown Cài đặt chỉ hiện khi còn item con — tránh subheader mồ côi.
-const showOrgGroup = computed(
-  () => authStore.canAccess('user') || authStore.canAccess('department') || authStore.canAccess('permission_group'),
-);
-const showCrmGroup = computed(
-  () => authStore.canAccess('settings') || authStore.canAccess('zalo_account'),
-);
+// (2026-06-10) Bỏ showOrgGroup/showCrmGroup — dropdown redesign thành lối tắt phẳng,
+// lọc per-item theo grants trực tiếp, không còn subheader nhóm cần gate.
 
 function isActive(tab: NavTab): boolean {
   if (tab.matchPrefix === '/$') return route.path === '/';

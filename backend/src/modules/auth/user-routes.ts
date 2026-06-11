@@ -566,127 +566,13 @@ export async function userRoutes(app: FastifyInstance) {
     };
   });
 
-  // Phase user-create-with-zalo 2026-05-27 — admin-only mutation: sale không tự sửa nick
-  // nhận thông báo nữa (admin sửa thay khi cần). GET vẫn allow để badge + counter chạy.
-  const requireAdminForInternalContact = (request: FastifyRequest, reply: FastifyReply): boolean => {
-    if (!['owner', 'admin'].includes(request.user!.role)) {
-      reply.status(403).send({
-        error: 'Chỉ admin/owner có quyền sửa nick nhận thông báo. Liên hệ admin để cập nhật.',
-        code: 'ADMIN_ONLY_INTERNAL_CONTACT',
-      });
-      return false;
-    }
-    return true;
-  };
-
-  app.patch('/api/v1/me/internal-contact', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!requireAdminForInternalContact(request, reply)) return;
-    const currentUser = request.user!;
-    const body = (request.body ?? {}) as { method?: string; zaloAccountId?: string | null; phone?: string };
-    const { initiateCrmNickHandshake, initiatePersonalPhoneHandshake, InternalContactError } =
-      await import('../system-notifications/internal-contact-service.js');
-
-    try {
-      const fullName = (await prisma.user.findUnique({ where: { id: currentUser.id }, select: { fullName: true } }))?.fullName ?? null;
-      if (body.method === 'crm_nick') {
-        if (!body.zaloAccountId) return reply.status(400).send({ error: 'zaloAccountId là bắt buộc cho Cách 1' });
-        const result = await initiateCrmNickHandshake({
-          orgId: currentUser.orgId, userId: currentUser.id, userFullName: fullName, zaloAccountId: body.zaloAccountId,
-        });
-        return { ok: true, ...result };
-      }
-      if (body.method === 'personal_phone') {
-        if (!body.phone) return reply.status(400).send({ error: 'phone là bắt buộc cho Cách 2' });
-        const result = await initiatePersonalPhoneHandshake({
-          orgId: currentUser.orgId, userId: currentUser.id, userFullName: fullName, rawPhone: body.phone,
-        });
-        return { ok: true, ...result };
-      }
-      return reply.status(400).send({ error: 'method phải là "crm_nick" hoặc "personal_phone"' });
-    } catch (err: any) {
-      if (err instanceof InternalContactError) {
-        return reply.status(err.statusCode).send({ error: err.message, code: err.errorCode });
-      }
-      logger.error('[me/internal-contact PATCH] failed:', err);
-      return reply.status(500).send({ error: err?.message || 'Internal error' });
-    }
-  });
-
-  app.post('/api/v1/me/internal-contact/check-handshake', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!requireAdminForInternalContact(request, reply)) return;
-    const currentUser = request.user!;
-    const { checkHandshakeStatus, InternalContactError } = await import('../system-notifications/internal-contact-service.js');
-    try {
-      const result = await checkHandshakeStatus({ orgId: currentUser.orgId, userId: currentUser.id });
-      return { ok: true, ...result };
-    } catch (err: any) {
-      if (err instanceof InternalContactError) {
-        return reply.status(err.statusCode).send({ error: err.message, code: err.errorCode });
-      }
-      return reply.status(500).send({ error: err?.message || 'Internal error' });
-    }
-  });
-
-  app.post('/api/v1/me/internal-contact/confirm', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!requireAdminForInternalContact(request, reply)) return;
-    const currentUser = request.user!;
-    const body = (request.body ?? {}) as { code?: string };
-    const { confirmVerifyCode, InternalContactError } = await import('../system-notifications/internal-contact-service.js');
-    try {
-      const result = await confirmVerifyCode({ orgId: currentUser.orgId, userId: currentUser.id, code: body.code ?? '' });
-      return { ok: true, ...result };
-    } catch (err: any) {
-      if (err instanceof InternalContactError) {
-        return reply.status(err.statusCode).send({ error: err.message, code: err.errorCode });
-      }
-      return reply.status(500).send({ error: err?.message || 'Internal error' });
-    }
-  });
-
-  app.post('/api/v1/me/internal-contact/resend-friend-request', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!requireAdminForInternalContact(request, reply)) return;
-    const currentUser = request.user!;
-    const { resendFriendRequest, InternalContactError } = await import('../system-notifications/internal-contact-service.js');
-    try {
-      const result = await resendFriendRequest({ orgId: currentUser.orgId, userId: currentUser.id });
-      return { ok: true, ...result };
-    } catch (err: any) {
-      if (err instanceof InternalContactError) {
-        return reply.status(err.statusCode).send({ error: err.message, code: err.errorCode });
-      }
-      return reply.status(500).send({ error: err?.message || 'Internal error' });
-    }
-  });
-
-  app.post('/api/v1/me/internal-contact/resend-verify-code', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!requireAdminForInternalContact(request, reply)) return;
-    const currentUser = request.user!;
-    const { resendVerifyCode, InternalContactError } = await import('../system-notifications/internal-contact-service.js');
-    try {
-      const result = await resendVerifyCode({ orgId: currentUser.orgId, userId: currentUser.id });
-      return { ok: true, ...result };
-    } catch (err: any) {
-      if (err instanceof InternalContactError) {
-        return reply.status(err.statusCode).send({ error: err.message, code: err.errorCode });
-      }
-      return reply.status(500).send({ error: err?.message || 'Internal error' });
-    }
-  });
-
-  app.delete('/api/v1/me/internal-contact', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!requireAdminForInternalContact(request, reply)) return;
-    const currentUser = request.user!;
-    const { resetInternalContact, InternalContactError } = await import('../system-notifications/internal-contact-service.js');
-    try {
-      await resetInternalContact({ orgId: currentUser.orgId, userId: currentUser.id });
-      return { ok: true };
-    } catch (err: any) {
-      if (err instanceof InternalContactError) {
-        return reply.status(err.statusCode).send({ error: err.message, code: err.errorCode });
-      }
-      return reply.status(500).send({ error: err?.message || 'Internal error' });
-    }
-  });
+  // ════════════════════════════════════════════════════════════════════════
+  // XÓA 2026-06-10 (CEO-review): cơ chế setup nick nội bộ THỦ CÔNG (PATCH/confirm/
+  // resend/DELETE + check-handshake) đã gây bug gửi nhầm UID ("Song Hào"/"Văn Vỹ").
+  // User KHÔNG tự setup nick nhận nữa. Nick nhận chỉ đến từ luồng TẠO USER bằng SĐT
+  // (UID đúng góc nhìn nick gửi) + Check Live / recheck-all ở trang Thông báo hệ thống.
+  // GET /me/internal-contact ở trên GIỮ LẠI (read-only, cho badge onboarding).
+  // ════════════════════════════════════════════════════════════════════════
 
   // ════════════════════════════════════════════════════════════════════════
   // Phase Onboarding v1 2026-05-24 — 4-step first-run setup endpoints

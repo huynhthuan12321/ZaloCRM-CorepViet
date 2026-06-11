@@ -25,10 +25,12 @@ export interface ZaloScope {
 export async function getZaloScope(userId: string, orgId: string, legacyRole: string): Promise<ZaloScope> {
   const isOrgAdmin = legacyRole === 'owner' || legacyRole === 'admin';
 
-  // Org admin → tất cả accounts
+  // Org admin → tất cả accounts (trừ nick đã xóa mềm).
+  // 2026-06-10 FIX: lọc archivedAt → nick đã xóa KHÔNG còn trong accessibleIds, nên
+  // mọi picker/màn hình dùng getZaloScope tự động hết pick được nick đã xóa.
   if (isOrgAdmin) {
     const all = await prisma.zaloAccount.findMany({
-      where: { orgId },
+      where: { orgId, archivedAt: null },
       select: { id: true, ownerUserId: true },
     });
     return {
@@ -73,15 +75,15 @@ export async function getZaloScope(userId: string, orgId: string, legacyRole: st
     for (const m of subtreeMembers) visibleUserIds.add(m.userId);
   }
 
-  // Accounts owned by any of visible users
+  // Accounts owned by any of visible users (trừ nick đã xóa mềm — 2026-06-10).
   const ownedAccounts = await prisma.zaloAccount.findMany({
-    where: { orgId, ownerUserId: { in: Array.from(visibleUserIds) } },
+    where: { orgId, ownerUserId: { in: Array.from(visibleUserIds) }, archivedAt: null },
     select: { id: true, ownerUserId: true },
   });
 
-  // PLUS accounts user được grant access explicit (qua ZaloAccountAccess)
+  // PLUS accounts user được grant access explicit (qua ZaloAccountAccess) — trừ nick đã xóa.
   const grantedAccess = await prisma.zaloAccountAccess.findMany({
-    where: { userId, zaloAccount: { orgId } },
+    where: { userId, zaloAccount: { orgId, archivedAt: null } },
     select: { zaloAccountId: true },
   });
 
@@ -134,6 +136,9 @@ export async function requireAccountManagement(
     reply.status(401).send({ error: 'Unauthorized' });
     return null;
   }
+  // NOTE: KHÔNG lọc archivedAt ở đây — gate này dùng cho cả route /restore (cần tìm
+  // được nick đã archived để khôi phục). Việc "ẩn nick đã xóa khỏi list/picker" do
+  // getZaloScope + các endpoint LIST lo (đã lọc archivedAt 2026-06-10).
   const account = await prisma.zaloAccount.findFirst({
     where: { id: accountId, orgId: user.orgId },
     select: { id: true, ownerUserId: true, orgId: true, status: true },

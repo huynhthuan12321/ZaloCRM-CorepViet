@@ -92,8 +92,12 @@ export async function friendRoutes(app: FastifyInstance) {
       ]);
 
       const counts = Object.fromEntries(countsRaw.map((g) => [g.relationshipKind, g._count]));
+      // PRIVACY 2026-06-11 (audit C7/H4): redact Friend row thuộc nick main non-owner
+      // (blur preview tin/alias/danh tính Zalo + Contact PII nhúng).
+      const { buildPrivacyContext, redactFriend } = await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
       return {
-        friends: friends.map(toFriendDto),
+        friends: friends.map((f) => redactFriend(toFriendDto(f) as any, privacyCtx)),
         total,
         counts,
         page: pageNum,
@@ -173,8 +177,12 @@ export async function friendRoutes(app: FastifyInstance) {
       ]);
 
       const counts = Object.fromEntries(countsRaw.map((g) => [g.relationshipKind, g._count]));
+      // PRIVACY 2026-06-11 (audit C7/H11): trưởng phòng cascade thấy nick main cấp dưới
+      // qua getZaloScope → redact preview/alias/PII của Friend thuộc nick main non-owner.
+      const { buildPrivacyContext, redactFriend } = await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
       return {
-        friends: friends.map(toFriendDto),
+        friends: friends.map((f) => redactFriend(toFriendDto(f) as any, privacyCtx)),
         total,
         counts,
         page: pageNum,

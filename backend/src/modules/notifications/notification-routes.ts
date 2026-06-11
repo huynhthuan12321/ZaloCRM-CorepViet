@@ -104,9 +104,9 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
     }
 
-    // 4. Disconnected Zalo accounts
+    // 4. Disconnected Zalo accounts (2026-06-10: ẩn nick đã xóa mềm).
     const accounts = await prisma.zaloAccount.findMany({
-      where: { orgId: user.orgId, ...accountScope },
+      where: { orgId: user.orgId, archivedAt: null, ...accountScope },
       select: { id: true, displayName: true },
     });
     for (const acc of accounts) {

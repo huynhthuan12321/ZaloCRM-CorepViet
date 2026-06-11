@@ -4,13 +4,13 @@
     <aside class="sl-sidebar" aria-label="Cài đặt sidebar">
       <header class="sl-header">
         <h1 class="sl-title">
-          <span class="sl-icon">⚙</span>
+          <v-icon class="sl-icon" icon="mdi-cog-outline" size="20" />
           <span>Cài đặt</span>
         </h1>
       </header>
 
       <div class="sl-search">
-        <span class="ic">🔍</span>
+        <v-icon class="ic" icon="mdi-magnify" size="16" />
         <input
           v-model="searchQuery"
           type="text"
@@ -33,7 +33,7 @@
             class="sl-item"
             :class="{ active: isItemActive(item.route) }"
           >
-            <span class="sl-item-icon">{{ item.icon }}</span>
+            <v-icon class="sl-item-icon" :icon="item.icon" size="18" />
             <span class="sl-item-label">{{ item.label }}</span>
             <span v-if="item.comingSoon" class="sl-lock" title="Sắp ra mắt">🔒</span>
           </RouterLink>
@@ -48,7 +48,7 @@
               :class="{ collapsed: !openGroups[group.id] }"
               @click="toggleGroup(group.id)"
             >
-              <span class="sl-group-icon">{{ group.icon }}</span>
+              <v-icon class="sl-group-icon" :icon="group.icon" size="17" />
               <span class="sl-group-label">{{ group.label }}</span>
               <span class="sl-chevron">▾</span>
             </button>
@@ -60,7 +60,7 @@
                 class="sl-item"
                 :class="{ active: isItemActive(item.route) }"
               >
-                <span class="sl-item-icon">{{ item.icon }}</span>
+                <v-icon class="sl-item-icon" :icon="item.icon" size="18" />
                 <span class="sl-item-label">{{ item.label }}</span>
                 <span v-if="item.comingSoon" class="sl-lock" title="Sắp ra mắt">🔒</span>
               </RouterLink>

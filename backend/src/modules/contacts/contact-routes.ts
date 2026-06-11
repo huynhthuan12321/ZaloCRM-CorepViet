@@ -6,6 +6,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
+import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireAnyGrant, requireGrant } from '../rbac/rbac-middleware.js';
@@ -215,7 +216,15 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         })
         .filter((c) => !multiNickOnly || (c.childrenCount ?? 0) > 1);
 
-      return { contacts: enriched, total, page: pageNum, limit: limitNum };
+      // PRIVACY 2026-06-11 (audit H3): blur PII của KH thuộc nick main non-owner.
+      // Detail KH đã redact, list cũng phải nhất quán (nếu không đọc list = vượt rào).
+      const { buildPrivacyContext, buildOffendingContactIds, redactContact } =
+        await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
+      const offending = await buildOffendingContactIds(enriched.map((c) => c.id), privacyCtx);
+      const out = enriched.map((c) => (offending.has(c.id) ? redactContact(c, privacyCtx) : c));
+
+      return { contacts: out, total, page: pageNum, limit: limitNum };
     } catch (err) {
       logger.error('[contacts] List error:', err);
       return reply.status(500).send({ error: 'Failed to fetch contacts' });
@@ -339,10 +348,19 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         }),
       );
 
+      // PRIVACY 2026-06-11 (audit H5): blur card KH thuộc nick main non-owner.
+      const { buildPrivacyContext, buildOffendingContactIds, redactContact } =
+        await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
+      const allCardIds = Object.values(contactsByStatus).flat().map((c: any) => c.id);
+      const offending = await buildOffendingContactIds(allCardIds, privacyCtx);
+
       const result = pipeline.map((g) => ({
         status: g.status ?? 'unknown',
         count: g._count,
-        contacts: contactsByStatus[g.status ?? 'unknown'] ?? [],
+        contacts: (contactsByStatus[g.status ?? 'unknown'] ?? []).map((c: any) =>
+          offending.has(c.id) ? redactContact(c, privacyCtx) : c,
+        ),
       }));
 
       return { pipeline: result };
@@ -798,14 +816,23 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       });
 
       // Emit socket cho realtime (nếu sale đang mở /chat)
+      // PRIVACY 2026-06-11: qua emit-chat (redact + scope org). myNickId là nick nội
+      // bộ của chính sale (owner=sale) nên chính chủ vẫn nhận thật; nếu nick để main,
+      // người khác nhận bản mờ.
       const io = (app as any).io as Server | undefined;
-      io?.emit('chat:message', {
+      const myNickPriv = await prisma.zaloAccount.findUnique({
+        where: { id: myNickId },
+        select: { privacyMode: true, ownerUserId: true },
+      });
+      await emitChatMessage({
+        io,
+        orgId: user.orgId,
         accountId: myNickId,
-        message: { ...welcomeMessage, zaloMsgIdNum: null as string | null },
         conversationId: created.id,
-        _virtual: true,
-        _aiAssistant: true,
-        _welcome: true,
+        message: { ...welcomeMessage, zaloMsgIdNum: null as string | null },
+        privacyMode: myNickPriv?.privacyMode ?? 'sub',
+        ownerUserId: myNickPriv?.ownerUserId ?? null,
+        extra: { _virtual: true, _aiAssistant: true, _welcome: true },
       });
 
       // M55.3 2026-05-30: AI message #2 — Cảnh báo KH duplicate sau welcome 2.5s.
@@ -1334,7 +1361,19 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         }),
       );
 
-      return { groups: expanded, total, page: pageNum, limit: limitNum };
+      // PRIVACY 2026-06-11 (audit H6): blur PII KH thuộc nick main non-owner trong
+      // các nhóm trùng (detector gom toàn org). Batch 1 lần qua tất cả contactId.
+      const { buildPrivacyContext, buildOffendingContactIds, redactContact } =
+        await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
+      const allIds = expanded.flatMap((g) => g.contacts.map((c: any) => c.id));
+      const offending = await buildOffendingContactIds(allIds, privacyCtx);
+      const safeGroups = expanded.map((g) => ({
+        ...g,
+        contacts: g.contacts.map((c: any) => (offending.has(c.id) ? redactContact(c, privacyCtx) : c)),
+      }));
+
+      return { groups: safeGroups, total, page: pageNum, limit: limitNum };
     } catch (err) {
       logger.error('[contacts] Duplicates list error:', err);
       return reply.status(500).send({ error: 'Failed to fetch duplicate groups' });
@@ -1436,13 +1475,27 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               phone: true,
               zaloUid: true,
               avatarUrl: true,
+              // PRIVACY 2026-06-11 (audit H4): cần để redactFriend quyết định blur.
+              privacyMode: true,
+              ownerUserId: true,
               owner: { select: { id: true, fullName: true } },
             },
           },
         },
         orderBy: { lastInboundAt: { sort: 'desc', nulls: 'last' } },
       });
-      return { friendships };
+      // Blur alias/zaloUidInNick/danh tính + che phone/zaloUid của nick main non-owner.
+      const { buildPrivacyContext, redactFriend } = await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
+      const redactedFriendships = friendships.map((f) => {
+        const rf: any = redactFriend(f as any, privacyCtx);
+        // Che thêm field trên zaloAccount (nick main non-owner): phone + zaloUid của nick.
+        if (rf.redacted && rf.zaloAccount && rf.zaloAccount.privacyMode === 'main') {
+          rf.zaloAccount = { ...rf.zaloAccount, phone: null, zaloUid: null };
+        }
+        return rf;
+      });
+      return { friendships: redactedFriendships };
     } catch (err) {
       logger.error('[contacts] List friendships error:', err);
       return reply.status(500).send({ error: 'Failed to list friendships' });
@@ -1744,27 +1797,43 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         _count: { select: { conversations: true, appointments: true } },
       };
 
+      // PRIVACY 2026-06-11 (audit C5) — endpoint này trước đây KHÔNG scope + KHÔNG
+      // redact: POST 1 SĐT/zaloUid là harvest full PII KH của nick main sale khác.
+      // Helper: chỉ trả KH viewer có quyền scope, và redact PII nếu thuộc nick main
+      // non-owner. Ngoài scope → coi như không khớp (matched:false, không lộ tồn tại).
+      const { buildPrivacyContext, shouldRedactContactPii, redactContact } =
+        await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
+      async function gateContact(c: any, by: string) {
+        const visible = await assertContactVisible({
+          userId: user.id, orgId: user.orgId, legacyRole: user.role, contactId: c.id,
+        });
+        if (!visible) return reply.send({ matched: false });
+        const out = (await shouldRedactContactPii(c.id, privacyCtx)) ? redactContact(c, privacyCtx) : c;
+        return reply.send({ matched: true, by, contact: out });
+      }
+
       // Order: globally-unique trước, phone sau cùng (vì có thể trùng/đổi chủ).
       if (body.zaloGlobalId) {
         const c = await prisma.contact.findFirst({
           where: { ...baseWhere, zaloGlobalId: body.zaloGlobalId },
           include,
         });
-        if (c) return reply.send({ matched: true, by: 'zaloGlobalId', contact: c });
+        if (c) return gateContact(c, 'zaloGlobalId');
       }
       if (body.zaloUsername) {
         const c = await prisma.contact.findFirst({
           where: { ...baseWhere, zaloUsername: body.zaloUsername },
           include,
         });
-        if (c) return reply.send({ matched: true, by: 'zaloUsername', contact: c });
+        if (c) return gateContact(c, 'zaloUsername');
       }
       if (body.zaloUid) {
         const c = await prisma.contact.findFirst({
           where: { ...baseWhere, zaloUid: body.zaloUid },
           include,
         });
-        if (c) return reply.send({ matched: true, by: 'zaloUid', contact: c });
+        if (c) return gateContact(c, 'zaloUid');
       }
       const canonicalPhone = normalizePhone(body.phone);
       if (canonicalPhone) {
@@ -1772,7 +1841,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           where: { ...baseWhere, phoneNormalized: canonicalPhone },
           include,
         });
-        if (c) return reply.send({ matched: true, by: 'phone', contact: c });
+        if (c) return gateContact(c, 'phone');
       }
       return reply.send({ matched: false });
     } catch (err) {
@@ -2176,7 +2245,14 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         where: { id: { in: allIds }, orgId: user.orgId },
         select: { id: true, fullName: true, phone: true, zaloUid: true, zaloGlobalId: true, avatarUrl: true, parentContactId: true },
       });
-      const byId = new Map(contacts.map(c => [c.id, c]));
+      // PRIVACY 2026-06-11 (audit H7): blur PII KH thuộc nick main non-owner.
+      const { buildPrivacyContext, buildOffendingContactIds, redactContact } =
+        await import('../privacy/redact.js');
+      const privacyCtx = await buildPrivacyContext(request);
+      const offending = await buildOffendingContactIds(allIds, privacyCtx);
+      const byId = new Map(
+        contacts.map((c) => [c.id, offending.has(c.id) ? redactContact(c, privacyCtx) : c]),
+      );
       const enriched = candidates.map(c => ({
         ...c,
         contacts: c.contactIds.map(id => byId.get(id)).filter(Boolean),
@@ -2413,13 +2489,20 @@ async function sendDuplicateAlertMessage(
           where: { id: conversationId },
           data: { lastMessageAt: new Date() },
         });
-        io?.emit('chat:message', {
+        // PRIVACY 2026-06-11: qua emit-chat (redact + scope org).
+        const nickPriv = await prisma.zaloAccount.findUnique({
+          where: { id: myNickId },
+          select: { privacyMode: true, ownerUserId: true },
+        });
+        await emitChatMessage({
+          io,
+          orgId,
           accountId: myNickId,
-          message: { ...dupMsg, zaloMsgIdNum: null as string | null },
           conversationId,
-          _virtual: true,
-          _aiAssistant: true,
-          _dupAlert: true,
+          message: { ...dupMsg, zaloMsgIdNum: null as string | null },
+          privacyMode: nickPriv?.privacyMode ?? 'sub',
+          ownerUserId: nickPriv?.ownerUserId ?? null,
+          extra: { _virtual: true, _aiAssistant: true, _dupAlert: true },
         });
       } catch (err) {
         logger.warn(`[virtual-conv] dup-alert send failed: ${String(err)}`);

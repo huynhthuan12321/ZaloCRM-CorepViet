@@ -14,9 +14,24 @@
       </button>
     </div>
 
-    <div v-else class="ngc-grid">
+    <!-- Nhóm theo trạng thái nick (2026-06-10) -->
+    <div v-else class="ngc-groups">
+      <section v-for="g in groups" :key="g.key" class="ngc-group">
+        <!-- Header nhóm: theo trạng thái (icon màu) hoặc theo user (avatar + vai trò) -->
+        <header v-if="g.kind === 'owner'" class="ngc-group-head gh-owner">
+          <span class="ngc-owner-av">{{ initials(g.label) }}</span>
+          <span class="ngc-group-label">{{ g.label }}</span>
+          <span class="ngc-group-count">{{ g.items.length }}</span>
+          <span class="ngc-owner-role">{{ ownerRole(g.owner) }}</span>
+        </header>
+        <header v-else class="ngc-group-head" :class="`gh-${g.key}`">
+          <v-icon size="16">{{ g.icon }}</v-icon>
+          <span class="ngc-group-label">{{ g.label }}</span>
+          <span class="ngc-group-count">{{ g.items.length }}</span>
+        </header>
+        <div class="ngc-grid">
       <div
-        v-for="a in accounts"
+        v-for="a in g.items"
         :key="a.id"
         class="ngc-card"
         :class="stateClass(a)"
@@ -84,15 +99,19 @@
           </button>
         </div>
       </div>
+        </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 interface Crew { id: string; fullName: string | null }
 
 // accounts: EnrichedAccount[] từ parent — component chỉ đọc field hiển thị (type lỏng).
-const props = defineProps<{ accounts: any[]; reconnectingIds?: Set<string> }>();
+// groupBy: 'status' (mặc định, nhóm theo trạng thái) | 'owner' (mục 1 2026-06-11, nhóm theo người dùng).
+const props = defineProps<{ accounts: any[]; reconnectingIds?: Set<string>; groupBy?: 'status' | 'owner' }>();
 function isReconnecting(id: string): boolean {
   return props.reconnectingIds?.has(id) ?? false;
 }
@@ -135,6 +154,51 @@ function reconnectIcon(a: any): string {
 function crewOf(a: any): Crew[] {
   return (a.crew || []).filter((c: Crew) => !!c);
 }
+
+// 2026-06-10 (anh chốt): nhóm card theo TRẠNG THÁI nick. Thứ tự ưu tiên:
+// online (quan trọng nhất, lên đầu) → pending (đang xử lý) → offline (cần re-login).
+const STATE_GROUPS = [
+  { key: 'online',  label: 'Đang hoạt động', icon: 'mdi-check-circle',     match: (a: any) => stateClass(a) === 'is-online' },
+  { key: 'pending', label: 'Đang kết nối',    icon: 'mdi-progress-clock',   match: (a: any) => stateClass(a) === 'is-pending' },
+  { key: 'offline', label: 'Mất kết nối',     icon: 'mdi-alert-circle-outline', match: (a: any) => stateClass(a) === 'is-offline' },
+] as const;
+
+const statusGroups = computed(() =>
+  STATE_GROUPS
+    .map((g) => ({ key: g.key, label: g.label, icon: g.icon, kind: 'status' as const, owner: null as any, items: props.accounts.filter(g.match) }))
+    .filter((g) => g.items.length > 0),
+);
+
+// Mục 1 (2026-06-11) — nhóm theo người dùng (owner). Header = avatar + tên sale + vai trò.
+const ownerGroups = computed(() => {
+  type OwnerGroup = { key: string; label: string; owner: any; items: any[] };
+  const map = new Map<string, OwnerGroup>();
+  for (const a of props.accounts) {
+    const oid = a.ownerUserId ?? a.owner?.id ?? 'unknown';
+    const g: OwnerGroup = map.get(oid) ?? {
+      key: oid,
+      label: a.owner?.fullName || a.owner?.email || 'Chưa gán chủ',
+      owner: a.owner ?? null,
+      items: [],
+    };
+    g.items.push(a);
+    map.set(oid, g);
+  }
+  return Array.from(map.values())
+    .map((g) => ({ ...g, kind: 'owner' as const, icon: '' }))
+    .sort((x, y) => x.label.localeCompare(y.label));
+});
+
+const groups = computed(() => (props.groupBy === 'owner' ? ownerGroups.value : statusGroups.value));
+
+// Vai trò sale hiển thị ở header nhóm owner.
+function ownerRole(owner: any): string {
+  const dm = owner?.departmentMember;
+  const r = dm?.deptRole;
+  if (r === 'leader') return 'Trưởng phòng';
+  if (r === 'deputy') return 'Phó phòng';
+  return 'Nhân viên';
+}
 function initials(name?: string | null): string {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/);
@@ -146,6 +210,37 @@ function initials(name?: string | null): string {
 .ngc { padding: 4px 0; }
 .ngc-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 56px; color: var(--ink-3, #6b7280); }
 .ngc-empty p { font-style: italic; }
+
+/* Nhóm theo trạng thái (2026-06-10) */
+.ngc-groups { display: flex; flex-direction: column; gap: 22px; }
+.ngc-group-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: #475569;
+  padding: 4px 2px 10px; margin-bottom: 2px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.ngc-group-count {
+  margin-left: 2px; min-width: 20px; text-align: center;
+  background: #f1f5f9; color: #64748b; border-radius: 10px;
+  font-size: 11.5px; padding: 1px 7px;
+}
+.ngc-group-head.gh-online  { color: #15803d; } .gh-online .ngc-group-count  { background: #dcfce7; color: #15803d; }
+.ngc-group-head.gh-pending { color: #b45309; } .gh-pending .ngc-group-count { background: #fef3c7; color: #b45309; }
+.ngc-group-head.gh-offline { color: #b91c1c; } .gh-offline .ngc-group-count { background: #fee2e2; color: #b91c1c; }
+
+/* Mục 1 — header nhóm theo người dùng (atlas v2) */
+.ngc-group-head.gh-owner { color: #334155; }
+.gh-owner .ngc-group-count { background: #eef0ff; color: #5e6ad2; }
+.ngc-owner-av {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg, #5e6ad2, #7c8af0); color: #fff;
+  font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.ngc-owner-role {
+  margin-left: 6px; font-size: 11.5px; font-weight: 600; color: #94a3b8;
+  background: #f1f5f9; padding: 2px 8px; border-radius: 6px;
+}
 
 .ngc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 @media (min-width: 1366px) { .ngc-grid { grid-template-columns: repeat(3, 1fr); } }

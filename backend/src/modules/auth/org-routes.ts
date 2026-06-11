@@ -55,8 +55,9 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       const accountId = body.zaloAccountId ?? null;
 
       if (accountId !== null) {
+        // 2026-06-10: archivedAt:null → không cho đặt nick đã xóa mềm làm nick gửi hệ thống.
         const nick = await prisma.zaloAccount.findFirst({
-          where: { id: accountId, orgId: user.orgId },
+          where: { id: accountId, orgId: user.orgId, archivedAt: null },
           select: { id: true, status: true, displayName: true },
         });
         if (!nick) return reply.status(404).send({ error: 'Nick không tồn tại trong org' });

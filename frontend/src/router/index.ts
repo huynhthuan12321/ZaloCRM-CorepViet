@@ -114,9 +114,9 @@ const routes: RouteRecordRaw[] = [
       { path: 'crm/stuck',       name: 'Settings.Stuck',       component: () => import('@/views/settings/SettingsComingSoon.vue'), props: { feature: 'stuck' }, meta: { resource: 'settings' } },
       { path: 'crm/folders',     name: 'Settings.Folders',     component: () => import('@/views/settings/SettingsComingSoon.vue'), props: { feature: 'folders' }, meta: { resource: 'settings' } },
       { path: 'crm/templates',   name: 'Settings.Templates',   component: () => import('@/views/settings/SettingsComingSoon.vue'), props: { feature: 'templates' }, meta: { resource: 'settings' } },
-      // Phase Lead Pool 2026-05-24 — bố trí menu 2026-05-29
-      { path: 'crm/lead-pool',         name: 'Settings.LeadPool',        component: () => import('@/views/settings/LeadPoolConfigPage.vue'), meta: { resource: 'settings' } },
-      { path: 'crm/lead-pool/queue',   name: 'Settings.LeadPoolQueue',   component: () => import('@/views/settings/LeadPoolPreviewPage.vue'), meta: { resource: 'settings' } },
+      // Phase Lead Pool 2026-05-24. 2026-06-10: gộp 2 trang thành 1 wrapper 2 tab.
+      { path: 'crm/lead-pool',         name: 'Settings.LeadPool',        component: () => import('@/views/settings/LeadPoolTabsPage.vue'), meta: { resource: 'settings' } },
+      { path: 'crm/lead-pool/queue',   redirect: '/settings/crm/lead-pool?tab=queue' },
       // M53 2026-05-30 — Trợ Lý AI Virtual Chat
       { path: 'crm/ai-assistant',      name: 'Settings.AiAssistant',     component: () => import('@/views/settings/AiAssistantPage.vue'), meta: { resource: 'settings' } },
       // 🔌 Channels & Integrations

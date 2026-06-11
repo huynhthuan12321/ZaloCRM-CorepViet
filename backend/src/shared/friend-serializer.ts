@@ -35,6 +35,11 @@ export const ZALO_ACCOUNT_LITE_SELECT = {
   phone: true,
   zaloUid: true,
   avatarUrl: true,
+  // PRIVACY 2026-06-11: BẮT BUỘC có để redactFriend quyết định blur. Thiếu 2 field
+  // này thì dù gọi redactFriend cũng không chặn được (audit H11). Fail-closed:
+  // redactFriend mặc định redact nếu privacyMode undefined.
+  privacyMode: true,
+  ownerUserId: true,
   owner: { select: { id: true, fullName: true } },
 } as const satisfies Prisma.ZaloAccountSelect;
 

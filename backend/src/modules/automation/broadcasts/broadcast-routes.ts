@@ -32,6 +32,7 @@ import { randomUUID } from 'node:crypto';
 import { prisma, tenantTransaction } from '../../../shared/database/prisma-client.js';
 import { authMiddleware } from '../../auth/auth-middleware.js';
 import { requireGrant } from '../../rbac/rbac-middleware.js';
+import { getZaloScope } from '../../zalo/zalo-scope.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { getOwnerScope, applyOwnerScope } from '../../rbac/owner-scope.js';
 import { resolveSegmentToContactIds } from '../engine/segment-resolver.js';
@@ -155,11 +156,18 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     return { tags };
   });
 
-  // Đợt 1 v2 2026-06-05: nick picker cho wizard Step 3
+  // Đợt 1 v2 2026-06-05: nick picker cho wizard Step 3.
+  // 2026-06-10 FIX: getZaloScope (nick trong quyền) + ẩn nick đã xóa mềm.
+  // Bug cũ: chỉ lọc orgId → sale thấy + broadcast được từ nick ngoài quyền.
   app.get(`${BASE}/helpers/nicks`, async (request: FastifyRequest) => {
     const user = request.user!;
+    const scope = await getZaloScope(user.id, user.orgId, user.role);
     const nicks = await prisma.zaloAccount.findMany({
-      where: { orgId: user.orgId },
+      where: {
+        orgId: user.orgId,
+        archivedAt: null,
+        ...(scope.isOrgAdmin ? {} : { id: { in: scope.accessibleIds } }),
+      },
       select: {
         id: true, displayName: true, status: true, phone: true, avatarUrl: true,
       },

@@ -37,95 +37,88 @@ export interface SettingsGroup {
   items: SettingsItem[];
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// Redesign menu 2026-06-10 (CEO-review, anh duyệt mockup):
+//   - 5 nhóm theo CHỨC NĂNG, tên tiếng Việt dễ hiểu cho sale.
+//   - CẮT 11 mục rỗng (SettingsComingSoon) + trùng: Giao diện, Phiên đăng nhập,
+//     Billing, Stuck detection, Folder mặc định, Template tin nhắn, Rate limit,
+//     Public API token, Feature flags, Backup, "Tag CRM (cũ)". Route vẫn giữ
+//     (router/index.ts), chỉ ẩn khỏi menu — thêm lại khi làm xong feature thật.
+//   - GỘP: Nhận Lead + Queue chia Lead → "Lead Pool" (1 mục, 2 tab). Tag v2 → "Nhãn KH".
+//   - ICON: dùng MDI line icon (Atlas v2), KHÔNG emoji.
+// ════════════════════════════════════════════════════════════════════════
 export const SETTINGS_GROUPS: SettingsGroup[] = [
-  // ─── 👤 CÁ NHÂN ──────────────────────────────────────
+  // ─── CÁ NHÂN ─────────────────────────────────────────
   {
     id: 'personal',
     label: 'Cá nhân',
-    icon: '👤',
+    icon: 'mdi-account-circle-outline',
     permission: 'everyone',
     items: [
-      { id: 'profile', label: 'Hồ sơ của tôi', icon: '👤', route: '/settings/personal/profile', permission: 'everyone' },
-      { id: 'password', label: 'Đổi mật khẩu', icon: '🔑', route: '/settings/personal/password', permission: 'everyone' },
-      // Phase Riêng Tư — 2026-06-06: trang riêng /settings/privacy GỠ, trỏ thẳng tab Privacy
-      // trong trang Zalo (nơi quản lý Riêng tư DUY NHẤT). Unlock qua OTP Zalo, không còn PIN.
-      { id: 'privacy', label: 'Riêng tư', icon: '🔒', route: '/settings/channels/zalo?tab=privacy', permission: 'everyone', aliases: ['privacy', 'otp', 'riêng tư', 'blur', 'nick chính'] },
-      { id: 'notifications', label: 'Thông báo của tôi', icon: '🔔', route: '/settings/channels/zalo?tab=internal-contact', permission: 'everyone', aliases: ['internal contact', 'liên lạc nội bộ', 'system notify', 'thông báo zalo'] },
-      { id: 'theme', label: 'Giao diện', icon: '🎨', route: '/settings/personal/theme', permission: 'everyone', comingSoon: true },
-      { id: 'sessions', label: 'Phiên đăng nhập', icon: '📱', route: '/settings/personal/sessions', permission: 'everyone', comingSoon: true },
+      { id: 'profile', label: 'Hồ sơ của tôi', icon: 'mdi-account-outline', route: '/settings/personal/profile', permission: 'everyone' },
+      { id: 'password', label: 'Đổi mật khẩu', icon: 'mdi-key-outline', route: '/settings/personal/password', permission: 'everyone' },
+      // Riêng Tư 2026-06-06: trỏ thẳng tab Privacy trong trang Zalo (nơi quản lý DUY NHẤT).
+      { id: 'privacy', label: 'Riêng tư', icon: 'mdi-shield-lock-outline', route: '/settings/channels/zalo?tab=privacy', permission: 'everyone', aliases: ['privacy', 'otp', 'riêng tư', 'blur', 'nick chính'] },
+      { id: 'notifications', label: 'Thông báo của tôi', icon: 'mdi-bell-outline', route: '/settings/channels/zalo?tab=internal-contact', permission: 'everyone', aliases: ['internal contact', 'liên lạc nội bộ', 'system notify', 'thông báo zalo'] },
     ],
   },
 
-  // ─── 🏢 TỔ CHỨC ──────────────────────────────────────
-  // Variant C 2026-05-22: gộp 'Tổ chức' + 'Nhân sự' cũ thành 1 group.
-  // RBAC phase shipped → "Sơ đồ tổ chức" replace "Đội nhóm", "Phân quyền" replace "Vai trò".
-  // Legacy routes /settings/team/* 301 redirect → /settings/rbac/* (xem router/index.ts).
+  // ─── TỔ CHỨC ─────────────────────────────────────────
   {
     id: 'org',
     label: 'Tổ chức',
-    icon: '🏢',
+    icon: 'mdi-domain',
     permission: 'admin',
     items: [
-      { id: 'profile', label: 'Hồ sơ tổ chức', icon: '🏢', route: '/settings/org/profile', permission: 'admin', resource: 'settings' },
-      { id: 'system-notifications', label: 'Thông báo hệ thống', icon: '🔔', route: '/settings/org/system-notifications', permission: 'admin', resource: 'settings', aliases: ['system notify', 'thông báo', 'zalo notify', 'uid'] },
-      { id: 'departments', label: 'Sơ đồ tổ chức', icon: '🌳', route: '/settings/rbac/departments', permission: 'admin', resource: 'department', aliases: ['phòng ban', 'department', 'tree', 'đội nhóm', 'team'] },
-      { id: 'users', label: 'Nhân viên', icon: '👤', route: '/settings/rbac/users', permission: 'admin', resource: 'user', aliases: ['user', 'sale', 'nhân sự'] },
-      { id: 'permission-groups', label: 'Phân quyền', icon: '🛡', route: '/settings/rbac/permission-groups', permission: 'owner', resource: 'permission_group', aliases: ['phân quyền', 'permission', 'role', 'vai trò', 'nhóm quyền'] },
-      { id: 'audit', label: 'Audit log', icon: '📜', route: '/settings/org/audit', permission: 'owner', resource: 'audit_log', comingSoon: true },
-      { id: 'billing', label: 'Gói cước & Billing', icon: '💳', route: '/settings/org/billing', permission: 'owner', resource: 'settings', comingSoon: true },
+      { id: 'profile', label: 'Hồ sơ tổ chức', icon: 'mdi-office-building-outline', route: '/settings/org/profile', permission: 'admin', resource: 'settings' },
+      { id: 'users', label: 'Nhân viên', icon: 'mdi-account-group-outline', route: '/settings/rbac/users', permission: 'admin', resource: 'user', aliases: ['user', 'sale', 'nhân sự'] },
+      { id: 'departments', label: 'Sơ đồ tổ chức', icon: 'mdi-file-tree-outline', route: '/settings/rbac/departments', permission: 'admin', resource: 'department', aliases: ['phòng ban', 'department', 'tree', 'đội nhóm', 'team'] },
+      { id: 'permission-groups', label: 'Phân quyền', icon: 'mdi-shield-account-outline', route: '/settings/rbac/permission-groups', permission: 'owner', resource: 'permission_group', aliases: ['phân quyền', 'permission', 'role', 'vai trò', 'nhóm quyền'] },
+      { id: 'audit', label: 'Audit log', icon: 'mdi-history', route: '/settings/org/audit', permission: 'owner', resource: 'audit_log', aliases: ['audit', 'nhật ký', 'log bảo mật'] },
     ],
   },
 
-  // ─── ⚙ CRM CONFIG ───────────────────────────────────
+  // ─── KHÁCH HÀNG & LEAD ───────────────────────────────
   {
-    id: 'crm',
-    label: 'CRM Config',
-    icon: '⚙',
+    id: 'customer',
+    label: 'Khách hàng & Lead',
+    icon: 'mdi-target-account',
     permission: 'admin',
     items: [
-      { id: 'statuses', label: 'Trạng thái KH', icon: '🎯', route: '/settings/crm/statuses', permission: 'admin', resource: 'settings', aliases: ['stage', 'pipeline'] },
-      { id: 'tags', label: 'Tag CRM (cũ)', icon: '🏷', route: '/settings/crm/tags', permission: 'admin', resource: 'settings' },
-      { id: 'tags-v2', label: 'Tag v2 — 2 Nhóm', icon: '🆕', route: '/settings/crm/tags-v2', permission: 'admin', resource: 'settings', aliases: ['tag mới', 'tag taxonomy', 'friend tag', 'crm tag'] },
-      { id: 'zalo-labels', label: 'Tag Zalo native', icon: '⚑', route: '/settings/crm/zalo-labels', permission: 'admin', resource: 'settings', aliases: ['zalo label'] },
-      { id: 'scoring', label: 'Lead scoring', icon: '📊', route: '/settings/crm/scoring', permission: 'admin', resource: 'settings', aliases: ['điểm', 'chấm điểm'] },
-      // Phase Lead Pool — bố trí menu 2026-05-29
-      { id: 'lead-pool', label: 'Nhận Lead', icon: '🎁', route: '/settings/crm/lead-pool', permission: 'admin', resource: 'settings', aliases: ['pool lead', 'lead pool', 'nhận lead', 'pool', 'quota', 'câu chào', 'greeting'] },
-      { id: 'lead-pool-queue', label: 'Queue chia Lead', icon: '🎯', route: '/settings/crm/lead-pool/queue', permission: 'admin', resource: 'settings', aliases: ['queue lead', 'preview pool', 'xem trước'] },
-      // M53 2026-05-30: AI Trợ Lý Virtual Chat
-      { id: 'ai-assistant', label: 'Trợ lý AI (Chat nội bộ)', icon: '🤖', route: '/settings/crm/ai-assistant', permission: 'admin', resource: 'settings', aliases: ['ai', 'tro ly', 'virtual chat', 'gemini', 'prompt'] },
-      { id: 'stuck', label: 'Stuck detection', icon: '⏸', route: '/settings/crm/stuck', permission: 'admin', resource: 'settings', comingSoon: true },
-      { id: 'folders', label: 'Folder mặc định', icon: '📁', route: '/settings/crm/folders', permission: 'admin', resource: 'settings', comingSoon: true },
-      { id: 'templates', label: 'Template tin nhắn', icon: '📝', route: '/settings/crm/templates', permission: 'admin', resource: 'settings', comingSoon: true },
+      { id: 'statuses', label: 'Trạng thái KH', icon: 'mdi-flag-outline', route: '/settings/crm/statuses', permission: 'admin', resource: 'settings', aliases: ['stage', 'pipeline', 'trạng thái'] },
+      { id: 'tags-v2', label: 'Nhãn KH', icon: 'mdi-tag-multiple-outline', route: '/settings/crm/tags-v2', permission: 'admin', resource: 'settings', aliases: ['tag', 'tag mới', 'tag taxonomy', 'friend tag', 'crm tag', 'nhãn'] },
+      { id: 'zalo-labels', label: 'Tag Zalo native', icon: 'mdi-label-outline', route: '/settings/crm/zalo-labels', permission: 'admin', resource: 'settings', aliases: ['zalo label', 'nhãn zalo'] },
+      { id: 'scoring', label: 'Lead scoring', icon: 'mdi-chart-line', route: '/settings/crm/scoring', permission: 'admin', resource: 'settings', aliases: ['điểm', 'chấm điểm', 'score'] },
+      // Lead Pool — gộp Nhận Lead + Queue chia Lead thành 1 mục 2 tab (2026-06-10).
+      { id: 'lead-pool', label: 'Lead Pool', icon: 'mdi-gift-outline', route: '/settings/crm/lead-pool', permission: 'admin', resource: 'settings', aliases: ['pool lead', 'lead pool', 'nhận lead', 'pool', 'quota', 'câu chào', 'greeting', 'queue', 'chia lead', 'xem trước'] },
     ],
   },
 
-  // ─── 🔌 KÊNH & TÍCH HỢP ─────────────────────────────
+  // ─── KÊNH & TỰ ĐỘNG ──────────────────────────────────
   {
     id: 'channels',
-    label: 'Kênh & Tích hợp',
-    icon: '🔌',
+    label: 'Kênh & Tự động',
+    icon: 'mdi-connection',
     permission: 'admin',
     items: [
-      { id: 'zalo', label: 'Tài khoản Zalo', icon: '💬', route: '/settings/channels/zalo', permission: 'admin', resource: 'zalo_account', aliases: ['nick', 'zalo account'] },
-      // Phase Multi-Source Lead Ads 2026-05-27
-      { id: 'fb-leadads', label: 'Facebook Lead Ads', icon: '📘', route: '/settings/channels/facebook-leadads', permission: 'admin', resource: 'settings', aliases: ['fb', 'facebook', 'lead ads', 'leadads', 'meta'] },
-      { id: 'rate-limit', label: 'Rate limit per nick', icon: '⏱', route: '/settings/channels/rate-limit', permission: 'admin', resource: 'settings', comingSoon: true },
-      { id: 'automation', label: 'Cài đặt kỹ thuật tự động hoá', icon: '⚙️', route: '/settings/channels/automation', permission: 'admin', resource: 'settings', aliases: ['automation', 'kỹ thuật', 'nhịp quét', 'timeout', 'bám đuổi kỹ thuật'] },
-      { id: 'integrations', label: 'Tích hợp 3rd party', icon: '🔗', route: '/settings/channels/integrations', permission: 'admin', resource: 'settings' },
+      { id: 'zalo', label: 'Tài khoản Zalo', icon: 'mdi-cellphone-link', route: '/settings/channels/zalo', permission: 'admin', resource: 'zalo_account', aliases: ['nick', 'zalo account'] },
+      { id: 'fb-leadads', label: 'Facebook Lead Ads', icon: 'mdi-facebook', route: '/settings/channels/facebook-leadads', permission: 'admin', resource: 'settings', aliases: ['fb', 'facebook', 'lead ads', 'leadads', 'meta'] },
+      { id: 'automation', label: 'Tự động hoá', icon: 'mdi-cog-sync-outline', route: '/settings/channels/automation', permission: 'admin', resource: 'settings', aliases: ['automation', 'kỹ thuật', 'nhịp quét', 'timeout', 'bám đuổi kỹ thuật'] },
+      { id: 'integrations', label: 'Tích hợp 3rd party', icon: 'mdi-puzzle-outline', route: '/settings/channels/integrations', permission: 'admin', resource: 'settings', aliases: ['tích hợp', 'integration', '3rd party'] },
     ],
   },
 
-  // ─── 🛠 DEV & API ───────────────────────────────────
+  // ─── HỆ THỐNG ────────────────────────────────────────
+  // Gộp "Thông báo hệ thống" (từ Tổ chức cũ) + "Trợ lý AI" (từ CRM cũ) + Dev/API.
   {
-    id: 'dev',
-    label: 'Dev & API',
-    icon: '🛠',
-    permission: 'owner',
+    id: 'system',
+    label: 'Hệ thống',
+    icon: 'mdi-cog-outline',
+    permission: 'admin',
     items: [
-      { id: 'api', label: 'API Key & Webhook', icon: '🔌', route: '/settings/dev/api', permission: 'owner', resource: 'webhook', aliases: ['webhook', 'api key'] },
-      { id: 'public-token', label: 'Public API token', icon: '🎫', route: '/settings/dev/public-token', permission: 'owner', resource: 'settings', comingSoon: true },
-      { id: 'feature-flags', label: 'Feature flags', icon: '🚩', route: '/settings/dev/feature-flags', permission: 'owner', resource: 'settings', comingSoon: true },
-      { id: 'backup', label: 'Backup & Restore', icon: '💾', route: '/settings/dev/backup', permission: 'owner', resource: 'settings', comingSoon: true },
+      { id: 'system-notifications', label: 'Thông báo hệ thống', icon: 'mdi-bell-cog-outline', route: '/settings/org/system-notifications', permission: 'admin', resource: 'settings', aliases: ['system notify', 'thông báo', 'zalo notify', 'uid', 'check live'] },
+      { id: 'ai-assistant', label: 'Trợ lý AI', icon: 'mdi-robot-outline', route: '/settings/crm/ai-assistant', permission: 'admin', resource: 'settings', aliases: ['ai', 'tro ly', 'virtual chat', 'gemini', 'prompt'] },
+      { id: 'api', label: 'API & Webhook', icon: 'mdi-api', route: '/settings/dev/api', permission: 'owner', resource: 'webhook', aliases: ['webhook', 'api key', 'dev'] },
     ],
   },
 ];

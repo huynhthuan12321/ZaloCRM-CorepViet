@@ -412,18 +412,36 @@
             />
           </div>
 
-          <!-- Single message — MessageBubble component (wrap với privacy blur khi redacted) -->
+          <!-- PRIVACY 2026-06-11 (audit C10) — FAIL-SAFE: khi tin bị blur, KHÔNG render
+               MessageBubble với message thật (tránh content vào DOM, xoá class CSS là
+               đọc). Thay bằng placeholder khoá, KHÔNG nhận nội dung. Backend đã redact
+               server-side; đây là lớp 2 phòng backend sót. -->
+          <div
+            v-else-if="privacyVisibility.shouldBlurMessage(item.msg, conversation)"
+            class="msg-bubble-wrap msg-privacy-locked"
+            :class="{
+              'msg-wrap-self': item.msg.senderType === 'self',
+              'msg-wrap-other': item.msg.senderType !== 'self',
+            }"
+            :data-msg-id="item.msg.id"
+            @click="onMessageLockClick($event)"
+          >
+            <div class="msg-locked-placeholder">
+              <span class="mdi mdi-lock-outline msg-locked-icon"></span>
+              <span class="msg-locked-text">Nội dung riêng tư — mở khoá để xem</span>
+            </div>
+          </div>
+
+          <!-- Single message — MessageBubble component (chỉ khi KHÔNG blur) -->
           <div
             v-else
             class="msg-bubble-wrap"
             :class="{
-              'msg-privacy-blurred': privacyVisibility.shouldBlurMessage(item.msg, conversation),
               'msg-wrap-self': item.msg.senderType === 'self',
               'msg-wrap-other': item.msg.senderType !== 'self',
             }"
             :data-msg-id="item.msg.id"
             :data-zalo-msg-id="item.msg.zaloMsgId || ''"
-            @click="privacyVisibility.shouldBlurMessage(item.msg, conversation) ? onMessageLockClick($event) : null"
           >
             <MessageBubble
               :message="item.msg"
@@ -2593,6 +2611,18 @@ watch(() => props.editingMessage?.id, async (id) => {
    pseudo element trên bubble container. */
 .msg-bubble-wrap { position: relative; }
 .msg-bubble-wrap.msg-privacy-blurred { cursor: pointer; }
+
+/* PRIVACY 2026-06-11 — placeholder khoá (fail-safe, KHÔNG chứa content thật) */
+.msg-bubble-wrap.msg-privacy-locked { cursor: pointer; padding: 2px 0; display: flex; }
+.msg-bubble-wrap.msg-privacy-locked.msg-wrap-self { justify-content: flex-end; }
+.msg-locked-placeholder {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: #F3F4F6; border: 1px dashed #D1D5DB; border-radius: 14px;
+  padding: 8px 14px; color: #9CA3AF; font-size: 13px; max-width: 70%;
+}
+.msg-locked-icon { font-size: 16px; color: #B45309; }
+.msg-locked-text { font-style: italic; }
+.msg-bubble-wrap.msg-privacy-locked:hover .msg-locked-placeholder { border-color: #B45309; color: #6B7280; }
 
 /* Blur CHỈ text/content/media bên trong bubble — KHÔNG blur .message-bubble (box) */
 .msg-privacy-blurred :deep(.text-content),
