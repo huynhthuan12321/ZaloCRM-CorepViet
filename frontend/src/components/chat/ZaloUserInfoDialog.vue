@@ -304,9 +304,12 @@ async function load(uid: string) {
   crmLoaded.value = false;
   friendRequestSent.value = false;
   try {
-    // Fetch Zalo info + CRM contact song song
+    // Fetch Zalo info + CRM contact song song.
+    // 2026-06-11 — truyền accountId (nick đang xem) để BE CHỈ gọi đúng nick đó thay vì
+    // thử tất cả 30-50 nick (gây lag 538ms + đốt quota Zalo trên product).
+    const uiParams = props.zaloAccountId ? { params: { accountId: props.zaloAccountId } } : {};
     const [zaloRes, crmRes] = await Promise.all([
-      api.get(`/zalo-user-info/${uid}`),
+      api.get(`/zalo-user-info/${uid}`, uiParams),
       api.get(`/contacts/by-zalo-uid/${uid}`).catch(() => ({ data: { contact: null } })),
     ]);
     info.value = zaloRes.data as ZaloUserInfo;

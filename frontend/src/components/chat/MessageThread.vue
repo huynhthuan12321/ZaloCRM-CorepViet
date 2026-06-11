@@ -1469,7 +1469,8 @@ watch(
         uids.add(m.senderUid);
       }
     }
-    if (uids.size > 0) void groupAvatarStore.fetchBatch([...uids]);
+    // 2026-06-11 — truyền nick của hội thoại để BE chỉ gọi đúng nick (tránh lag 30-50 nick).
+    if (uids.size > 0) void groupAvatarStore.fetchBatch([...uids], props.conversation?.zaloAccount?.id);
   },
   { immediate: true },
 );

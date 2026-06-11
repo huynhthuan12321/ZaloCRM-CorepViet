@@ -392,7 +392,8 @@ export async function zinstantProxyRoutes(app: FastifyInstance): Promise<void> {
           return normalizeProfile(uid, p);
         }
       } catch (err) {
-        logger.warn(`[user-info] account ${accId} failed for ${uid}:`, err);
+        // Miss bình thường khi nick không sở hữu UID (per-nick UID) → debug, không warn.
+        logger.debug(`[user-info] account ${accId} miss for ${uid}:`, err);
       }
     }
     return null;
@@ -406,7 +407,7 @@ export async function zinstantProxyRoutes(app: FastifyInstance): Promise<void> {
   // → TypeError 500 silent → FE toast "Máy chủ lỗi". Pattern bẫy đã ghi memory
   // reference_zalocrm_auth_missing_trap.md.
   app.post('/api/v1/zalo-user-info/batch', { preHandler: authMiddleware }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { uids } = (request.body || {}) as { uids?: string[] };
+    const { uids, accountId } = (request.body || {}) as { uids?: string[]; accountId?: string };
     if (!Array.isArray(uids) || uids.length === 0) return { users: {} };
 
     const uniqueUids = Array.from(new Set(uids.filter(u => typeof u === 'string' && u.length > 0))).slice(0, USER_INFO_BATCH_CAP);
@@ -427,19 +428,29 @@ export async function zinstantProxyRoutes(app: FastifyInstance): Promise<void> {
     // Phase Zalo Account Mutation Gate 2026-05-27: scope org + accessible
     const userForScope = request.user!;
     const scope = await getZaloScope(userForScope.id, userForScope.orgId, userForScope.role);
-    const accounts = await prisma.zaloAccount.findMany({
-      where: {
-        orgId: userForScope.orgId,
-        status: 'connected',
-        ...(scope.isOrgAdmin ? {} : { id: { in: scope.accessibleIds } }),
-      },
-      select: { id: true },
-    });
-    if (accounts.length === 0) {
-      misses.forEach(uid => { users[uid] = null; });
-      return { users };
+
+    // PERF 2026-06-11 (anh báo lag VPS): UID là PER-NICK. Trước đây mỗi uid loop TẤT CẢ
+    // nick → nhóm 20 người × 50 nick = 1000 lượt Zalo SDK/lần mở nhóm (gây lag + spam
+    // 1000 log). Nếu FE truyền accountId (nick của hội thoại) → CHỈ gọi đúng nick đó.
+    // Fallback thử-tất-cả khi không có accountId (giữ tương thích).
+    let accountIds: string[];
+    if (accountId && (scope.isOrgAdmin || scope.accessibleIds.includes(accountId))) {
+      accountIds = [accountId];
+    } else {
+      const accounts = await prisma.zaloAccount.findMany({
+        where: {
+          orgId: userForScope.orgId,
+          status: 'connected',
+          ...(scope.isOrgAdmin ? {} : { id: { in: scope.accessibleIds } }),
+        },
+        select: { id: true },
+      });
+      if (accounts.length === 0) {
+        misses.forEach(uid => { users[uid] = null; });
+        return { users };
+      }
+      accountIds = accounts.map(a => a.id);
     }
-    const accountIds = accounts.map(a => a.id);
 
     await Promise.all(misses.map(async (uid) => {
       const data = await resolveProfile(uid, accountIds);
@@ -461,7 +472,7 @@ export async function zinstantProxyRoutes(app: FastifyInstance): Promise<void> {
   //    background → update Contact nếu khác.
   app.get('/api/v1/zalo-user-info/:uid', { preHandler: authMiddleware }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { uid } = request.params as { uid: string };
-    const { force } = request.query as { force?: string };
+    const { force, accountId } = request.query as { force?: string; accountId?: string };
     const bypassCache = force === '1' || force === 'true';
     if (!uid) return reply.status(400).send({ error: 'uid required' });
 
@@ -470,18 +481,31 @@ export async function zinstantProxyRoutes(app: FastifyInstance): Promise<void> {
       return reply.header('Cache-Control', 'private, max-age=600').send(cached.data);
     }
 
-    // Thử TẤT CẢ connected accounts đến khi có 1 trả profile.
     // Phase Zalo Account Mutation Gate 2026-05-27: scope org + accessible (cross-tenant fix)
     const userForScope = request.user!;
     const scopeForLookup = await getZaloScope(userForScope.id, userForScope.orgId, userForScope.role);
-    const accounts = await prisma.zaloAccount.findMany({
-      where: {
-        orgId: userForScope.orgId,
-        status: 'connected',
-        ...(scopeForLookup.isOrgAdmin ? {} : { id: { in: scopeForLookup.accessibleIds } }),
-      },
-      select: { id: true },
-    });
+
+    // PERF 2026-06-11 (anh báo lag VPS 30-50 nick): UID là PER-NICK (mỗi nick có UID
+    // khác nhau cho cùng người — xem reference_zalo_per_account_uid). Trước đây thử
+    // TẤT CẢ nick connected của org → product 50 nick = 50 lượt gọi Zalo SDK (49 lỗi
+    // "Tham số không hợp lệ") ~538ms mỗi lần mở dialog + đốt quota Zalo. Nếu FE truyền
+    // accountId (nick của hội thoại đang mở) → CHỈ gọi đúng nick đó (~30ms). Fallback
+    // thử-tất-cả chỉ khi KHÔNG có accountId (giữ tương thích các chỗ gọi khác).
+    let accounts: Array<{ id: string }>;
+    if (accountId) {
+      // Chỉ gọi đúng nick — verify nick thuộc scope (chống cross-tenant + nick ngoài quyền).
+      const allowed = scopeForLookup.isOrgAdmin || scopeForLookup.accessibleIds.includes(accountId);
+      accounts = allowed ? [{ id: accountId }] : [];
+    } else {
+      accounts = await prisma.zaloAccount.findMany({
+        where: {
+          orgId: userForScope.orgId,
+          status: 'connected',
+          ...(scopeForLookup.isOrgAdmin ? {} : { id: { in: scopeForLookup.accessibleIds } }),
+        },
+        select: { id: true },
+      });
+    }
     if (accounts.length === 0) return reply.status(503).send({ error: 'no connected Zalo account' });
 
     let profile: Record<string, unknown> | null = null;
@@ -501,7 +525,9 @@ export async function zinstantProxyRoutes(app: FastifyInstance): Promise<void> {
           break;
         }
       } catch (err) {
-        logger.warn(`[user-info] account ${acc.id} failed for ${uid}:`, err);
+        // Miss là BÌNH THƯỜNG khi thử nick không sở hữu UID này (per-nick UID) → debug,
+        // không warn (trước đây spam 1000+ dòng/phút khi product nhiều nick).
+        logger.debug(`[user-info] account ${acc.id} miss for ${uid}:`, err);
       }
     }
 
