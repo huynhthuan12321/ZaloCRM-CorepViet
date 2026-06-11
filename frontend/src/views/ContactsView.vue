@@ -361,8 +361,9 @@
               <td>
                 <template v-if="contact.lastInboundAt">
                   <div class="cell-strong">{{ formatRecentDateTime(contact.lastInboundAt) }}</div>
-                  <div class="cell-preview" :title="contact.lastInboundPreview || ''">
-                    {{ cleanPreview(contact.lastInboundPreview, contact.lastInboundType ?? null) }}
+                  <div class="cell-preview" :title="(contact as any).redacted ? '' : (contact.lastInboundPreview || '')">
+                    <PrivateBlur v-if="(contact as any).redacted" :redacted="true" mode="inline" />
+                    <template v-else>{{ cleanPreview(contact.lastInboundPreview, contact.lastInboundType ?? null) }}</template>
                   </div>
                 </template>
                 <span v-else class="empty">—</span>
@@ -370,8 +371,9 @@
               <td>
                 <template v-if="contact.lastOutboundAt">
                   <div class="cell-strong">{{ formatRecentDateTime(contact.lastOutboundAt) }}</div>
-                  <div class="cell-preview" :title="contact.lastOutboundPreview || ''">
-                    {{ cleanPreview(contact.lastOutboundPreview, contact.lastOutboundType ?? null) }}
+                  <div class="cell-preview" :title="(contact as any).redacted ? '' : (contact.lastOutboundPreview || '')">
+                    <PrivateBlur v-if="(contact as any).redacted" :redacted="true" mode="inline" />
+                    <template v-else>{{ cleanPreview(contact.lastOutboundPreview, contact.lastOutboundType ?? null) }}</template>
                   </div>
                 </template>
                 <span v-else class="empty">—</span>
@@ -497,7 +499,7 @@
                   <td>
                     <template v-if="row.lastInboundAt">
                       <div class="cell-strong">{{ formatRecentDateTime(row.lastInboundAt) }}</div>
-                      <div class="cell-preview" :title="row.lastInboundPreview || ''">{{ row.lastInboundPreview ? cleanPreview(row.lastInboundPreview, row.lastInboundType) : '(đã nhắn)' }}</div>
+                      <div class="cell-preview" :title="(row as any).redacted ? '' : (row.lastInboundPreview || '')"><PrivateBlur v-if="(row as any).redacted && row.lastInboundPreview" :redacted="true" mode="inline" /><template v-else>{{ row.lastInboundPreview ? cleanPreview(row.lastInboundPreview, row.lastInboundType) : '(đã nhắn)' }}</template></div>
                     </template>
                     <span v-else class="empty">—</span>
                   </td>
@@ -505,7 +507,7 @@
                   <td>
                     <template v-if="row.lastOutboundAt">
                       <div class="cell-strong">{{ formatRecentDateTime(row.lastOutboundAt) }}</div>
-                      <div class="cell-preview" :title="row.lastOutboundPreview || ''">{{ row.lastOutboundPreview ? cleanPreview(row.lastOutboundPreview, row.lastOutboundType) : '(đã nhắn)' }}</div>
+                      <div class="cell-preview" :title="(row as any).redacted ? '' : (row.lastOutboundPreview || '')"><PrivateBlur v-if="(row as any).redacted && row.lastOutboundPreview" :redacted="true" mode="inline" /><template v-else>{{ row.lastOutboundPreview ? cleanPreview(row.lastOutboundPreview, row.lastOutboundType) : '(đã nhắn)' }}</template></div>
                     </template>
                     <span v-else class="empty">—</span>
                   </td>
@@ -634,6 +636,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import ContactDetailPanel from '@/components/contacts/ContactDetailPanel.vue';
 import CustomerProfileDialog from '@/components/contacts/CustomerProfileDialog.vue';
+import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
 import ParentCandidateDialog from '@/components/contacts/ParentCandidateDialog.vue';
 import DuplicateReviewDialog from '@/components/contacts/DuplicateReviewDialog.vue';
 import AddCustomerQuickDialog from '@/components/contacts/AddCustomerQuickDialog.vue';

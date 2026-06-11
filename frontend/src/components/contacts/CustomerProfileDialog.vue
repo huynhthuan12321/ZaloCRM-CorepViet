@@ -231,7 +231,10 @@
                     </span>
                   </div>
                   <div v-if="f.lastInboundPreview || f.lastOutboundPreview" class="s-r s-msg">
-                    <span v-if="f.lastInboundPreview">
+                    <span v-if="(f as any).redacted">
+                      <span class="who kh">KH</span> <PrivateBlur :redacted="true" mode="inline" />
+                    </span>
+                    <span v-else-if="f.lastInboundPreview">
                       <span class="who kh">KH</span> "{{ cleanPreview(f.lastInboundPreview, f.lastInboundType) }}"
                     </span>
                     <span v-else-if="f.lastOutboundPreview">
@@ -298,6 +301,7 @@ import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import { formatRecentDateTime, cleanPreview } from '@/composables/use-contacts';
+import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
 import type { Contact } from '@/composables/use-contacts';
 
 const props = withDefaults(defineProps<{

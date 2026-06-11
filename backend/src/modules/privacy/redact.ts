@@ -156,68 +156,49 @@ export async function buildOffendingContactIds(
 }
 
 /**
- * Redact Contact object — CODEX REVIEW P1 #2 FIX: allowlist pattern.
- * Chỉ trả ID + score/metadata aggregate. Mọi PII strip.
+ * Redact Contact (KH cấp Cha) — Anh chốt 2026-06-11 (CEO review): CHỈ tin nhắn được
+ * bảo mật. Contact Cha KHÔNG chứa tin nhắn → KHÔNG che gì ở cấp Cha (tên/SĐT/email/
+ * avatar = danh tính KH = tài sản công ty, luôn hiện cho người có quyền xem).
  *
- * Allowlist giữ: id, orgId, displayStatus, displayLeadScore, displayHasZalo,
- *   priorityScore, engagementScore, engagementPattern, conversationCount,
- *   createdAt, updatedAt, redacted flag.
- * Strip: fullName, crmName, phone(*), email, address, social, demographic, notes,
- *   zalo* (uid, globalId, username), avatar, assigned user info, tags content.
+ * Việc duy nhất còn lại: map friends[] qua redactFriend để PREVIEW TIN NHẮN trong
+ * từng friend con (thuộc nick riêng tư) vẫn được blur. PII Cha trả NGUYÊN.
+ *
+ * Trước đây strip toàn bộ PII Cha (fullName=BLUR...) → over-blur, che mất danh tính
+ * KH công ty cho cả sale khác. Giờ bỏ hẳn.
  */
 export function redactContact(contact: any, ctx?: PrivacyContext): any {
-  // Phase Dual View Fix 2026-05-28: giữ friends array (redact từng friend riêng)
-  // để UI cột "Cùng chăm (N)" + expand Friend rows vẫn hoạt động. Trước fix
-  // strip toàn bộ friends → KH có ≥1 nick main non-owned bị "biến mất" Friend rows
-  // ở client kể cả khi viewer là owner các nick sub khác.
   const friends = Array.isArray(contact.friends) && ctx
     ? contact.friends.map((f: any) =>
         f?.zaloAccount ? redactFriend(f, ctx) : f,
       )
     : (contact.friends ?? []);
+  // Mở PII Cha (tên/SĐT/avatar = danh tính KH). NHƯNG preview tin nhắn ở cấp Cha được
+  // aggregate từ tin nhắn friend (contact-aggregate.ts) → CÓ THỂ là tin nhắn nick riêng
+  // tư → VẪN PHẢI blur (nguyên tắc: chỉ tin nhắn bảo mật). Chỉ áp khi contact "phạm"
+  // (route chỉ gọi redactContact cho contact có friend nick riêng tư non-owned).
+  const hasMsgPreview = contact.lastInboundPreview != null || contact.lastOutboundPreview != null;
   return {
-    id: contact.id,
-    orgId: contact.orgId,
-    // Aggregate display values (computed) — metadata, không lộ raw
-    displayStatus: contact.displayStatus,
-    displayLeadScore: contact.displayLeadScore,
-    displayHasZalo: contact.displayHasZalo,
-    // Score system (Phase 8) — metadata
-    leadScore: contact.leadScore,
-    engagementScore: contact.engagementScore,
-    engagementPattern: contact.engagementPattern,
-    engagementTrend: contact.engagementTrend,
-    priorityScore: contact.priorityScore,
-    // Count aggregates
-    _count: contact._count ?? null,
-    childrenCount: contact.childrenCount ?? friends.length,
-    // Counters per relationship kind (cho UI badge "Cùng chăm")
-    acceptedNicksCount: contact.acceptedNicksCount ?? null,
-    pendingNicksCount: contact.pendingNicksCount ?? null,
-    chattingNicksCount: contact.chattingNicksCount ?? null,
-    // Friend rows (mỗi friend bị redact bởi redactFriend nếu thuộc main-nick non-owned)
+    ...contact,
     friends,
-    // Timestamps
-    createdAt: contact.createdAt,
-    updatedAt: contact.updatedAt,
-    lastActivity: contact.lastActivity,
-    // hasZalo cần preserved cho cột Zalo 3 trạng thái mutex (UI render)
-    hasZalo: contact.hasZalo,
-    // BLUR placeholder cho UI
-    fullName: BLUR_TOKEN,
-    redacted: true,
+    ...(hasMsgPreview
+      ? {
+          lastInboundPreview: contact.lastInboundPreview != null ? BLUR_TOKEN : contact.lastInboundPreview,
+          lastOutboundPreview: contact.lastOutboundPreview != null ? BLUR_TOKEN : contact.lastOutboundPreview,
+          redacted: true,
+        }
+      : {}),
   };
 }
 
 /**
- * Redact Friend row — blur MỌI field content/PII nếu thuộc main-nick non-owned.
+ * Redact Friend row — Anh chốt 2026-06-11 (qua CEO review): CHỈ tin nhắn được bảo mật.
+ * Tên/avatar/SĐT/UID/định danh KH LUÔN hiện (tài sản công ty, không phải bí mật cá nhân).
+ * Privacy che DUY NHẤT preview tin nhắn (lastInbound/OutboundPreview) — nội dung trao đổi.
  *
- * 2026-06-11 (audit C7/H4/H11): trước đây chỉ blur aliasInNick + zaloUidInNick →
- * còn lộ preview tin nhắn (lastInbound/OutboundPreview), tên Zalo KH (zaloDisplayName),
- * định danh (zaloGlobalId/zaloUsername), avatar, và Contact PII nhúng. Giờ blur hết
- * theo allowlist-ish (giữ metadata an toàn, blur content-bearing).
+ * Trước đây (audit C7/H4/H11) blur cả tên/avatar/PII → gây over-blur, che mất danh tính
+ * KH công ty cho cả sale khác đang chăm. Giờ nới: chỉ giữ blur 2 preview tin nhắn.
  *
- * Fail-closed: nếu privacyMode undefined (select thiếu) → coi như main → redact.
+ * Fail-closed: nếu privacyMode undefined (select thiếu) → coi như main → redact preview.
  */
 export function redactFriend<T extends {
   aliasInNick?: string | null;
@@ -233,32 +214,16 @@ export function redactFriend<T extends {
   if (pm === 'main' || pm === undefined) {
     const isOwner = !!ctx.viewerUserId && friend.zaloAccount?.ownerUserId === ctx.viewerUserId;
     if (pm === 'main' && isOwner && ctx.privacyUnlocked) return friend;
-    // Blur content-bearing + PII. Giữ id/timestamp/counter/score (metadata an toàn).
     const f = friend as any;
-    const redactedContact = f.contact
-      ? {
-          ...f.contact,
-          fullName: BLUR_TOKEN,
-          crmName: f.contact.crmName != null ? BLUR_TOKEN : f.contact.crmName,
-          phone: null,
-          email: null,
-          avatarUrl: null,
-          redacted: true,
-        }
-      : f.contact;
+    // CHỈ blur PREVIEW TIN NHẮN. Tên/avatar/SĐT/UID/định danh KH + Contact PII giữ NGUYÊN.
+    // Nếu không có preview nào để blur → trả friend nguyên (không gắn cờ redacted thừa).
+    const hasMsgPreview = f.lastInboundPreview != null || f.lastOutboundPreview != null;
+    if (!hasMsgPreview) return friend;
     return {
       ...friend,
-      aliasInNick: BLUR_TOKEN,
-      zaloUidInNick: null,
-      // Preview tin nhắn — KHÔNG để lộ nội dung trao đổi.
+      // Preview tin nhắn — KHÔNG để lộ nội dung trao đổi (cờ redacted → FE blur mờ qua PrivateBlur).
       lastInboundPreview: f.lastInboundPreview != null ? BLUR_TOKEN : f.lastInboundPreview,
       lastOutboundPreview: f.lastOutboundPreview != null ? BLUR_TOKEN : f.lastOutboundPreview,
-      // Danh tính Zalo của KH.
-      zaloDisplayName: f.zaloDisplayName != null ? BLUR_TOKEN : f.zaloDisplayName,
-      zaloGlobalId: null,
-      zaloUsername: null,
-      zaloAvatarUrl: null,
-      contact: redactedContact,
       redacted: true,
     } as any;
   }

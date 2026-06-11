@@ -74,7 +74,10 @@ describe('redactMessage — nội dung tin nhắn nick main', () => {
   });
 });
 
-describe('redactFriend — preview tin + danh tính KH nick main', () => {
+// NGUYÊN TẮC MỚI (Anh chốt 2026-06-11 qua CEO review): CHỈ tin nhắn được bảo mật.
+// Tên/avatar/SĐT/UID/định danh KH = tài sản công ty → LUÔN hiện. Privacy che DUY NHẤT
+// preview tin nhắn (lastInbound/OutboundPreview) ở friend, và preview aggregate ở Contact Cha.
+describe('redactFriend — CHỈ blur preview tin nhắn, danh tính KH hiện thật', () => {
   const friend = {
     id: 'f1', aliasInNick: 'KH VIP', zaloUidInNick: 'uid_kh',
     lastInboundPreview: 'Em oi con hang khong', lastOutboundPreview: 'Da con anh',
@@ -83,48 +86,70 @@ describe('redactFriend — preview tin + danh tính KH nick main', () => {
     contact: { id: 'c1', fullName: 'Nguyen Van Tai', crmName: 'Tai', phone: '0901', email: 'a@b.c' },
     zaloAccount: { privacyMode: 'main', ownerUserId: 'OWNER' },
   };
-  it('người khác → blur preview/alias/danh tính + PII nhúng, GIỮ metadata', () => {
+  it('người khác → CHỈ preview tin nhắn bị che; tên/avatar/SĐT/UID/PII HIỆN THẬT', () => {
     const r: any = redactFriend(friend, ctxOther);
-    expect(r.aliasInNick).toBe(BLUR);
-    expect(r.zaloUidInNick).toBeNull();
+    // Bảo mật: chỉ preview tin nhắn
     expect(r.lastInboundPreview).toBe(BLUR);
     expect(r.lastOutboundPreview).toBe(BLUR);
-    expect(r.zaloDisplayName).toBe(BLUR);
-    expect(r.zaloGlobalId).toBeNull();
-    expect(r.zaloUsername).toBeNull();
-    expect(r.contact.fullName).toBe(BLUR);
-    expect(r.contact.phone).toBeNull();
-    expect(r.leadScore).toBe(90); // metadata GIỮ
     expect(r.redacted).toBe(true);
-  });
-  it('chủ nick đã unlock → thật', () => {
-    const r: any = redactFriend(friend, { viewerUserId: 'OWNER', orgId: 'O1', privacyUnlocked: true });
+    // Danh tính KH = tài sản công ty → HIỆN THẬT (không còn blur)
     expect(r.aliasInNick).toBe('KH VIP');
+    expect(r.zaloUidInNick).toBe('uid_kh');
+    expect(r.zaloDisplayName).toBe('Tai Nguyen');
+    expect(r.zaloGlobalId).toBe('g1');
+    expect(r.zaloUsername).toBe('t_tai');
+    expect(r.zaloAvatarUrl).toBe('http://x/a.jpg');
+    expect(r.contact.fullName).toBe('Nguyen Van Tai');
+    expect(r.contact.phone).toBe('0901');
+    expect(r.contact.email).toBe('a@b.c');
+    expect(r.leadScore).toBe(90);
+  });
+  it('chủ nick đã unlock → thật (preview cũng thật)', () => {
+    const r: any = redactFriend(friend, { viewerUserId: 'OWNER', orgId: 'O1', privacyUnlocked: true });
+    expect(r.lastInboundPreview).toBe('Em oi con hang khong');
     expect(r.redacted).toBeUndefined();
   });
   it('nick sub → thật', () => {
     const r: any = redactFriend({ ...friend, zaloAccount: { privacyMode: 'sub', ownerUserId: 'OWNER' } }, ctxOther);
+    expect(r.lastInboundPreview).toBe('Em oi con hang khong');
+  });
+  it('FAIL-CLOSED: thiếu privacyMode (select sót) → vẫn blur preview tin nhắn', () => {
+    const r: any = redactFriend({ ...friend, zaloAccount: { ownerUserId: 'OWNER' } } as any, ctxOther);
+    expect(r.lastInboundPreview).toBe(BLUR);
+    expect(r.redacted).toBe(true);
+    // nhưng danh tính vẫn hiện (chỉ tin nhắn bảo mật)
     expect(r.aliasInNick).toBe('KH VIP');
   });
-  it('FAIL-CLOSED: thiếu privacyMode (select sót) → vẫn blur', () => {
-    const r: any = redactFriend({ ...friend, zaloAccount: { ownerUserId: 'OWNER' } } as any, ctxOther);
-    expect(r.aliasInNick).toBe(BLUR);
-    expect(r.redacted).toBe(true);
+  it('friend KHÔNG có preview tin nhắn → trả nguyên, không cờ redacted', () => {
+    const noMsg = { ...friend, lastInboundPreview: null, lastOutboundPreview: null };
+    const r: any = redactFriend(noMsg, ctxOther);
+    expect(r.redacted).toBeUndefined();
+    expect(r.aliasInNick).toBe('KH VIP');
   });
 });
 
-describe('redactContact — PII khách hàng', () => {
+describe('redactContact — PII Cha HIỆN THẬT, chỉ preview tin nhắn aggregate bị che', () => {
   const contact = {
     id: 'c1', orgId: 'O1', fullName: 'Nguyen Van Tai', phone: '0901', email: 'a@b.c',
+    lastInboundPreview: 'Em oi con hang khong', lastOutboundPreview: 'Da con anh',
     leadScore: 70, engagementScore: 5,
   };
-  it('blur fullName + giữ metadata score', () => {
+  it('tên/SĐT/email HIỆN THẬT (tài sản công ty); preview tin nhắn bị che', () => {
     const r = redactContact(contact, ctxOther);
-    expect(r.fullName).toBe(BLUR);
-    expect(r.redacted).toBe(true);
+    // Danh tính KH hiện thật
+    expect(r.fullName).toBe('Nguyen Van Tai');
+    expect(r.phone).toBe('0901');
+    expect(r.email).toBe('a@b.c');
     expect(r.leadScore).toBe(70);
-    // PII thật KHÔNG được lọt qua (allowlist — không spread object gốc)
-    expect(r.phone).toBeUndefined();
-    expect(r.email).toBeUndefined();
+    // Preview tin nhắn (aggregate từ friend nick riêng tư) VẪN che
+    expect(r.lastInboundPreview).toBe(BLUR);
+    expect(r.lastOutboundPreview).toBe(BLUR);
+    expect(r.redacted).toBe(true);
+  });
+  it('Contact KHÔNG có preview tin nhắn → hiện nguyên, không cờ redacted', () => {
+    const noMsg = { id: 'c1', orgId: 'O1', fullName: 'Nguyen Van Tai', phone: '0901' };
+    const r = redactContact(noMsg, ctxOther);
+    expect(r.fullName).toBe('Nguyen Van Tai');
+    expect(r.redacted).toBeUndefined();
   });
 });

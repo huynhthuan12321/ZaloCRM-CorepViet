@@ -137,7 +137,8 @@
                   <span class="cdp-when">⏱ {{ formatRelative(f.lastInboundAt || f.lastInteractionAt) }}</span>
                 </div>
                 <div v-if="f.lastInboundPreview" class="cdp-friend-msg">
-                  💬 "{{ f.lastInboundPreview }}"
+                  💬 <PrivateBlur v-if="f.redacted" :redacted="true" mode="inline" />
+                  <template v-else>"{{ f.lastInboundPreview }}"</template>
                 </div>
               </div>
               <div class="cdp-friend-right">
@@ -164,9 +165,9 @@
                   <span class="cdp-when">⏱ {{ formatRelative(f.lastInboundAt || f.lastInteractionAt) }}</span>
                 </div>
                 <div v-if="f.lastInboundPreview" class="cdp-friend-msg">
-                  💬 "{{ f.lastInboundPreview }}"
+                  💬 <PrivateBlur v-if="f.redacted" :redacted="true" mode="inline" />
+                  <template v-else>"{{ f.lastInboundPreview }}"</template>
                 </div>
-                <div v-else class="cdp-friend-msg cdp-redacted">🔒 Nội dung mã hoá (Privacy v2)</div>
               </div>
               <div class="cdp-friend-right">
                 <span class="cdp-friend-score" :class="friendScoreClass(f.leadScore)">{{ f.leadScore || 0 }}</span>
@@ -228,6 +229,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import type { Contact } from '@/composables/use-contacts';
+import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
 
 const router = useRouter();
 
