@@ -92,7 +92,7 @@ const MIME_EXT: Record<string, string> = {
  * đuôi từ url-basename rồi từ mime. File cũ ("Lưu từ chat", mime octet-stream) → .bin
  * cuối cùng để ít nhất có đuôi (khách đổi tên mở được) thay vì file lỗi hoàn toàn.
  */
-function buildSendFileName(
+export function buildSendFileName(
   asset: { name: string; originalFilename?: string | null },
   blob: { mimeType: string; publicUrl: string },
 ): string {

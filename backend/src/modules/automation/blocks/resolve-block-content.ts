@@ -8,10 +8,10 @@
 
 export type ResolvedMessage =
   | { messageType: 'text'; payload: { text: string; styles: Array<{ st: string; start: number; len: number }> | null } }
-  | { messageType: 'image'; payload: { url: string; caption?: string } }
-  | { messageType: 'album'; payload: { items: Array<{ url: string; caption?: string }> } }
-  | { messageType: 'file'; payload: { url: string; filename?: string; sizeBytes?: number; mimeType?: string; caption?: string } }
-  | { messageType: 'video'; payload: { url: string; thumbnailUrl?: string; durationSec?: number; caption?: string } }
+  | { messageType: 'image'; payload: { url: string; caption?: string; mediaAssetId?: string } }
+  | { messageType: 'album'; payload: { items: Array<{ url: string; caption?: string; mediaAssetId?: string }> } }
+  | { messageType: 'file'; payload: { url: string; filename?: string; sizeBytes?: number; mimeType?: string; caption?: string; mediaAssetId?: string } }
+  | { messageType: 'video'; payload: { url: string; thumbnailUrl?: string; durationSec?: number; caption?: string; mediaAssetId?: string } }
   | { messageType: 'friend_request'; payload: { greeting: string } }
   | { messageType: 'update_status'; payload: Record<string, unknown> };
 
@@ -90,14 +90,15 @@ export function resolveBlockContent(
         });
       } else if (c.kind === 'image') {
         if (typeof c.url === 'string' && c.url) {
-          resolved.push({ messageType: 'image', payload: { url: c.url, caption: c.caption as string | undefined } });
+          resolved.push({ messageType: 'image', payload: { url: c.url, caption: c.caption as string | undefined, mediaAssetId: c.mediaAssetId as string | undefined } });
         }
       } else if (c.kind === 'album') {
+        // GĐ Block-media (2026-06-13 D3): giữ mediaAssetId per-item để bump usageCount khi gửi.
         const items = Array.isArray(c.items)
-          ? (c.items as Array<{ url?: string; caption?: string }>).filter((it) => it && typeof it.url === 'string' && it.url)
+          ? (c.items as Array<{ url?: string; caption?: string; mediaAssetId?: string }>).filter((it) => it && typeof it.url === 'string' && it.url)
           : [];
         if (items.length > 0) {
-          resolved.push({ messageType: 'album', payload: { items: items as Array<{ url: string; caption?: string }> } });
+          resolved.push({ messageType: 'album', payload: { items: items as Array<{ url: string; caption?: string; mediaAssetId?: string }> } });
         }
       } else if (c.kind === 'file') {
         if (typeof c.url === 'string' && c.url) {
@@ -109,6 +110,7 @@ export function resolveBlockContent(
               sizeBytes: c.sizeBytes as number | undefined,
               mimeType: c.mimeType as string | undefined,
               caption: c.caption as string | undefined,
+              mediaAssetId: c.mediaAssetId as string | undefined,
             },
           });
         }
@@ -121,6 +123,7 @@ export function resolveBlockContent(
               thumbnailUrl: c.thumbnailUrl as string | undefined,
               durationSec: c.durationSec as number | undefined,
               caption: c.caption as string | undefined,
+              mediaAssetId: c.mediaAssetId as string | undefined,
             },
           });
         }

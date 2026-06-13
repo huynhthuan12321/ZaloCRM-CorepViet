@@ -36,7 +36,10 @@
 import { ref, onMounted } from 'vue';
 import { listMedia, type MediaAssetItem } from '@/api/media';
 
-const props = defineProps<{ multiple?: boolean; kind?: string }>();
+// publicOnly: CHỈ hiện media CÔNG KHAI (visibility='public'). Dùng khi gắn media vào
+// Block/automation — tránh ảnh nick Riêng tư lọt ra broadcast (privacy, anh chốt 2026-06-12).
+// Default false → các chỗ dùng khác (vd chèn vào chat) không bị lọc, hành vi cũ giữ nguyên.
+const props = defineProps<{ multiple?: boolean; kind?: string; publicOnly?: boolean }>();
 const emit = defineEmits<{ close: []; pick: [assets: MediaAssetItem[]] }>();
 
 const items = ref<MediaAssetItem[]>([]);
@@ -51,7 +54,12 @@ function debouncedReload() { if (timer) clearTimeout(timer); timer = setTimeout(
 async function reload() {
   loading.value = true;
   try {
-    items.value = await listMedia({ kind: props.kind || 'image', q: search.value || undefined, limit: 40 });
+    items.value = await listMedia({
+      kind: props.kind || 'image',
+      q: search.value || undefined,
+      limit: 40,
+      ...(props.publicOnly ? { visibility: 'public' } : {}),
+    });
   } catch { /* ignore */ } finally { loading.value = false; }
 }
 

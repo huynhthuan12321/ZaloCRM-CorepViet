@@ -27,7 +27,10 @@ import { zaloOps } from '../../shared/zalo-operations.js';
 import { sendNativeVideo } from '../../shared/video-processor.js';
 import { downloadMediaToTemp, extractZaloMsgId } from './chat-media-helpers.js';
 import { resolveBlockContent } from '../automation/blocks/resolve-block-content.js';
-import { renderTemplate } from '../automation/blocks/render-template.js';
+import { renderTemplate, renderTemplateDetailed, shiftStylesForRender } from '../automation/blocks/render-template.js';
+// GĐ Block-media (2026-06-13): D4 vá tên file dùng chung; D3 bump usageCount khi gửi media qua Block.
+import { buildSendFileName } from '../media/media-routes.js';
+import { bumpUsage } from '../media/media-service.js';
 import { getOwnerScope, applyOwnerScope } from '../rbac/owner-scope.js';
 
 type QueryParams = Record<string, string>;
@@ -1752,10 +1755,16 @@ export async function chatRoutes(app: FastifyInstance) {
       const toPersist: Array<{ sdkResult: unknown; content: string; contentType: string }> = [];
       try {
         if (m.messageType === 'text') {
-          const rendered = contactId ? await renderTemplate(m.payload.text, contactId, zaloAccountId) : m.payload.text;
-          const styles = Array.isArray(m.payload.styles) ? m.payload.styles : [];
-          // Render template làm lệch offset → bỏ styles khi text có biến {…}.
-          const useStyles = !m.payload.text.includes('{') && styles.length > 0;
+          // D6 (2026-06-13): GIỮ format khi có biến — dịch offset style theo giá trị thật (an toàn).
+          const rawStyles = Array.isArray(m.payload.styles) ? m.payload.styles : [];
+          let rendered = m.payload.text;
+          let styles = rawStyles;
+          if (contactId) {
+            const det = await renderTemplateDetailed(m.payload.text, contactId, zaloAccountId);
+            rendered = det.rendered;
+            styles = rawStyles.length ? (shiftStylesForRender(m.payload.text, rawStyles, det.values) ?? []) : rawStyles;
+          }
+          const useStyles = styles.length > 0;
           const sendPayload: Record<string, unknown> = { msg: rendered };
           if (useStyles) sendPayload.styles = styles;
           const sdkResult = await zaloOps.sendMessage(zaloAccountId, threadId, threadType, sendPayload, io);
@@ -1777,20 +1786,26 @@ export async function chatRoutes(app: FastifyInstance) {
             contentType: 'image',
           });
         } else if (m.messageType === 'album') {
-          // Gửi từng ảnh riêng → mỗi ảnh 1 bubble + 1 zaloMsgId. Delay nhỏ giữa ảnh.
-          for (let k = 0; k < m.payload.items.length; k++) {
-            if (k > 0) await new Promise((r) => setTimeout(r, 500 + Math.floor(Math.random() * 700)));
-            const it = m.payload.items[k];
-            const caption = await renderCaption(it.caption);
+          // D2 (2026-06-13): THỐNG NHẤT với automation — gửi GỘP 1 cụm album (sendImage nhiều path)
+          // thay vì từng ảnh lẻ, để khách thấy GIỐNG nhau dù gửi tay hay tự động. Cap 12 ảnh/lần.
+          const allItems = m.payload.items.slice(0, 12);
+          if (m.payload.items.length > 12) {
+            logger.warn(`[send-block] album ${m.payload.items.length} ảnh > 12 — chỉ gửi 12 ảnh đầu (giới hạn SDK).`);
+          }
+          const paths: string[] = [];
+          for (const it of allItems) {
             const dl = await downloadMediaToTemp({ url: it.url }, 'image');
             cleanups.push(dl.cleanup);
-            const sdkResult = await zaloOps.sendFile(zaloAccountId, threadId, threadType, [dl.path], io, caption);
-            toPersist.push({
-              sdkResult,
-              content: JSON.stringify({ href: it.url, thumb: it.url, size: 0 }),
-              contentType: 'image',
-            });
+            paths.push(dl.path);
           }
+          const albumCaption = await renderCaption(allItems[0]?.caption);
+          const sdkResult = await zaloOps.sendImage(zaloAccountId, threadId, threadType, paths, io, albumCaption);
+          // Persist 1 message kiểu album (nhiều attachments) — khớp cách automation persist + chat render.
+          toPersist.push({
+            sdkResult,
+            content: JSON.stringify({ text: '', attachments: allItems.map((it) => ({ kind: 'image', url: it.url, caption: it.caption ?? '' })) }),
+            contentType: 'image',
+          });
         } else if (m.messageType === 'video') {
           const caption = await renderCaption(m.payload.caption);
           const dl = await downloadMediaToTemp({ url: m.payload.url }, 'video');
@@ -1810,7 +1825,13 @@ export async function chatRoutes(app: FastifyInstance) {
           });
         } else if (m.messageType === 'file') {
           const caption = await renderCaption(m.payload.caption);
-          const dl = await downloadMediaToTemp({ url: m.payload.url, filename: m.payload.filename }, 'file');
+          // D4 (2026-06-13): suy tên+đuôi đúng (dùng chung buildSendFileName) — tránh khách nhận
+          // file .bin/không mở được khi block chứa media cũ kẹt tên hoặc filename thiếu đuôi.
+          const sendName = buildSendFileName(
+            { name: m.payload.filename ?? '', originalFilename: m.payload.filename ?? null },
+            { mimeType: m.payload.mimeType ?? '', publicUrl: m.payload.url },
+          );
+          const dl = await downloadMediaToTemp({ url: m.payload.url, filename: sendName }, 'file');
           cleanups.push(dl.cleanup);
           const sdkResult = await zaloOps.sendFile(zaloAccountId, threadId, threadType, [dl.path], io, caption);
           toPersist.push({
@@ -1856,6 +1877,17 @@ export async function chatRoutes(app: FastifyInstance) {
             privacyMode: conversation.zaloAccount.privacyMode,
             ownerUserId: conversation.zaloAccount.ownerUserId,
           });
+        }
+        // D3 (2026-06-13): gửi media qua Khối (gửi tay) → bump usageCount để đo ảnh/file hiệu quả.
+        // Fire-and-forget, không chặn. album: bump từng item; image/video/file: 1 id.
+        {
+          const p = m.payload as Record<string, unknown>;
+          const ids: string[] = m.messageType === 'album'
+            ? ((p.items as Array<{ mediaAssetId?: string }>) ?? []).map((it) => it.mediaAssetId).filter((x): x is string => !!x)
+            : (m.messageType === 'image' || m.messageType === 'video' || m.messageType === 'file') && p.mediaAssetId
+              ? [p.mediaAssetId as string]
+              : [];
+          for (const aid of ids) bumpUsage(aid).catch(() => {});
         }
       } catch (err: any) {
         const code = err?.code as string | undefined;

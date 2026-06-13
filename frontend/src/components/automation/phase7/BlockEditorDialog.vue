@@ -305,24 +305,35 @@
                   v-else-if="c.kind === 'image' || c.kind === 'video' || c.kind === 'file'"
                   class="bed-stack-body bed-stack-media"
                 >
+                  <!-- D7: media trong Khối LUÔN từ Kho (có mediaAssetId) — bỏ ô dán URL tay,
+                       tránh ảnh ngoài lọt vào automation/broadcast (anh chốt 2026-06-12). -->
                   <div class="bed-media-row">
-                    <label class="bed-field-label">URL</label>
-                    <div style="display:flex; gap:6px; flex:1;">
-                      <input
-                        v-model="(c as any).url"
-                        type="text"
-                        class="bed-input"
-                        placeholder="Chọn từ Kho hoặc dán https://..."
-                        style="flex:1;"
-                        @input="markDirty"
-                      />
-                      <button class="bed-add-btn" type="button" style="white-space:nowrap;" @click="openMediaPicker(idx)">
-                        <v-icon size="14">mdi-image-multiple-outline</v-icon> Chọn từ Kho
-                      </button>
-                    </div>
+                    <button class="bed-add-btn" type="button" style="white-space:nowrap;" @click="openMediaPicker(idx)">
+                      <v-icon size="14">mdi-image-multiple-outline</v-icon>
+                      {{ (c as any).url ? 'Đổi từ Kho' : 'Chọn từ Kho' }}
+                    </button>
+                    <span v-if="!(c as any).url" class="bed-hint" style="margin-left:8px;">
+                      Chọn ảnh/video/file đã có trong Kho phương tiện.
+                    </span>
                   </div>
+                  <!-- D5: video play được ngay trong editor (controls), ảnh xem trước, file hiện tên. -->
                   <div v-if="(c as any).url" class="bed-media-row">
-                    <img :src="(c as any).url" alt="" style="max-height:70px; border:1px solid #ddd; border-radius:6px; object-fit:contain;" />
+                    <video
+                      v-if="c.kind === 'video'"
+                      :src="(c as any).url"
+                      controls
+                      preload="metadata"
+                      style="max-height:120px; max-width:100%; border:1px solid #ddd; border-radius:6px; background:#000;"
+                    ></video>
+                    <span
+                      v-else-if="c.kind === 'file'"
+                      class="bed-hint"
+                      style="display:inline-flex; align-items:center; gap:6px;"
+                    >
+                      <v-icon size="16" color="var(--error)">mdi-file-pdf-box</v-icon>
+                      {{ (c as any).filename || 'Đã chọn 1 file từ Kho' }}
+                    </span>
+                    <img v-else :src="(c as any).url" alt="" style="max-height:70px; border:1px solid #ddd; border-radius:6px; object-fit:contain;" />
                   </div>
                   <div v-if="c.kind === 'file'" class="bed-media-row">
                     <label class="bed-field-label">Tên file</label>
@@ -345,26 +356,22 @@
                   </div>
                 </div>
 
-                <!-- Card body: ALBUM — danh sách URL ảnh -->
+                <!-- Card body: ALBUM — D7: chỉ chọn từ Kho (bỏ ô dán URL + "+ Thêm URL").
+                     Ảnh album luôn có mediaAssetId, không URL ngoài. -->
                 <div v-else-if="c.kind === 'album'" class="bed-stack-body bed-stack-media">
-                  <p class="bed-hint bed-hint-block">Album tối đa 10 ảnh. Mỗi ảnh 1 URL.</p>
-                  <div
-                    v-for="(item, i) in ((c as any).items || []) as Array<{url: string}>"
-                    :key="i as number"
-                    class="bed-album-row"
-                  >
-                    <input
-                      v-model="item.url"
-                      type="text"
-                      class="bed-input"
-                      placeholder="https://..."
-                      @input="markDirty"
-                    />
-                    <button class="bed-comp-x" @click="removeAlbumItemOf(idx, i as number)"><v-icon size="13">mdi-close</v-icon></button>
+                  <p class="bed-hint bed-hint-block">Album tối đa 10 ảnh — chọn từ Kho phương tiện.</p>
+                  <div class="bed-album-thumbs">
+                    <template v-for="(item, i) in ((c as any).items || []) as Array<{url: string}>" :key="i as number">
+                      <div v-if="item.url" class="bed-album-thumb">
+                        <img :src="item.url" alt="" />
+                        <button class="bed-album-thumb-x" type="button" title="Bỏ ảnh" @click="removeAlbumItemOf(idx, i as number)">
+                          <v-icon size="12">mdi-close</v-icon>
+                        </button>
+                      </div>
+                    </template>
                   </div>
                   <div style="display:flex; gap:6px;">
-                    <button class="bed-add-btn" @click="addAlbumItemOf(idx)">+ Thêm URL</button>
-                    <button class="bed-add-btn" @click="openMediaPicker(idx, true)"><v-icon size="13">mdi-image-multiple-outline</v-icon> Chọn từ Kho</button>
+                    <button class="bed-add-btn" type="button" @click="openMediaPicker(idx, true)"><v-icon size="13">mdi-image-multiple-outline</v-icon> Chọn từ Kho</button>
                   </div>
                 </div>
               </div>
@@ -476,6 +483,14 @@
                   <v-icon size="16" color="var(--error)">mdi-file-pdf-box</v-icon>
                   {{ (c as any).filename || 'file.pdf' }}
                 </div>
+                <!-- D5: video play được ngay trong preview (sale bấm play xem). Fallback placeholder khi chưa chọn. -->
+                <video
+                  v-else-if="c.kind === 'video' && (c as any).url"
+                  :src="(c as any).url"
+                  controls
+                  preload="metadata"
+                  class="bed-zalo-video-player"
+                ></video>
                 <div v-else-if="c.kind === 'video'" class="bed-zalo-video">
                   <v-icon size="18" color="#fff">mdi-play-circle-outline</v-icon> Video
                 </div>
@@ -518,10 +533,12 @@
       <div v-if="error" class="bed-error">{{ error }}</div>
     </div>
 
-    <!-- Media GĐ3: dialog chọn ảnh từ Kho phương tiện -->
+    <!-- Media GĐ3: dialog chọn ảnh từ Kho phương tiện.
+         D3-filter: public-only — Khối chỉ gắn media CÔNG KHAI (không lộ ảnh nick Riêng tư ra broadcast). -->
     <MediaPickerDialog
       v-if="mediaPickerFor"
       :multiple="mediaPickerFor.album"
+      :public-only="true"
       @pick="onMediaPicked"
       @close="mediaPickerFor = null"
     />
@@ -888,7 +905,7 @@ function addComponent(kind: Component['kind']) {
   let newC: Component;
   if (kind === 'text') newC = { kind: 'text', defaultVariant: { text: '', styles: [] }, variants: [] };
   else if (kind === 'image') newC = { kind: 'image', url: '', caption: '' };
-  else if (kind === 'album') newC = { kind: 'album', items: [{ url: '' }] };
+  else if (kind === 'album') newC = { kind: 'album', items: [] }; // D7: ảnh thêm qua Kho, không tạo item rỗng
   else if (kind === 'file') newC = { kind: 'file', url: '', filename: '' };
   else newC = { kind: 'video', url: '' };
   components.value.push(newC);
@@ -935,15 +952,7 @@ function removeGreeting(idx: number) {
 }
 
 // Album thao tác THEO index component (stack card mỗi album độc lập).
-function addAlbumItemOf(compIdx: number) {
-  const c = components.value[compIdx];
-  if (c?.kind !== 'album') return;
-  const a = c as AlbumComponent;
-  if (!a.items) a.items = [];
-  if (a.items.length >= 10) { alert('Album tối đa 10 ảnh'); return; }
-  a.items.push({ url: '' });
-  markDirty();
-}
+// D7: bỏ addAlbumItemOf (ô dán URL tay) — ảnh album giờ chỉ thêm qua Kho (openMediaPicker).
 function removeAlbumItemOf(compIdx: number, i: number) {
   const c = components.value[compIdx];
   if (c?.kind !== 'album') return;
@@ -1976,6 +1985,18 @@ async function onSave() {
 .bed-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 .bed-album-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
 .bed-album-row .bed-input { flex: 1; }
+/* D7: album chọn từ Kho — lưới thumbnail thay danh sách ô URL. */
+.bed-album-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.bed-album-thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; border: 1px solid var(--hairline, #ddd); }
+.bed-album-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bed-album-thumb-x {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  border: none; cursor: pointer;
+  background: rgba(31, 35, 40, .72); color: #fff;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.bed-album-thumb-x:hover { background: rgba(170, 45, 0, .9); }
 
 .bed-empty-editor {
   flex: 1;
@@ -2113,6 +2134,17 @@ async function onSave() {
   padding: 22px 40px;
   font-size: 13px;
   border-bottom-right-radius: 5px;
+}
+/* D5: video play được trong preview Zalo. */
+.bed-zalo-video-player {
+  align-self: flex-end;
+  width: 200px;
+  max-width: 100%;
+  max-height: 150px;
+  border-radius: 12px;
+  border-bottom-right-radius: 5px;
+  background: #000;
+  display: block;
 }
 .bed-zalo-system {
   display: inline-flex;
