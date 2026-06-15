@@ -1,7 +1,7 @@
 # Zalo CRM - Tài Liệu API
 
 **Phiên bản:** 1.0.0  
-**Cập nhật lần cuối:** 2026-06-05  
+**Cập nhật lần cuối:** 2026-06-15  
 **URL Cơ sở:** `http://localhost:3000` (phát triển) | `https://api.zalocrm.com` (sản xuất)
 
 ---
@@ -1796,6 +1796,63 @@ Phân tích cảm xúc của tin nhắn/cuộc trò chuyện.
   "score": 0.92,
   "emotions": ["happy", "satisfied"]
 }
+```
+
+---
+
+### 16.4 Danh Sách AI Provider
+**GET** `/api/v1/ai/providers`
+
+Lấy danh sách provider (`anthropic`, `gemini`, `openai`, `qwen`, `kimi`) kèm base URL và trạng thái API key của tổ chức hiện tại. Key chỉ trả về dạng che (mask), không bao giờ trả key thật.
+
+**Phản hồi:**
+```json
+[
+  { "id": "openai", "name": "OpenAI", "baseUrl": "https://api.openai.com", "hasKey": true, "keyMask": "••••f5QA" },
+  { "id": "anthropic", "name": "Anthropic", "baseUrl": "https://api.anthropic.com", "hasKey": false, "keyMask": "" }
+]
+```
+
+---
+
+### 16.5 Cập Nhật API Key / Base URL Của Provider
+**PUT** `/api/v1/ai/providers/:id`
+
+Quyền: `settings:edit`. Đặt hoặc xoá API key (mã hoá AES-GCM khi lưu) và base URL cho provider, theo từng tổ chức. Key/URL cấu hình ở đây **được ưu tiên hơn** `.env`. Gửi `apiKey` rỗng để xoá key (quay về cấu hình `.env`).
+
+**Thân Yêu Cầu:**
+```json
+{
+  "apiKey": "sk-proj-...",
+  "baseUrl": "https://api.openai.com"
+}
+```
+
+**Phản hồi:**
+```json
+{ "ok": true }
+```
+
+---
+
+### 16.6 Danh Sách Model Của Provider
+**GET** `/api/v1/ai/providers/:id/models`
+
+Lấy danh sách model trực tiếp từ API của provider (dùng key + base URL đã cấu hình). Nếu provider không hỗ trợ liệt kê model hoặc key sai → trả mảng rỗng kèm `error` (UI cho phép gõ tay tên model).
+
+**Phản hồi:**
+```json
+{
+  "models": [
+    { "title": "gpt-4o-mini", "value": "gpt-4o-mini" },
+    { "title": "gpt-5.4-nano", "value": "gpt-5.4-nano" }
+  ]
+}
+```
+
+**Phản hồi khi lỗi (vẫn HTTP 200):**
+```json
+{ "models": [], "error": "Chưa cấu hình API key" }
 ```
 
 ---

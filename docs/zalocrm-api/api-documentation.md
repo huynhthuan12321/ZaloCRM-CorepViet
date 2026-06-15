@@ -1,7 +1,7 @@
 # Zalo CRM - API Documentation
 
 **Version:** 1.0.0  
-**Last Updated:** 2026-06-05  
+**Last Updated:** 2026-06-15  
 **Base URL:** `http://localhost:3000` (development) | `https://api.zalocrm.com` (production)
 
 ---
@@ -1820,6 +1820,63 @@ Analyze sentiment of message/conversation.
   "score": 0.92,
   "emotions": ["happy", "satisfied"]
 }
+```
+
+---
+
+### 16.4 List AI Providers
+**GET** `/api/v1/ai/providers`
+
+Returns the providers (`anthropic`, `gemini`, `openai`, `qwen`, `kimi`) with their base URL and the current organization's API-key status. The key is only returned masked — never the real key.
+
+**Response:**
+```json
+[
+  { "id": "openai", "name": "OpenAI", "baseUrl": "https://api.openai.com", "hasKey": true, "keyMask": "••••f5QA" },
+  { "id": "anthropic", "name": "Anthropic", "baseUrl": "https://api.anthropic.com", "hasKey": false, "keyMask": "" }
+]
+```
+
+---
+
+### 16.5 Update Provider API Key / Base URL
+**PUT** `/api/v1/ai/providers/:id`
+
+Permission: `settings:edit`. Sets or clears the API key (encrypted at rest with AES-GCM) and base URL for a provider, per organization. Values set here **take precedence over** `.env`. Send an empty `apiKey` to clear the key (falls back to `.env`).
+
+**Request Body:**
+```json
+{
+  "apiKey": "sk-proj-...",
+  "baseUrl": "https://api.openai.com"
+}
+```
+
+**Response:**
+```json
+{ "ok": true }
+```
+
+---
+
+### 16.6 List Provider Models
+**GET** `/api/v1/ai/providers/:id/models`
+
+Fetches the model list directly from the provider's API (using the configured key + base URL). If the provider does not support listing or the key is invalid, an empty array is returned with `error` (the UI then allows typing the model name manually).
+
+**Response:**
+```json
+{
+  "models": [
+    { "title": "gpt-4o-mini", "value": "gpt-4o-mini" },
+    { "title": "gpt-5.4-nano", "value": "gpt-5.4-nano" }
+  ]
+}
+```
+
+**Error response (still HTTP 200):**
+```json
+{ "models": [], "error": "API key not configured" }
 ```
 
 ---
