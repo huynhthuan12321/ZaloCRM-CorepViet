@@ -304,6 +304,8 @@ export function useChat() {
   const aiConfig = ref<AiConfig>({ provider: 'anthropic', model: 'claude-sonnet-4-6', maxDaily: 500, enabled: true });
   let socket: Socket | null = null;
   let convSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  // FIX socket-chết v2 — trạng thái realtime cho badge "mất kết nối" ở header chat.
+  const socketConnected = ref(true);
 
   // Debounce server-side reconcile: chỉ fetch full list sau 3s không có tin mới
   // → tránh lag khi nhận burst (chat group nhiều người gửi liên tiếp).
@@ -724,7 +726,20 @@ export function useChat() {
 
   function initSocket() {
     window.addEventListener('friend-crm-tags-changed', onFriendCrmTagsChanged);
-    socket = createAppSocket();
+    socket = createAppSocket({
+      // Badge "mất kết nối realtime" — cập nhật cờ cho header chat đọc.
+      onStatusChange: (status) => {
+        socketConnected.value = status === 'connected';
+      },
+      // Reconnect sau 1 khoảng chết → kéo lại tin cột 2 đã lỡ (socket không backfill).
+      // bypassCache đảm bảo lấy fresh, không apply cache cũ trước lúc chết.
+      onReconnect: () => {
+        void fetchConversations({ bypassCache: true });
+      },
+    });
+    // FIX 2 — wake reconnect khi quay lại tab / có mạng lại.
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
 
     socket.on('chat:message', (data: { message: Message; conversationId: string; _privacyMeta?: { privacyMode?: string; ownerUserId?: string | null } }) => {
       // PRIVACY 2026-06-11 — Server GIỜ redact server-side trước khi emit (emit-chat.ts):
@@ -972,8 +987,20 @@ export function useChat() {
     });
   }
 
+  // FIX socket-chết v2 (FIX 2) — treo qua đêm xong mở lại tab / có mạng lại là realtime
+  // SỐNG NGAY, không cần F5. Nếu socket đang chết thì ép connect lại (socket-io đọc token
+  // tươi qua callback auth; heal-auth trong socket.ts lo refresh nếu token hết hạn).
+  function wakeReconnect() {
+    if (document.hidden) return;
+    if (socket && !socket.connected) socket.connect();
+  }
+  function onVisible() { wakeReconnect(); }
+  function onOnline() { wakeReconnect(); }
+
   function destroySocket() {
     window.removeEventListener('friend-crm-tags-changed', onFriendCrmTagsChanged);
+    document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('online', onOnline);
     socket?.disconnect();
     socket = null;
   }
@@ -1014,5 +1041,6 @@ export function useChat() {
     destroySocket,
     getSocket: () => socket,
     typingConvIds,
+    socketConnected,
   };
 }

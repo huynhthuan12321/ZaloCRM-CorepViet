@@ -45,7 +45,7 @@ const TOAST_5XX_THROTTLE_MS = 4000;
 // đồng thời chỉ gọi /auth/refresh một lần, cùng chờ một promise.
 let refreshPromise: Promise<string> | null = null;
 
-function clearAuthAndRedirect() {
+export function clearAuthAndRedirect() {
   localStorage.removeItem('token');
   localStorage.removeItem('refreshToken');
   const currentPath = router.currentRoute.value.path;
@@ -62,6 +62,60 @@ async function runRefresh(): Promise<string> {
   localStorage.setItem('token', res.data.token);
   localStorage.setItem('refreshToken', res.data.refreshToken);
   return res.data.token as string;
+}
+
+// FIX socket-chết v2 2026-06-15 — single-flight refresh DÙNG CHUNG cho cả HTTP
+// interceptor LẪN 5 socket realtime. BẮT BUỘC chỉ 1 refreshPromise duy nhất:
+// nếu mỗi socket tự gọi /auth/refresh riêng với cùng refresh token cũ, backend
+// (refresh-token rotation) tưởng TRỘM token → thu hồi cả họ token → ĐÁ user ra
+// login đột ngột. Đây là điểm bảo mật /security-review chặn lại.
+//
+// Khóa CROSS-TAB qua localStorage: in-memory refreshPromise CHỈ dedupe trong 1 tab.
+// Nhiều tab (tab nền thức dậy muộn >20s cửa-ân-hạn của BE) vẫn có thể replay RT cũ
+// → revokeFamily. Cờ refresh-in-progress + thời điểm giúp tab khác CHỜ thay vì tự
+// refresh song song. Không phải mutex tuyệt đối (localStorage không atomic) nhưng
+// thu hẹp cửa sổ va chạm xuống mức an toàn cùng với grace 20s phía BE.
+const REFRESH_LOCK_KEY = 'auth:refresh-in-progress';
+const REFRESH_LOCK_TTL_MS = 10_000;
+
+function peerRefreshInFlight(): boolean {
+  const raw = localStorage.getItem(REFRESH_LOCK_KEY);
+  if (!raw) return false;
+  const startedAt = Number(raw);
+  if (!Number.isFinite(startedAt)) return false;
+  // Lock cũ hơn TTL coi như chết (tab kia crash giữa chừng) → bỏ qua.
+  return Date.now() - startedAt < REFRESH_LOCK_TTL_MS;
+}
+
+/**
+ * ensureFreshToken — refresh access token, SINGLE-FLIGHT toàn cục.
+ * HTTP interceptor và mọi socket handler PHẢI đi qua đây, KHÔNG gọi runRefresh trực tiếp.
+ * Trả access token mới. Throw nếu refresh thất bại (RT hết hạn/bị thu hồi).
+ */
+export async function ensureFreshToken(): Promise<string> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    // Tab khác đang refresh → chờ nó ghi token mới vào localStorage thay vì tự refresh
+    // song song (tránh replay RT cũ → revokeFamily). Poll ngắn token đổi.
+    if (peerRefreshInFlight()) {
+      const before = localStorage.getItem('token');
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        const now = localStorage.getItem('token');
+        if (now && now !== before) return now; // tab kia đã refresh xong
+        if (!peerRefreshInFlight()) break;      // lock nhả mà token không đổi → tự refresh
+      }
+    }
+    localStorage.setItem(REFRESH_LOCK_KEY, String(Date.now()));
+    try {
+      return await runRefresh();
+    } finally {
+      localStorage.removeItem(REFRESH_LOCK_KEY);
+    }
+  })().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
 }
 
 function isAuthEndpoint(url: string): boolean {
@@ -85,12 +139,9 @@ api.interceptors.response.use(
     ) {
       original._retry = true;
       try {
-        if (!refreshPromise) {
-          refreshPromise = runRefresh().finally(() => {
-            refreshPromise = null;
-          });
-        }
-        const newToken = await refreshPromise;
+        // FIX socket-chết v2 — đi qua ensureFreshToken (single-flight CHUNG với socket),
+        // không tự quản refreshPromise riêng nữa. Tránh HTTP + socket refresh song song.
+        const newToken = await ensureFreshToken();
         original.headers = original.headers ?? {};
         original.headers.Authorization = `Bearer ${newToken}`;
         return api(original); // retry request gốc với token mới

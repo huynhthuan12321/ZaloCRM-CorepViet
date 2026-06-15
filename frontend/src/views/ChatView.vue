@@ -19,6 +19,12 @@
     <!-- COL 2: conversation list — FilterBar render INSIDE via named slot
          giữa CRM tag bar và conv list (đúng order user yêu cầu) -->
     <div class="smax-conv-col">
+      <!-- FIX socket-chết v2 — báo mất kết nối realtime, KHÔNG để chết âm thầm (bỏ lỡ khách).
+           Text generic, không lộ orgId/user. Ẩn khi đã kết nối. -->
+      <div v-if="!socketConnected" class="realtime-offline-banner">
+        <span class="dot" />
+        Mất kết nối realtime — đang thử kết nối lại...
+      </div>
       <ConversationList
         :conversations="conversations"
         :selected-id="selectedConvId"
@@ -147,7 +153,7 @@ const {
   fetchConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
   generateAiSuggestion, generateAiSummary, generateAiSentiment,
   initSocket, destroySocket, getSocket,
-  typingConvIds,
+  typingConvIds, socketConnected,
 } = useChat();
 
 const {
@@ -669,6 +675,30 @@ watch(searchQuery, () => {
 .smax-conv-col {
   border-right: 1px solid var(--smax-grey-200);
   background: var(--smax-bg);
+}
+
+/* FIX socket-chết v2 — banner mất kết nối realtime ở đầu cột 2 */
+.realtime-offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #92400e;
+  background: #fef3c7;
+  border-bottom: 1px solid #fde68a;
+}
+.realtime-offline-banner .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  animation: rt-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rt-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .smax-msg-col {
