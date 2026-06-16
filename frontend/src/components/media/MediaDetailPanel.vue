@@ -1,62 +1,79 @@
 <template>
   <aside class="m-panel">
-    <header class="p-head">
-      <b>Chi tiết</b>
-      <button class="x" @click="$emit('close')">✕</button>
-    </header>
+    <!-- ✕ nổi góc ảnh — bỏ thanh tiêu đề "Chi tiết" để ảnh lên TRÊN CÙNG (anh chốt 2026-06-16). -->
+    <button class="p-close" title="Đóng" @click="$emit('close')">✕</button>
     <div class="p-body">
-      <div class="preview">
-        <img v-if="asset.thumbnailUrl" :src="wmUrl || asset.thumbnailUrl" alt="" />
-        <span v-else class="ph"><component :is="kindIcon" :size="44" :stroke-width="1.5" /></span>
+      <!-- Preview thích ứng theo loại: ảnh xem ảnh · video PLAY được · tệp icon + tên rõ. -->
+      <div class="preview" :class="{ 'is-file': asset.kind === 'file' }">
+        <img v-if="asset.kind === 'image' && (wmUrl || asset.thumbnailUrl || asset.url)" :src="wmUrl || asset.thumbnailUrl || asset.url || ''" alt="" />
+        <video v-else-if="asset.kind === 'video' && asset.url" :src="asset.url" controls preload="metadata"></video>
+        <img v-else-if="asset.kind === 'video' && asset.thumbnailUrl" :src="asset.thumbnailUrl" alt="" />
+        <div v-else class="ph">
+          <component :is="kindIcon" :size="40" :stroke-width="1.5" />
+          <span v-if="asset.kind === 'file'" class="ph-name">{{ asset.name }}</span>
+        </div>
       </div>
 
-      <!-- NGUỒN & THÔNG TIN (2026-06-15): ảnh từ nick nào / sale / ngày / size / kích thước.
-           Grid 2 cột nhãn-giá-trị cho gọn chiều cao (HD 1366 — design-review Pass 6). -->
+      <!-- TAG ngay sau ảnh, NHÃN + gắn tag cùng 1 dòng, không xuống dòng (anh chốt 2026-06-16). -->
+      <div class="row">
+        <span class="row-label">Tag</span>
+        <div class="tag-inline">
+          <span v-for="t in tagIds" :key="t" class="tg coral">{{ t }} <i @click="removeTag(t)">✕</i></span>
+          <input
+            v-model="newTag" class="tg-input" placeholder="+ tag" autocomplete="off"
+            @focus="tagFocused = true" @blur="tagFocused = false" @keyup.enter="addTag"
+          />
+        </div>
+      </div>
+      <div v-if="tagSuggest.length" class="tag-suggest">
+        <button v-for="s in tagSuggest" :key="s" type="button" class="ts-chip" @mousedown.prevent="addTagValue(s)">+ {{ s }}</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Tên</span>
+        <input v-model="name" class="ipt" @blur="saveName" />
+      </div>
+
+      <!-- Quyền xem: Công khai / Riêng tư cùng 1 dòng với nhãn. -->
+      <div class="row">
+        <span class="row-label">Quyền</span>
+        <div class="seg">
+          <span :class="{ on: visibility === 'public' }" @click="setVis('public')">Công khai</span>
+          <span :class="{ on: visibility === 'private' }" @click="setVis('private')">Riêng tư</span>
+        </div>
+      </div>
+      <div v-if="fromPrivateNick" class="warn">
+        🔒 Ảnh lưu từ nick Riêng tư — có thể chứa thông tin khách. Cần xác nhận khi chia sẻ Công khai.
+      </div>
+
+      <!-- Nguồn & thông tin — HIỆN LUÔN như cũ (anh chốt 2026-06-16: không gập accordion). -->
       <div class="srcbox">
         <div class="srcbox-ttl">Nguồn &amp; thông tin</div>
         <dl class="srcdl">
           <dt>Nguồn</dt>
-          <dd>
-            <component :is="sourceIcon" :size="13" :stroke-width="1.9" class="dd-ic" />
-            {{ sourceText }}
-          </dd>
+          <dd><component :is="sourceIcon" :size="13" :stroke-width="1.9" class="dd-ic" /> {{ sourceText }}</dd>
           <dt>Người lưu</dt>
           <dd>{{ asset.ownerName || '—' }}</dd>
           <dt>Ngày lưu</dt>
           <dd>{{ fmtDate(asset.createdAt) }}</dd>
           <dt>Dung lượng</dt>
           <dd>{{ sizeText }}</dd>
-          <dt>Kích thước</dt>
-          <dd>{{ dimText }}</dd>
+          <template v-if="asset.kind !== 'file'">
+            <dt>Kích thước</dt>
+            <dd>{{ dimText }}</dd>
+          </template>
           <dt>Loại</dt>
           <dd>{{ kindText }} · đã dùng {{ asset.usageCount }} lần</dd>
         </dl>
       </div>
 
-      <div class="fld">
-        <label>Tên</label>
-        <input v-model="name" class="ipt" @blur="saveName" />
-      </div>
-
-      <div class="fld">
-        <label>Quyền xem</label>
-        <div class="seg">
-          <span :class="{ on: visibility === 'public' }" @click="setVis('public')">Công khai</span>
-          <span :class="{ on: visibility === 'private' }" @click="setVis('private')">Riêng tư</span>
-        </div>
-        <div v-if="fromPrivateNick" class="warn">
-          🔒 Ảnh lưu từ nick Riêng tư — có thể chứa thông tin khách. Cần xác nhận khi chia sẻ Công khai.
-        </div>
-      </div>
-
-      <!-- Watermark: toggle BẬT/TẮT + chọn góc + độ mờ (G1 + GĐ2) -->
+      <!-- Watermark (chỉ ảnh) — hiện luôn. -->
       <div v-if="asset.kind === 'image'" class="fld">
         <label>Đóng dấu logo HS (Watermark)</label>
         <label class="wm-toggle">
           <input type="checkbox" :checked="wmEnabled" :disabled="wmLoading" @change="onToggleWatermark" />
           <span>{{ wmEnabled ? 'Đang BẬT — gửi kèm logo' : 'Đang TẮT — gửi ảnh gốc' }}</span>
         </label>
-
         <div v-if="wmEnabled" class="wm-opts">
           <div class="wm-line">
             <span class="wm-lbl">Vị trí</span>
@@ -80,15 +97,6 @@
         </div>
         <div class="hint">Bản gốc luôn được giữ. Watermark là phiên bản riêng để gửi khách.</div>
       </div>
-
-      <div class="fld">
-        <label>Tag dự án</label>
-        <div class="tags">
-          <span v-for="t in tagIds" :key="t" class="tg coral">{{ t }} <i @click="removeTag(t)">✕</i></span>
-          <input v-model="newTag" class="tg-input" placeholder="+ tag" @keyup.enter="addTag" />
-        </div>
-      </div>
-
     </div>
     <footer class="p-foot">
       <button class="btn-insert" @click="openInsert"><SendIcon :size="14" :stroke-width="2" /> Chèn vào chat</button>
@@ -118,8 +126,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { updateMedia, archiveMedia, watermarkMedia, removeWatermark, toggleFavorite, type MediaAssetItem, type MediaFolder } from '@/api/media';
+import { ref, computed, watch, onMounted } from 'vue';
+import { updateMedia, archiveMedia, watermarkMedia, removeWatermark, toggleFavorite, listMediaTags, type MediaAssetItem, type MediaFolder } from '@/api/media';
 import { useToast } from '@/composables/use-toast';
 import MediaSendPicker from '@/components/media/MediaSendPicker.vue';
 import ConfirmShareDialog from '@/components/media/ConfirmShareDialog.vue';
@@ -136,6 +144,16 @@ const newTag = ref('');
 const isFav = ref(false);
 const showInsert = ref(false);
 const showShareConfirm = ref(false);
+
+// Gợi ý tag kho (gắn tag dễ: focus ô tag → hiện tag có sẵn để chọn nhanh).
+const allTags = ref<string[]>([]);
+const tagFocused = ref(false);
+const tagSuggest = computed<string[]>(() => {
+  const q = newTag.value.trim().toLowerCase();
+  const pool = allTags.value.filter((t) => !tagIds.value.includes(t));
+  if (!q) return tagFocused.value ? pool.slice(0, 8) : [];
+  return pool.filter((t) => t.toLowerCase().startsWith(q)).slice(0, 8);
+});
 
 // Watermark state (per-ảnh, lưu bền ở backend).
 const wmEnabled = ref(props.asset.watermarkEnabled ?? false);
@@ -237,12 +255,19 @@ function confirmShare() {
   patch({ visibility: 'public', confirmShare: true }, 'Đã chia sẻ Công khai');
 }
 
-function addTag() {
-  const t = newTag.value.trim();
+function addTagValue(raw: string) {
+  const t = raw.trim();
   if (t && !tagIds.value.includes(t)) { tagIds.value.push(t); patch({ tagIds: tagIds.value }); }
   newTag.value = '';
 }
+function addTag() { addTagValue(newTag.value); }
 function removeTag(t: string) { tagIds.value = tagIds.value.filter((x) => x !== t); patch({ tagIds: tagIds.value }); }
+
+// Init trạng thái yêu thích + nạp tag kho cho gợi ý (lần đầu mở panel).
+onMounted(() => {
+  isFav.value = props.asset.favorited ?? false;
+  listMediaTags(100).then((ts) => { allTags.value = ts.map((t) => t.tag); }).catch(() => { /* ignore */ });
+});
 
 // ── Watermark toggle ───────────────────────────────────────────────────────
 async function onToggleWatermark(e: Event) {
@@ -313,20 +338,41 @@ async function doArchive() {
 }
 .p-head { padding:14px 18px; border-bottom:1px solid var(--hairline); display:flex; align-items:center; justify-content:space-between; background:var(--canvas); color:var(--ink); }
 .p-head .x { border:none; background:none; cursor:pointer; color:var(--muted); font-size:15px; }
+/* ✕ nổi góc panel (bỏ thanh tiêu đề để ảnh lên trên cùng). */
+.p-close { position:absolute; top:10px; right:10px; z-index:3; width:26px; height:26px; border:none; border-radius:9999px; background:rgba(24,29,38,.55); color:#fff; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.p-close:hover { background:rgba(24,29,38,.82); }
+/* Hàng inline: nhãn + giá trị cùng 1 dòng (Tag / Tên / Quyền). */
+.row { display:flex; align-items:center; gap:10px; margin-bottom:11px; }
+.row-label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:500; width:46px; flex-shrink:0; }
+.row .ipt { flex:1; }
+.row .seg { flex-shrink:0; }
+/* Tag inline: chip + ô nhập trên 1 dòng, KHÔNG xuống dòng — quá nhiều thì cuộn ngang. */
+.tag-inline { flex:1; min-width:0; display:flex; align-items:center; gap:5px; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; }
+.tag-inline::-webkit-scrollbar { height:0; }
+.tag-inline .tg { flex-shrink:0; }
+.tag-inline .tg-input { flex-shrink:0; }
 .p-body { padding:18px; overflow:auto; flex:1; min-height:0; }
 /* HD 1366 (workspace ~648px): preview gọn 160px để khối Nguồn + tag + nút không bị đẩy khuất. */
-.preview { height:160px; background:var(--strong); border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; margin-bottom:14px; overflow:hidden; }
-.preview img { width:100%; height:100%; object-fit:contain; }
-.preview .ph { color:var(--muted); display:flex; align-items:center; justify-content:center; }
+.preview { height:160px; background:var(--strong); border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; margin-bottom:12px; overflow:hidden; }
+.preview.is-file { height:96px; background:var(--canvas); border:1px solid var(--hairline); }
+.preview img, .preview video { width:100%; height:100%; object-fit:contain; }
+.preview video { background:#000; }
+.preview .ph { color:var(--muted); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:8px; }
+.preview .ph-name { font-size:12px; color:var(--body); text-align:center; word-break:break-word; max-width:92%; }
 
+/* Accordion thu gọn: Nguồn & thông tin / Watermark — bấm header mở (panel gọn, hết tràn). */
+.acc-head { width:100%; display:flex; align-items:center; gap:7px; background:var(--canvas); border:1px solid var(--hairline); border-radius:var(--r-sm); padding:9px 12px; margin-bottom:10px; font-size:12.5px; color:var(--ink); font-weight:500; cursor:pointer; text-align:left; font-family:inherit; }
+.acc-head.open { border-color:var(--muted); }
+.acc-caret { color:var(--muted); width:12px; flex-shrink:0; }
+.acc-badge { margin-left:auto; font-size:10px; font-weight:700; background:#fef3c7; color:#92710a; border-radius:var(--pill); padding:1px 8px; }
 /* Khối "Nguồn & thông tin" — grid 2 cột nhãn-giá-trị (gọn chiều cao, HD 1366). */
-.srcbox { background:var(--canvas); border:1px solid var(--hairline); border-radius:var(--r-md); padding:11px 13px; margin-bottom:16px; }
-.srcbox-ttl { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; margin-bottom:8px; }
+.srcbox { background:var(--canvas); border:1px solid var(--hairline); border-radius:var(--r-md); padding:11px 13px; margin-bottom:12px; }
+.wm-wrap { background:var(--canvas); border:1px solid var(--hairline); border-radius:var(--r-md); padding:11px 13px; margin-bottom:12px; }
 .srcdl { display:grid; grid-template-columns:88px 1fr; gap:5px 10px; margin:0; }
 .srcdl dt { font-size:12px; color:var(--muted); }
 .srcdl dd { font-size:12.5px; color:var(--ink); margin:0; display:flex; align-items:center; gap:5px; min-width:0; }
 .srcdl dd .dd-ic { flex-shrink:0; color:var(--muted); }
-.fld { margin-bottom:16px; }
+.fld { margin-bottom:12px; }
 .fld label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:6px; font-weight:500; }
 .ipt { width:100%; border:1px solid var(--hairline); border-radius:var(--r-sm); padding:7px 10px; font-size:14px; color:var(--ink); outline:none; }
 .seg { display:inline-flex; border:1px solid var(--hairline); border-radius:var(--pill); overflow:hidden; font-size:12.5px; background:var(--canvas); }
@@ -348,6 +394,10 @@ async function doArchive() {
 .tg.coral { background:#fbe9e2; border-color:#f0c4b3; color:var(--coral); }
 .tg i { cursor:pointer; font-style:normal; }
 .tg-input { border:1px dashed var(--hairline); border-radius:var(--pill); padding:3px 10px; font-size:11.5px; width:70px; outline:none; }
+/* Gợi ý tag kho (focus ô tag → bấm chip để gắn nhanh). */
+.tag-suggest { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.ts-chip { border:1px solid var(--hairline); background:var(--canvas); color:var(--body); border-radius:var(--pill); padding:2px 9px; font-size:11px; cursor:pointer; }
+.ts-chip:hover { background:#fbe9e2; border-color:#f0c4b3; color:var(--coral); }
 .stat div { font-size:13.5px; color:var(--ink); }
 .p-foot { padding:14px 18px; border-top:1px solid var(--hairline); background:var(--canvas); display:flex; gap:8px; align-items:center; }
 .btn-insert { flex:1; border:none; background:var(--ink); color:#fff; border-radius:var(--r-md); padding:9px; font-size:13px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:34px; }
