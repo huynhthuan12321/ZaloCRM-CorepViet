@@ -538,6 +538,8 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
   // ═══════════════════════════════════════════════════════════════════════
 
   // GET /api/v1/zalo-accounts/sdk-limits — trần org default + danh sách nick override.
+  // GET để MỞ (read-only): cột "SDK/Giới hạn hôm nay" ở trang Zalo dùng nó hiện usage/limit cho
+  // sale. Chỉ CHẶN sửa: PUT/DELETE dưới gate 'settings:edit' (2026-06-18) → sale ko đổi được trần.
   app.get('/api/v1/zalo-accounts/sdk-limits', async (request) => {
     const user = request.user!;
     const rows = await prisma.sdkLimit.findMany({
@@ -560,14 +562,21 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
         daily: r.dailyLimit, burst: r.burstLimit, burstWindowMs: r.burstWindowMs,
       };
     }
-    return { categories: ALL_CATEGORIES, orgDefault, nickOverrides };
+    // 2026-06-18: kèm danh sách nick (id + tên) để trang Cài đặt "Trần SDK" đổ vào tab "Theo nick"
+    // mà KHÔNG phải gọi /zalo-accounts (tách phụ thuộc quyền zalo_account).
+    const nicks = await prisma.zaloAccount.findMany({
+      where: { orgId: user.orgId, archivedAt: null },
+      select: { id: true, displayName: true },
+      orderBy: { displayName: 'asc' },
+    });
+    return { categories: ALL_CATEGORIES, orgDefault, nickOverrides, nicks };
   });
 
   // PUT /api/v1/zalo-accounts/sdk-limits/org — owner/admin lưu trần org default.
   // Body: { limits: { [category]: { daily, burst, burstWindowMs? } } }
   app.put(
     '/api/v1/zalo-accounts/sdk-limits/org',
-    { preHandler: requireGrant('zalo_account', 'edit') },
+    { preHandler: requireGrant('settings', 'edit') }, // 2026-06-18: chỉ admin Cài đặt (sale ko đổi trần)
     async (request, reply) => {
       const user = request.user!;
       const body = (request.body ?? {}) as { limits?: Record<string, { daily?: number; burst?: number; burstWindowMs?: number }> };
@@ -610,7 +619,7 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
   // Body: { limits: { [category]: { daily, burst, burstWindowMs? } | null } } (null = xoá override category đó)
   app.put(
     '/api/v1/zalo-accounts/:id/sdk-limits',
-    { preHandler: requireGrant('zalo_account', 'edit') },
+    { preHandler: requireGrant('settings', 'edit') }, // 2026-06-18: chỉ admin Cài đặt (sale ko đổi trần)
     async (request, reply) => {
       const user = request.user!;
       const { id } = request.params as { id: string };
@@ -651,7 +660,7 @@ export async function zaloDashboardRoutes(app: FastifyInstance): Promise<void> {
   // DELETE /api/v1/zalo-accounts/:id/sdk-limits — xoá HẾT override của nick (về org default).
   app.delete(
     '/api/v1/zalo-accounts/:id/sdk-limits',
-    { preHandler: requireGrant('zalo_account', 'delete') },
+    { preHandler: requireGrant('settings', 'edit') }, // 2026-06-18: chỉ admin Cài đặt (sale ko đổi trần)
     async (request, reply) => {
       const user = request.user!;
       const { id } = request.params as { id: string };

@@ -5,7 +5,7 @@
   broadcast load trần từ đây. API: GET/PUT /api/v1/zalo-accounts/sdk-limits...
 -->
 <template>
-  <div class="sdk-overlay" @click.self="$emit('close')">
+  <div :class="embedded ? 'sdk-embed' : 'sdk-overlay'" @click.self="!embedded && $emit('close')">
     <div class="sdk-sheet">
       <div class="sh-head">
         <div class="ic">🛡️</div>
@@ -13,7 +13,7 @@
           <h2>Cài đặt trần an toàn SDK Zalo</h2>
           <div class="sub">Giới hạn số lượt mỗi loại thao tác / nick / ngày để tránh Zalo khoá nick</div>
         </div>
-        <button class="x" @click="$emit('close')">✕</button>
+        <button v-if="!embedded" class="x" @click="$emit('close')">✕</button>
       </div>
 
       <div class="scope">
@@ -82,7 +82,8 @@
 import { ref, computed, onMounted } from 'vue';
 import { api } from '@/api/index';
 
-const props = defineProps<{ nicks: Array<{ id: string; displayName: string | null }> }>();
+// embedded = render thành panel trong trang Cài đặt (không overlay/dim, không nút ✕). 2026-06-18.
+const props = defineProps<{ nicks: Array<{ id: string; displayName: string | null }>; embedded?: boolean }>();
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>();
 
 type Cat = 'message' | 'reaction' | 'chat_action' | 'group_admin' | 'group_read' | 'friend_action' | 'friend_lookup' | 'contact_sync' | 'friend_read' | 'profile' | 'query';
@@ -183,6 +184,9 @@ onMounted(fetchAll);
 <style scoped>
 .sdk-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px; }
 .sdk-sheet { width: 760px; max-width: 100%; max-height: 90vh; background: #fff; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.2); }
+/* embedded (trong trang Cài đặt): bỏ overlay/dim, panel theo dòng, không clamp chiều cao modal. */
+.sdk-embed { width: 100%; }
+.sdk-embed .sdk-sheet { width: 100%; max-width: 880px; max-height: none; box-shadow: none; border: 1px solid #e5e7eb; }
 .sh-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; border-bottom: 1px solid #e5e7eb; }
 .sh-head .ic { width: 38px; height: 38px; border-radius: 9px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 18px; }
 .sh-head h2 { font-size: 16px; font-weight: 700; }

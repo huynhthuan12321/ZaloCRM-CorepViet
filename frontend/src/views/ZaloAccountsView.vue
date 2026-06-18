@@ -135,18 +135,12 @@
       @open-detail="openDrawer"
       @action="onTableAction"
       @reassign-owner="onOpenReassign"
-      @config-limits="showSdkLimits = true"
     />
     </template>
     <!-- /viewMode advanced -->
 
-    <!-- 2026-06-06 — Dialog cài đặt trần SDK (org default + nick override) -->
-    <SdkLimitsDialog
-      v-if="showSdkLimits"
-      :nicks="visibleAccounts.map(a => ({ id: a.id, displayName: a.displayName }))"
-      @close="showSdkLimits = false"
-      @saved="loadSdkLimits"
-    />
+    <!-- 2026-06-18 — Dialog cài đặt trần SDK đã DỜI sang Cài đặt › Kênh & Tự động ›
+         "Trần an toàn SDK Zalo" (chỉ admin). Trang này GIỮ cột usage (loadSdkLimits đọc để hiện). -->
 
     <!-- Phase 4 2026-05-22: Owner reassign drawer -->
     <OwnerReassignDrawer
@@ -255,7 +249,7 @@ import { ref, onMounted, computed, onUnmounted, watch } from 'vue';
 import { useZaloAccountsDashboard } from '@/composables/use-zalo-accounts-dashboard';
 import StatsCards from '@/components/zalo-accounts/StatsCards.vue';
 import AccountsTable from '@/components/zalo-accounts/AccountsTable.vue';
-import SdkLimitsDialog from '@/components/zalo-accounts/SdkLimitsDialog.vue';
+// SdkLimitsDialog dời sang trang Cài đặt SdkLimitsSettingsPage (2026-06-18) — ko import ở đây nữa.
 import AccountDetailDrawer from '@/components/zalo-accounts/AccountDetailDrawer.vue';
 import BulkActionBar from '@/components/zalo-accounts/BulkActionBar.vue';
 import OwnerReassignDrawer from '@/components/zalo-accounts/OwnerReassignDrawer.vue';
@@ -295,7 +289,7 @@ const {
 } = dash;
 
 // 2026-06-06 — Trần SDK: load org default + nick override để vẽ thanh quota X/cap.
-const showSdkLimits = ref(false);
+// showSdkLimits bỏ (dialog dời sang Cài đặt). Giữ sdkOrgLimits/sdkNickOverrides để hiện cột usage.
 const sdkOrgLimits = ref<Record<string, { daily: number }>>({});
 const sdkNickOverrides = ref<Record<string, Record<string, { daily: number }>>>({});
 async function loadSdkLimits() {

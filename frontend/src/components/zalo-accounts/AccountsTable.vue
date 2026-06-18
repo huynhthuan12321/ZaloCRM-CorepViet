@@ -12,7 +12,8 @@
           <th>Đội ngũ chia sẻ</th>
           <th class="th-sdk">
             SDK / Giới hạn hôm nay
-            <button class="sdk-cfg-btn" title="Cài đặt trần giới hạn SDK" @click.stop="emit('configLimits')">⚙️ Trần</button>
+            <!-- 2026-06-18: nút "⚙️ Trần" đã dời sang Cài đặt › Kênh & Tự động › "Trần an toàn SDK Zalo"
+                 (chỉ admin). Cột này GIỮ để xem usage; cấu hình trần KHÔNG còn ở đây. -->
           </th>
           <th title="Tin nhắn GỬI ĐI cho người lạ hôm nay / giới hạn người lạ. Bạn bè + tin nhận KHÔNG tính.">Gửi người lạ</th>
           <th>Hôm nay <span class="th-hint">📥📤🤖🤝🔍</span></th>

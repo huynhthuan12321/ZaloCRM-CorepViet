@@ -104,6 +104,9 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     permission: 'admin',
     items: [
       { id: 'zalo', label: 'Tài khoản Zalo', icon: 'mdi-cellphone-link', route: '/settings/channels/zalo', permission: 'admin', resource: 'zalo_account', aliases: ['nick', 'zalo account'] },
+      // 2026-06-18 — Trần SDK dời từ trang Zalo sang đây (gate resource 'settings', KHÔNG 'zalo_account')
+      // → sale quản nick không thấy/không đổi được trần (trần SDK nguy hiểm).
+      { id: 'sdk-limits', label: 'Trần an toàn SDK Zalo', icon: 'mdi-shield-alert-outline', route: '/settings/channels/sdk-limits', permission: 'admin', resource: 'settings', aliases: ['trần', 'rate limit', 'sdk', 'giới hạn', 'an toàn nick', 'khoá nick', 'quota nick', 'giới hạn gửi'] },
       { id: 'fb-leadads', label: 'Facebook Lead Ads', icon: 'mdi-facebook', route: '/settings/channels/facebook-leadads', permission: 'admin', resource: 'settings', aliases: ['fb', 'facebook', 'lead ads', 'leadads', 'meta'] },
       { id: 'automation', label: 'Tự động hoá', icon: 'mdi-cog-sync-outline', route: '/settings/channels/automation', permission: 'admin', resource: 'settings', aliases: ['automation', 'kỹ thuật', 'nhịp quét', 'timeout', 'bám đuổi kỹ thuật'] },
       { id: 'integrations', label: 'Tích hợp 3rd party', icon: 'mdi-puzzle-outline', route: '/settings/channels/integrations', permission: 'admin', resource: 'settings', aliases: ['tích hợp', 'integration', '3rd party'] },
