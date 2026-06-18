@@ -1,8 +1,9 @@
 <!--
   SequencePreviewDialog — Xem trước tin nhắn Sequence sẽ gửi cho 1-2 KH (2026-06-18).
-  Bong bóng chat (như KH nhận trên Zalo) + GIỜ GỬI cụ thể từng bước (qua ngày ghi rõ mai/ngày).
-  Dùng ở: SequencesView (xem trước luồng) + AddFlowModal (nút Xem trước khi gắn luồng tay).
-  BE: POST /automation/sequences/:id/preview {contactIds:[1-2]} → raw block + sendAt từng bước.
+  Bong bóng PHÍA NGƯỜI GỬI (sale gửi đi) + GIỜ GỬI cụ thể từng bước (qua ngày ghi rõ mai/ngày)
+  + dòng cuối "luồng kết thúc lúc …". Dùng ở: SequencesView + AddFlowModal (nút Xem trước).
+  BE render bong bóng SẴN (resolveBlockContent + thay đủ ~36 biến) → preview = đúng tin gửi thật.
+  POST /automation/sequences/:id/preview {contactIds:[1-2], nickId?} → steps[].bubbles + sendAt.
 -->
 <template>
   <div v-if="visible" class="spd-overlay" @click.self="close">
@@ -47,21 +48,28 @@
         <template v-else>
           <div class="spd-cols" :class="{ two: data.contacts.length === 2 }">
             <div v-for="pc in data.contacts" :key="pc.contactId" class="spd-col">
-              <div class="spd-col-head">💬 {{ pc.name }} sẽ nhận trên Zalo</div>
+              <div class="spd-col-head">💬 Sale gửi cho <strong>{{ pc.name }}</strong></div>
               <div class="spd-chat">
                 <div v-for="st in pc.steps" :key="st.stepIdx" class="spd-step">
                   <div class="spd-step-time">
                     <v-icon size="12">mdi-clock-outline</v-icon>
                     Bước {{ st.stepIdx + 1 }}/{{ data.sequence.totalSteps }} · gửi {{ formatSendTime(st.sendAt) }}
                   </div>
-                  <div v-for="(b, bi) in renderBubbles(st.block, pc.vars)" :key="bi" class="spd-bubble">
-                    <div v-if="b.kind === 'text'" class="spd-bubble-text" v-html="b.html"></div>
-                    <img v-else-if="b.kind === 'image'" :src="b.url" class="spd-bubble-img" alt="" loading="lazy" />
-                    <div v-else-if="b.kind === 'video'" class="spd-bubble-file"><v-icon size="14">mdi-play-circle-outline</v-icon> Video</div>
-                    <div v-else-if="b.kind === 'file'" class="spd-bubble-file"><v-icon size="14">mdi-file-outline</v-icon> {{ b.name || 'Tệp đính kèm' }}</div>
-                    <div v-else-if="b.kind === 'album'" class="spd-bubble-file"><v-icon size="14">mdi-image-multiple-outline</v-icon> Album {{ b.count }} ảnh</div>
-                  </div>
-                  <div v-if="!renderBubbles(st.block, pc.vars).length" class="spd-bubble spd-bubble-empty">(bước này không phải gửi tin)</div>
+                  <template v-for="(b, bi) in st.bubbles" :key="bi">
+                    <div v-if="b.type === 'text'" class="spd-bubble-text" v-html="bubbleHtml(b)"></div>
+                    <template v-else-if="b.type === 'image'">
+                      <img :src="b.url" class="spd-bubble-img" alt="" loading="lazy" />
+                      <div v-if="b.caption" class="spd-bubble-text">{{ b.caption }}</div>
+                    </template>
+                    <div v-else-if="b.type === 'video'" class="spd-bubble-file"><v-icon size="14">mdi-play-circle-outline</v-icon> Video{{ b.caption ? ' · ' + b.caption : '' }}</div>
+                    <div v-else-if="b.type === 'file'" class="spd-bubble-file"><v-icon size="14">mdi-file-outline</v-icon> {{ b.filename || 'Tệp đính kèm' }}</div>
+                    <div v-else-if="b.type === 'album'" class="spd-bubble-file"><v-icon size="14">mdi-image-multiple-outline</v-icon> Album {{ b.items.length }} ảnh</div>
+                  </template>
+                  <div v-if="!st.bubbles.length" class="spd-bubble-empty">(bước này không gửi tin text)</div>
+                </div>
+                <div v-if="pc.etaCompleteAt" class="spd-done">
+                  <v-icon size="13" color="#157f3c">mdi-flag-checkered</v-icon>
+                  Luồng kết thúc lúc <strong>{{ formatSendTime(pc.etaCompleteAt) }}</strong>
                 </div>
               </div>
             </div>
@@ -86,15 +94,22 @@ import { api } from '@/api/index';
 import { applyRichFormat, plainFormat, type StyleMark } from '@/composables/use-rich-format';
 
 interface PickContact { id: string; name: string; phone?: string }
-interface PreviewStep { stepIdx: number; delayMinutes: number; sendAt: string; block: any }
-interface PreviewContact { contactId: string; name: string; vars: { name: string; gender: string; sale: string }; steps: PreviewStep[]; etaCompleteAt: string | null }
+type Bubble =
+  | { type: 'text'; text: string; styles: StyleMark[] }
+  | { type: 'image'; url: string; caption: string }
+  | { type: 'album'; items: Array<{ url: string; caption: string }> }
+  | { type: 'file'; url: string; filename: string; caption: string }
+  | { type: 'video'; url: string; thumbnailUrl: string; caption: string };
+interface PreviewStep { stepIdx: number; delayMinutes: number; sendAt: string; blockName: string | null; bubbles: Bubble[] }
+interface PreviewContact { contactId: string; name: string; steps: PreviewStep[]; etaCompleteAt: string | null }
 interface PreviewData { sequence: { id: string; name: string; totalSteps: number; windowLabel: string; gapLabel: string }; contacts: PreviewContact[] }
 
 const props = defineProps<{
   visible: boolean;
   sequenceId: string;
   sequenceName: string;
-  initialContacts?: PickContact[]; // 0-2 KH gắn sẵn (vd KH đang chat)
+  initialContacts?: PickContact[]; // 0-2 KH gắn sẵn (vd KH đang chat) → auto xem trước
+  nickId?: string;                 // nick đang chat → render {sale}/{crm_*} đúng
 }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
@@ -109,13 +124,14 @@ const firstEta = computed(() => data.value?.contacts[0]?.etaCompleteAt ?? null);
 
 watch(() => props.visible, (v) => {
   if (v) {
+    // Mở từ hội thoại 1 KH → gắn sẵn + xem trước ngay, KHÔNG bắt sale chọn lại (anh chốt).
     selected.value = (props.initialContacts ?? []).slice(0, 2);
     searchQ.value = '';
     searchResults.value = [];
     error.value = '';
     void loadPreview();
   }
-});
+}, { immediate: true });
 
 watch(selected, () => { if (props.visible) void loadPreview(); }, { deep: true });
 
@@ -151,6 +167,7 @@ async function loadPreview(): Promise<void> {
   try {
     const r = await api.post(`/automation/sequences/${props.sequenceId}/preview`, {
       contactIds: selected.value.map((c) => c.id),
+      nickId: props.nickId || undefined,
     });
     data.value = r.data as PreviewData;
   } catch (e: any) {
@@ -161,69 +178,9 @@ async function loadPreview(): Promise<void> {
   }
 }
 
-// ── Render bong bóng từ block.content (tái dùng logic BlockPreviewDialog) + thay biến ──
-interface Bubble { kind: 'text' | 'image' | 'video' | 'file' | 'album'; html?: string; url?: string; name?: string; count?: number }
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m] as string));
-}
-function fillVars(text: string, vars: { name: string; gender: string; sale: string }): string {
-  return text
-    .replaceAll('{name}', vars.name)
-    .replaceAll('{gender}', vars.gender)
-    .replaceAll('{sale}', vars.sale);
-}
-function textToHtml(text: string, styles: StyleMark[] | undefined, vars: { name: string; gender: string; sale: string }): string {
-  const filled = fillVars(text, vars);
-  // Có style → áp rich format trên TEXT GỐC rồi thay biến trong HTML (placeholder không bị tách);
-  // không style → plainFormat trên text đã thay biến.
-  if (styles && styles.length > 0) {
-    const html = applyRichFormat(text, styles, []);
-    return fillVarsHtml(html, vars);
-  }
-  return plainFormat(filled);
-}
-function fillVarsHtml(html: string, vars: { name: string; gender: string; sale: string }): string {
-  return html
-    .replaceAll('{name}', escapeHtml(vars.name))
-    .replaceAll('{gender}', escapeHtml(vars.gender))
-    .replaceAll('{sale}', escapeHtml(vars.sale));
-}
-
-function renderBubbles(block: any, vars: { name: string; gender: string; sale: string }): Bubble[] {
-  if (!block || !block.content) return [];
-  const c = block.content as any;
-  const out: Bubble[] = [];
-  // Modern: components[]
-  if (Array.isArray(c.components)) {
-    for (const cmp of c.components) {
-      if (cmp.kind === 'text') {
-        const def = cmp.defaultVariant;
-        const variants = Array.isArray(cmp.variants) ? cmp.variants : [];
-        const pool = [def, ...variants].filter((v: any) => v && typeof v.text === 'string' && v.text.length > 0);
-        if (!pool.length) continue;
-        const pick = pool[0]; // bản đầu (ổn định cho preview, không random)
-        out.push({ kind: 'text', html: textToHtml(pick.text, pick.styles, vars) });
-      } else if (cmp.kind === 'image') out.push({ kind: 'image', url: cmp.url });
-      else if (cmp.kind === 'album') out.push({ kind: 'album', count: Array.isArray(cmp.items) ? cmp.items.length : 0 });
-      else if (cmp.kind === 'file') out.push({ kind: 'file', name: cmp.filename });
-      else if (cmp.kind === 'video') out.push({ kind: 'video', url: cmp.url });
-    }
-    return out;
-  }
-  // Legacy: textVariants + attachments
-  if (Array.isArray(c.textVariants) && c.textVariants.length > 0) {
-    const pick = c.textVariants[0];
-    if (typeof pick === 'string' && pick.trim()) out.push({ kind: 'text', html: plainFormat(fillVars(pick, vars)) });
-    else if (pick && typeof pick.text === 'string') out.push({ kind: 'text', html: textToHtml(pick.text, pick.styles, vars) });
-  }
-  if (Array.isArray(c.attachments)) {
-    for (const a of c.attachments) {
-      if (a.kind === 'image') out.push({ kind: 'image', url: a.url });
-      else if (a.kind === 'video') out.push({ kind: 'video', url: a.url });
-      else if (a.kind === 'file') out.push({ kind: 'file', name: a.url?.split('/').pop() });
-    }
-  }
-  return out;
+// Bong bóng text đã render SẴN ở BE (đủ biến + style dịch offset) → chỉ áp rich-format thành HTML.
+function bubbleHtml(b: Bubble & { type: 'text' }): string {
+  return b.styles && b.styles.length > 0 ? applyRichFormat(b.text, b.styles, []) : plainFormat(b.text);
 }
 
 // ── Giờ gửi: "11:15 hôm nay" / "08:00 mai" / "08:00 ngày 21/06" ──
@@ -265,11 +222,16 @@ function formatSendTime(iso: string | null): string {
 .spd-cols.two { grid-template-columns: 1fr 1fr; }
 .spd-col-head { font-size: 13px; font-weight: 600; color: #42526e; margin-bottom: 8px; }
 .spd-chat { background: #f4f6f8; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 14px; }
-.spd-step-time { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: #974f00; margin-bottom: 5px; font-weight: 500; }
-.spd-bubble { margin-bottom: 5px; }
-.spd-bubble-text { background: #ece6f8; color: #1f2937; border-radius: 12px 12px 12px 3px; padding: 8px 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-width: 90%; display: inline-block; }
-.spd-bubble-img { max-width: 70%; border-radius: 10px; display: block; }
+
+/* Mỗi bước: bong bóng dồn về PHẢI (phía người gửi / sale) */
+.spd-step { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.spd-step-time { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: #974f00; font-weight: 500; align-self: flex-end; }
+/* Bong bóng gửi đi — xanh nhạt, đuôi bên phải (giống tin mình gửi trên Zalo) */
+.spd-bubble-text { background: #cfe9fb; color: #0f2533; border-radius: 12px 12px 3px 12px; padding: 8px 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-width: 90%; }
+.spd-bubble-img { max-width: 72%; border-radius: 10px; display: block; }
 .spd-bubble-file { display: inline-flex; align-items: center; gap: 5px; background: #fff; border: 1px solid var(--line,#e6e8eb); border-radius: 10px; padding: 6px 10px; font-size: 13px; color: #42526e; }
-.spd-bubble-empty { font-size: 12px; color: #9ca3af; font-style: italic; }
+.spd-bubble-empty { font-size: 12px; color: #9ca3af; font-style: italic; align-self: flex-end; }
+/* Dòng kết thúc luồng */
+.spd-done { align-self: center; display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; padding: 5px 12px; background: #e7f6ec; color: #157f3c; border-radius: 14px; font-size: 12px; font-weight: 500; }
 .spd-meta { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line, #e6e8eb); display: flex; flex-wrap: wrap; gap: 8px; font-size: 12.5px; color: #6b7280; }
 </style>

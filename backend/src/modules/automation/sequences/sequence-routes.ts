@@ -31,6 +31,10 @@ import { checkBlockReferences } from './block-refs.js';
 import { getOwnerScope, applyOwnerScope } from '../../rbac/owner-scope.js';
 // 2026-06-18 — Xem trước Sequence: tính giờ gửi từng bước (delay + né ngoài giờ).
 import { stepDelayMs, nextAllowedTime, resolveWindowMinutes } from '../engine/schedule-calculator.js';
+// 2026-06-18 — Xem trước Sequence render bong bóng Ở BACKEND = đúng tin gửi thật:
+// bóc block thành tin (resolveBlockContent) + thay đủ ~36 biến + dịch offset format (render-template).
+import { resolveBlockContent } from '../blocks/resolve-block-content.js';
+import { renderTemplate, renderTemplateDetailed, shiftStylesForRender } from '../blocks/render-template.js';
 
 // 2026-06-04 — Khối Phase 1: sync JSON steps → sequence_steps FK table.
 // Worker dual-read (sequence-step-worker.ts loadSequenceSteps): ưu tiên FK table,
@@ -60,10 +64,50 @@ async function syncSequenceStepsTable(sequenceId: string, steps: SequenceStep[])
 const BASE = '/api/v1/automation/sequences';
 
 // ── Helper cho Xem trước Sequence (2026-06-18) ──────────────────────────────
-function genderToViLabel(gender: string | null | undefined): string {
-  if (gender === 'female') return 'Chị';
-  if (gender === 'male') return 'Anh';
-  return 'Anh/Chị';
+type PreviewBubble =
+  | { type: 'text'; text: string; styles: Array<{ st: string; start: number; len: number }> }
+  | { type: 'image'; url: string; caption: string }
+  | { type: 'album'; items: Array<{ url: string; caption: string }> }
+  | { type: 'file'; url: string; filename: string; caption: string }
+  | { type: 'video'; url: string; thumbnailUrl: string; caption: string };
+
+/**
+ * Render 1 Khối thành các bong bóng ĐÚNG NHƯ TIN GỬI THẬT cho KH này:
+ * bóc content (resolveBlockContent — chung path gửi) → thay đủ ~36 biến (renderTemplate) →
+ * dịch offset format (shiftStylesForRender). nickId rỗng vẫn ra biến cấp-người (name/gender),
+ * chỉ {sale}/{crm_*} fallback 'em'/tên thật.
+ */
+async function renderBlockBubbles(
+  block: { actionType: string; content: unknown } | null,
+  contactId: string,
+  nickId: string,
+): Promise<PreviewBubble[]> {
+  if (!block) return [];
+  const res = resolveBlockContent(block.actionType, (block.content ?? {}) as Record<string, unknown>);
+  if (!res.ok) return [];
+  const out: PreviewBubble[] = [];
+  for (const m of res.resolved) {
+    if (m.messageType === 'text') {
+      const raw = m.payload.text ?? '';
+      const rawStyles = Array.isArray(m.payload.styles) ? m.payload.styles : [];
+      const { rendered, values } = await renderTemplateDetailed(raw, contactId, nickId);
+      const shifted = rawStyles.length ? (shiftStylesForRender(raw, rawStyles, values) ?? []) : [];
+      out.push({ type: 'text', text: rendered, styles: shifted });
+    } else if (m.messageType === 'friend_request') {
+      out.push({ type: 'text', text: await renderTemplate(m.payload.greeting ?? '', contactId, nickId), styles: [] });
+    } else if (m.messageType === 'image') {
+      out.push({ type: 'image', url: m.payload.url, caption: m.payload.caption ? await renderTemplate(m.payload.caption, contactId, nickId) : '' });
+    } else if (m.messageType === 'album') {
+      const items: Array<{ url: string; caption: string }> = [];
+      for (const it of m.payload.items) items.push({ url: it.url, caption: it.caption ? await renderTemplate(it.caption, contactId, nickId) : '' });
+      out.push({ type: 'album', items });
+    } else if (m.messageType === 'file') {
+      out.push({ type: 'file', url: m.payload.url, filename: m.payload.filename ?? 'Tệp đính kèm', caption: m.payload.caption ? await renderTemplate(m.payload.caption, contactId, nickId) : '' });
+    } else if (m.messageType === 'video') {
+      out.push({ type: 'video', url: m.payload.url, thumbnailUrl: m.payload.thumbnailUrl ?? '', caption: m.payload.caption ? await renderTemplate(m.payload.caption, contactId, nickId) : '' });
+    }
+  }
+  return out;
 }
 /** Câu mô tả khung giờ gửi, vd "8:00–22:00" hoặc "cả ngày". */
 function windowLabelOf(rules: SequenceRuntimeRules): string {
@@ -154,8 +198,9 @@ export async function sequenceRoutes(app: FastifyInstance): Promise<void> {
   app.post(`${BASE}/:id/preview`, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
-    const body = (request.body ?? {}) as { contactIds?: string[] };
+    const body = (request.body ?? {}) as { contactIds?: string[]; nickId?: string };
     const contactIds = (Array.isArray(body.contactIds) ? body.contactIds : []).slice(0, 2);
+    const bodyNickId = typeof body.nickId === 'string' ? body.nickId : '';
     if (contactIds.length === 0) return reply.status(400).send({ error: 'contactIds_required' });
 
     const sequence = await prisma.automationSequence.findFirst({
@@ -190,34 +235,41 @@ export async function sequenceRoutes(app: FastifyInstance): Promise<void> {
       }),
     ]);
     const blockById = new Map(blocks.map((b) => [b.id, b]));
-    const saleRow = await prisma.user.findUnique({ where: { id: user.id }, select: { fullName: true } });
-    const saleName = saleRow?.fullName ?? 'Sale';
 
-    // Per contact: cộng dồn giờ gửi + đính kèm block + vars (FE render + thay biến).
+    // Per contact: cộng dồn giờ gửi + render bong bóng Ở BACKEND (= đúng tin gửi thật, đủ biến).
     const now = new Date();
-    const previewContacts = contacts.map((c) => {
+    const previewContacts = await Promise.all(contacts.map(async (c) => {
       const name = c.fullName ?? c.crmName ?? 'bạn';
-      const vars = { name, gender: genderToViLabel(c.gender), sale: saleName };
+      // Nick để render {sale}/{crm_*}: ưu tiên nick từ chat (bodyNickId); else nick của Friend
+      // đầu tiên của KH; else rỗng (vẫn ra name/gender cấp-người, {sale} fallback 'em').
+      let nickId = bodyNickId;
+      if (!nickId) {
+        const fr = await prisma.friend.findFirst({ where: { contactId: c.id, orgId: user.orgId }, select: { zaloAccountId: true } });
+        nickId = fr?.zaloAccountId ?? '';
+      }
       let t = now;
-      const stepsOut = steps.map((s, idx) => {
+      const stepsOut = [];
+      for (let idx = 0; idx < steps.length; idx++) {
+        const s = steps[idx];
         const gapMs = stepDelayMs(rules, s.delayMinutes ?? 0, () => 0.5);
         t = nextAllowedTime(new Date(t.getTime() + gapMs), rules);
         const block = s.blockId ? blockById.get(s.blockId) ?? null : null;
-        return {
+        const bubbles = await renderBlockBubbles(block, c.id, nickId);
+        stepsOut.push({
           stepIdx: idx,
           delayMinutes: s.delayMinutes ?? 0,
           sendAt: t.toISOString(),
-          block, // raw — FE parse content thành bong bóng
-        };
-      });
+          blockName: block?.name ?? null,
+          bubbles,
+        });
+      }
       return {
         contactId: c.id,
         name,
-        vars,
         steps: stepsOut,
         etaCompleteAt: stepsOut.length ? stepsOut[stepsOut.length - 1].sendAt : null,
       };
-    });
+    }));
 
     return {
       sequence: {

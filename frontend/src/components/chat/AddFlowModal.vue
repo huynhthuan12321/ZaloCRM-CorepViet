@@ -125,6 +125,7 @@
       :sequence-id="previewSeq.id"
       :sequence-name="previewSeq.name"
       :initial-contacts="[{ id: contactId, name: contactName }]"
+      :nick-id="nickId"
       @close="previewSeq = null"
     />
   </Teleport>
