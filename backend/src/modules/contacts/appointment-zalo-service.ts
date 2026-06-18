@@ -48,10 +48,75 @@ export function verifyActionToken(token: string): ActionTokenPayload | null {
     return null;
   }
 }
+function appBaseUrl(): string {
+  return (config.appUrl || '').replace(/\/$/, '');
+}
 function buildActionLink(apptId: string, userId: string, orgId: string): string {
   const token = signActionToken({ a: apptId, u: userId, o: orgId, exp: Date.now() + 7 * 24 * 3600_000 });
-  const base = (config.appUrl || '').replace(/\/$/, '');
-  return `${base}/appointments/action?t=${encodeURIComponent(token)}`;
+  return `${appBaseUrl()}/appointments/action?t=${encodeURIComponent(token)}`;
+}
+
+// 2026-06-18 — Short-link: mã base62 8 ký tự từ random bytes.
+function genShortCode(): string {
+  const ALPHA = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const bytes = crypto.randomBytes(8);
+  let s = '';
+  for (let i = 0; i < 8; i++) s += ALPHA[bytes[i] % 62];
+  return s;
+}
+
+/**
+ * Mint (find-or-create) short-link cho 1 lịch. 1 mã / 1 lịch, tái dùng cả 3 lần nhắc.
+ * expiresAt = now + 14 ngày (phủ dư 3 lần nhắc trong vài giờ + 7 ngày sống link). KHÔNG ném lỗi
+ * (DB lỗi → fallback link dài). Link: {base}/a/{code}.
+ */
+export async function mintActionLink(apptId: string, userId: string, orgId: string): Promise<string> {
+  try {
+    const existing = await prisma.appointmentActionLink.findFirst({
+      where: { appointmentId: apptId, expiresAt: { gt: new Date() } },
+      select: { code: true },
+    });
+    if (existing) return `${appBaseUrl()}/a/${existing.code}`;
+    const expiresAt = new Date(Date.now() + 14 * 24 * 3600_000);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const code = genShortCode();
+      try {
+        await prisma.appointmentActionLink.create({ data: { code, appointmentId: apptId, orgId, userId, expiresAt } });
+        return `${appBaseUrl()}/a/${code}`;
+      } catch {
+        // trùng mã (PK) → thử lại
+      }
+    }
+  } catch (e) {
+    logger.warn(`[appt-zalo] mintActionLink failed apt=${apptId}:`, e);
+  }
+  return buildActionLink(apptId, userId, orgId); // fallback link dài
+}
+
+// Header tin nhắc theo lần (Luật: nhãn rõ lần 1/2/3).
+const PROMPT_HEADER: Record<number, string> = {
+  1: '⏰ NHẮC HOÀN THÀNH LỊCH HẸN',
+  2: '🔔 NHẮC HOÀN THÀNH (LẦN 2)',
+  3: '❗ NHẮC HOÀN THÀNH (LẦN 3 — LẦN CUỐI)',
+};
+
+/** Builder DRY cho tin nhắc — keyed theo reminderNo (1..3). Kèm người phụ trách + dòng trấn an. */
+function buildPromptMessage(a: ApptForZalo, reminderNo: number, link: string): string {
+  const owner = a.assignedUser?.fullName?.trim();
+  const lines = [
+    PROMPT_HEADER[reminderNo] || PROMPT_HEADER[1],
+    apptHeadline(a),
+    '',
+    apptDetailBlock(a),
+  ];
+  if (owner) lines.push(`• Người phụ trách: ${owner}`);
+  lines.push(
+    '',
+    'Lịch hẹn đã diễn ra chưa? Bấm để cập nhật (Hoàn thành / Huỷ):',
+    link,
+    '🔒 Link nội bộ HS — an toàn 100%.',
+  );
+  return lines.join('\n');
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -95,6 +160,7 @@ interface ApptForZalo {
   location: string | null;
   externalRef: string | null;
   contact: { fullName: string | null; phone: string | null } | null;
+  assignedUser: { fullName: string | null } | null;
 }
 
 async function loadAppt(apptId: string): Promise<ApptForZalo | null> {
@@ -104,6 +170,7 @@ async function loadAppt(apptId: string): Promise<ApptForZalo | null> {
       id: true, orgId: true, assignedUserId: true, appointmentDate: true,
       appointmentTime: true, title: true, type: true, location: true, externalRef: true,
       contact: { select: { fullName: true, phone: true } },
+      assignedUser: { select: { fullName: true } },
     },
   });
 }
@@ -254,29 +321,32 @@ export async function removeAppointmentReminder(apptId: string): Promise<void> {
   }
 }
 
-// ── (4) Cron sau giờ hẹn X phút → gửi tin kèm LINK đánh dấu ─────────────────
-export async function sendAppointmentActionPrompt(apptId: string): Promise<void> {
+// ── (4) Cron → gửi tin nhắc kèm SHORT-LINK đánh dấu. Trả status để cron quyết tăng count.
+//   'sent'    = gửi Zalo OK    → cron tăng actionPromptCount (Luật D4)
+//   'failed'  = gửi lỗi/anti-spam → cron GIỮ count, nhịp sau thử lại
+//   'skipped' = không đủ điều kiện (mất sale) → cron coi như đã xử lý (không retry vô hạn)
+export async function sendAppointmentActionPrompt(
+  apptId: string,
+  reminderNo: number,
+): Promise<'sent' | 'failed' | 'skipped'> {
   try {
     const a = await loadAppt(apptId);
-    if (!a || !a.assignedUserId) return;
-    const link = buildActionLink(a.id, a.assignedUserId, a.orgId);
-    const content = [
-      `LỊCH HẸN ĐÃ TỚI GIỜ · ${TYPE_LABEL[a.type || ''] || 'Lịch hẹn'}`,
-      apptHeadline(a),
-      '',
-      apptDetailBlock(a),
-      '',
-      'Lịch hẹn đã diễn ra chưa? Bấm vào liên kết để cập nhật (Hoàn thành / Huỷ):',
-      link,
-    ].join('\n');
-    await sendSystemNotificationToUser({
+    if (!a || !a.assignedUserId) return 'skipped';
+    const link = await mintActionLink(a.id, a.assignedUserId, a.orgId);
+    const content = buildPromptMessage(a, reminderNo, link);
+    const result = await sendSystemNotificationToUser({
       orgId: a.orgId,
       targetUserId: a.assignedUserId,
       type: 'appointment_action',
       title: 'Cập nhật lịch hẹn',
       content,
-    }).catch((e) => logger.warn(`[appt-zalo] action prompt msg failed apt=${apptId}:`, e));
+    }).catch((e) => {
+      logger.warn(`[appt-zalo] action prompt msg failed apt=${apptId}:`, e);
+      return null;
+    });
+    return result?.status === 'sent' ? 'sent' : 'failed';
   } catch (err) {
     logger.error(`[appt-zalo] sendAppointmentActionPrompt error apt=${apptId}:`, err);
+    return 'failed';
   }
 }

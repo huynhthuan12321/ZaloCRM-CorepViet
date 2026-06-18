@@ -29,6 +29,7 @@
         <div class="aa-info">
           <div class="aa-row"><span class="l">Khách</span><span class="v">{{ appt.contactName || '—' }}</span></div>
           <div class="aa-row"><span class="l">Thời gian</span><span class="v">{{ whenLabel }}</span></div>
+          <div v-if="appt.ownerName" class="aa-row"><span class="l">Người phụ trách</span><span class="v">{{ appt.ownerName }}</span></div>
           <div class="aa-row"><span class="l">Trạng thái</span><span class="v"><span class="aa-badge" :class="appt.status">{{ statusLabel }}</span></span></div>
         </div>
 
@@ -52,6 +53,7 @@ import { useRoute } from 'vue-router';
 interface ApptInfo {
   id: string; status: string; appointmentDate: string;
   appointmentTime: string | null; title: string | null; contactName: string | null;
+  ownerName: string | null;
 }
 const route = useRoute();
 const token = String(route.query.t ?? '');

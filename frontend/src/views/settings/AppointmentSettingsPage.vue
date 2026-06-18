@@ -82,6 +82,41 @@
         <p class="ap-hint">Khoảng cho phép: 0–1440 phút (tối đa 24 giờ).</p>
       </section>
 
+      <!-- Nhắc hoàn thành 3 lần (2026-06-18) -->
+      <section class="ap-card" :class="{ 'ap-disabled': !form.enabled }">
+        <div class="ap-row-text" style="margin-bottom: 12px">
+          <div class="ap-row-title">Nhắc hoàn thành — 3 lần</div>
+          <div class="ap-row-desc">
+            Khoảng cách (giờ) giữa các lần nhắc, tính từ giờ hẹn. VD 1 / 3 / 6 = nhắc ở +1h, +4h, +10h.
+          </div>
+        </div>
+        <div class="ap-offsets">
+          <label class="ap-off"><span>Lần 1 sau</span>
+            <v-text-field v-model.number="form.reminderOffsetsHours[0]" type="number" :min="1" :max="168" suffix="giờ"
+              density="compact" variant="outlined" hide-details style="max-width: 128px" :disabled="!form.enabled || !canEdit" />
+          </label>
+          <label class="ap-off"><span>Lần 2 cách</span>
+            <v-text-field v-model.number="form.reminderOffsetsHours[1]" type="number" :min="1" :max="168" suffix="giờ"
+              density="compact" variant="outlined" hide-details style="max-width: 128px" :disabled="!form.enabled || !canEdit" />
+          </label>
+          <label class="ap-off"><span>Lần 3 cách</span>
+            <v-text-field v-model.number="form.reminderOffsetsHours[2]" type="number" :min="1" :max="168" suffix="giờ"
+              density="compact" variant="outlined" hide-details style="max-width: 128px" :disabled="!form.enabled || !canEdit" />
+          </label>
+        </div>
+        <p class="ap-hint">Mỗi giá trị 1–168 giờ. Sau 3 lần chưa cập nhật → tổng hợp gửi trưởng phòng mỗi sáng.</p>
+      </section>
+
+      <!-- Digest trưởng phòng dừng sau N ngày -->
+      <section class="ap-card" :class="{ 'ap-disabled': !form.enabled }">
+        <div class="ap-row-text" style="margin-bottom: 12px">
+          <div class="ap-row-title">Digest cho trưởng phòng dừng sau</div>
+          <div class="ap-row-desc">Số ngày tiếp tục nhắc trưởng phòng các lịch chưa xong. Đặt <b>0</b> để nhắc tới khi lịch đóng.</div>
+        </div>
+        <v-text-field v-model.number="form.digestStopDays" type="number" :min="0" :max="365" suffix="ngày"
+          density="compact" variant="outlined" hide-details style="max-width: 150px" :disabled="!form.enabled || !canEdit" />
+      </section>
+
       <div class="ap-actions">
         <span v-if="!canEdit" class="ap-noperm">Chỉ chủ tổ chức / quản trị mới chỉnh được.</span>
         <v-btn
@@ -110,18 +145,16 @@ const loading = ref(true);
 const saving = ref(false);
 const hasSystemNotifyNick = ref(true);
 
-const form = reactive<{ enabled: boolean; actionDelayMinutes: number }>({
-  enabled: false,
-  actionDelayMinutes: 15,
-});
-const saved = reactive<{ enabled: boolean; actionDelayMinutes: number }>({
-  enabled: false,
-  actionDelayMinutes: 15,
-});
+interface ApptForm { enabled: boolean; actionDelayMinutes: number; reminderOffsetsHours: number[]; digestStopDays: number }
+const form = reactive<ApptForm>({ enabled: false, actionDelayMinutes: 15, reminderOffsetsHours: [1, 3, 6], digestStopDays: 7 });
+const saved = reactive<ApptForm>({ enabled: false, actionDelayMinutes: 15, reminderOffsetsHours: [1, 3, 6], digestStopDays: 7 });
 
 const canEdit = computed(() => ['owner', 'admin'].includes(auth.user?.role ?? ''));
 const dirty = computed(
-  () => form.enabled !== saved.enabled || Number(form.actionDelayMinutes) !== saved.actionDelayMinutes,
+  () => form.enabled !== saved.enabled
+    || Number(form.actionDelayMinutes) !== saved.actionDelayMinutes
+    || Number(form.digestStopDays) !== saved.digestStopDays
+    || JSON.stringify(form.reminderOffsetsHours.map(Number)) !== JSON.stringify(saved.reminderOffsetsHours),
 );
 
 async function load() {
@@ -130,6 +163,10 @@ async function load() {
     const { data } = await api.get('/appointments/settings');
     form.enabled = saved.enabled = !!data.enabled;
     form.actionDelayMinutes = saved.actionDelayMinutes = Number(data.actionDelayMinutes ?? 15);
+    const offs = Array.isArray(data.reminderOffsetsHours) ? data.reminderOffsetsHours.map(Number) : [1, 3, 6];
+    form.reminderOffsetsHours = [...offs];
+    saved.reminderOffsetsHours = [...offs];
+    form.digestStopDays = saved.digestStopDays = Number(data.digestStopDays ?? 7);
     hasSystemNotifyNick.value = !!data.hasSystemNotifyNick;
   } catch {
     toast.error('Không tải được cài đặt lịch hẹn');
@@ -144,14 +181,30 @@ async function save() {
     toast.error('Số phút phải từ 0 đến 1440');
     return;
   }
+  const offs = form.reminderOffsetsHours.map(Number);
+  if (offs.length !== 3 || !offs.every((x) => Number.isFinite(x) && x >= 1 && x <= 168)) {
+    toast.error('3 mốc nhắc phải là số từ 1 đến 168 giờ');
+    return;
+  }
+  const stop = Number(form.digestStopDays);
+  if (!Number.isFinite(stop) || stop < 0 || stop > 365) {
+    toast.error('Số ngày dừng digest phải từ 0 đến 365');
+    return;
+  }
   saving.value = true;
   try {
     const { data } = await api.put('/appointments/settings', {
       enabled: form.enabled,
       actionDelayMinutes: Math.round(v),
+      reminderOffsetsHours: offs,
+      digestStopDays: Math.round(stop),
     });
     form.enabled = saved.enabled = !!data.enabled;
     form.actionDelayMinutes = saved.actionDelayMinutes = Number(data.actionDelayMinutes);
+    const savedOffs = Array.isArray(data.reminderOffsetsHours) ? data.reminderOffsetsHours.map(Number) : offs;
+    form.reminderOffsetsHours = [...savedOffs];
+    saved.reminderOffsetsHours = [...savedOffs];
+    form.digestStopDays = saved.digestStopDays = Number(data.digestStopDays ?? stop);
     toast.success('Đã lưu cài đặt lịch hẹn');
   } catch {
     toast.error('Lưu cài đặt thất bại');
@@ -190,6 +243,10 @@ onMounted(load);
 .ap-chip.active { background: #EEF0FF; border-color: #5E6AD2; color: #5E6AD2; }
 .ap-chip:disabled { opacity: .5; cursor: default; }
 .ap-hint { font-size: 12px; color: #97A0AC; margin: 10px 0 0; }
+
+.ap-offsets { display: flex; gap: 14px; flex-wrap: wrap; }
+.ap-off { display: flex; flex-direction: column; gap: 5px; }
+.ap-off > span { font-size: 12px; font-weight: 600; color: #475066; }
 
 .ap-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 8px; }
 .ap-noperm { font-size: 12.5px; color: #97A0AC; }

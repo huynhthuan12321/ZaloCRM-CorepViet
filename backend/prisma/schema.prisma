@@ -123,6 +123,11 @@ model Organization {
   // + delay (phút) gửi tin "link đánh dấu hoàn thành/huỷ" SAU giờ hẹn (admin chỉnh trong Cài đặt lịch hẹn).
   appointmentZaloReminderEnabled Boolean @default(false) @map("appointment_zalo_reminder_enabled")
   appointmentActionDelayMinutes  Int     @default(15)    @map("appointment_action_delay_minutes")
+  // 2026-06-18 "Nhắc 3 lần": mảng KHOẢNG CÁCH (interval) giữa các lần nhắc, đơn vị GIỜ.
+  // [1,3,6] = nhắc lần 1 ở +1h, lần 2 ở +4h, lần 3 ở +10h (cộng dồn) sau giờ hẹn. Validate 3 phần tử, 0<v≤168.
+  appointmentReminderOffsetsHours Json @default("[1, 3, 6]") @map("appointment_reminder_offsets_hours")
+  // Digest trưởng phòng dừng sau N ngày kể từ lần digest đầu (Luật D2). 0 = không bao giờ dừng.
+  appointmentDigestStopDays      Int  @default(7) @map("appointment_digest_stop_days")
 
   // Wave 2 Welcome Probe 2026-05-29 — config send welcome msg sau friend accept
   welcomeDelayAfterFriendReqSec Int     @default(60) @map("welcome_delay_after_friend_req_sec")
@@ -996,8 +1001,18 @@ model Appointment {
   status          String   @default("scheduled") // scheduled, completed, cancelled, no_show
   notes           String?
   reminderSent    Boolean  @default(false) @map("reminder_sent")
-  // 2026-06-16: đã gửi tin "link đánh dấu hoàn thành/huỷ" (sau giờ hẹn) chưa — cron set true 1 lần.
+  // 2026-06-16: đã gửi tin "link đánh dấu hoàn thành/huỷ" (sau giờ hẹn) chưa — LEGACY (cron cũ set true 1 lần).
+  // 2026-06-18 đổi sang đếm: giữ cột này để migration cũ không vỡ, logic mới đọc actionPromptCount.
   actionPromptSent Boolean @default(false) @map("action_prompt_sent")
+  // 2026-06-18 "Nhắc 3 lần + digest trưởng phòng":
+  //   actionPromptCount    — đã gửi nhắc mấy lần (0..3); cron tăng SAU khi gửi OK (Luật D4).
+  //   lastActionPromptAt   — mốc gửi nhắc gần nhất.
+  //   managerDigestedAt    — lần cuối đưa lịch này vào digest trưởng phòng (chống gửi lại trong ngày).
+  //   managerDigestFirstAt — lần ĐẦU vào digest; dừng digest sau Organization.appointmentDigestStopDays ngày (Luật D2).
+  actionPromptCount    Int       @default(0) @map("action_prompt_count")
+  lastActionPromptAt   DateTime? @map("last_action_prompt_at")
+  managerDigestedAt    DateTime? @map("manager_digested_at")
+  managerDigestFirstAt DateTime? @map("manager_digest_first_at")
   createdAt       DateTime @default(now()) @map("created_at")
 
   // Nguồn + link Zalo
@@ -1015,11 +1030,29 @@ model Appointment {
   contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
   assignedUser User?        @relation(fields: [assignedUserId], references: [id])
   fromNotes    Note[]       @relation("NoteAppointment")
+  actionLinks  AppointmentActionLink[]
 
   @@unique([orgId, externalRef])
   @@index([source])
   @@index([orgId, appointmentDate])
   @@map("appointments")
+}
+
+// 2026-06-18 — Short-link cho tin "Nhắc hoàn thành lịch hẹn". 1 mã ngắn / 1 lịch (tái dùng cả 3 lần nhắc).
+// GET /a/:code → kiểm expiresAt → mint action token (exp=min(7d, expiresAt)) → 302 sang /appointments/action?t=
+// Nguồn chân lý hết-hạn là cột expiresAt ở đây, KHÔNG phải TTL token (chống mỗi lần bấm đẻ token 7 ngày mới).
+model AppointmentActionLink {
+  code          String   @id // base62 ngắn (7-8 ký tự)
+  appointmentId String   @map("appointment_id")
+  orgId         String   @map("org_id")
+  userId        String   @map("user_id") // sale được quyền cập nhật (đưa vào token payload)
+  expiresAt     DateTime @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@map("appointment_action_links")
 }
 
 // CRM-style notes on a contact — Facebook-comment-like with flat thread (parentNoteId nullable, depth=1).

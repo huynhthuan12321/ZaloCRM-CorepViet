@@ -51,6 +51,7 @@ let pausedUntilSweepJob: ReturnType<typeof cron.schedule> | null = null;
 let careSessionJanitorJob: ReturnType<typeof cron.schedule> | null = null;
 let careSessionReconcileJob: ReturnType<typeof cron.schedule> | null = null;
 let careSessionResumeJob: ReturnType<typeof cron.schedule> | null = null;
+let appointmentDigestJob: ReturnType<typeof cron.schedule> | null = null;
 let isStarted = false;
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -134,6 +135,14 @@ export async function startCronEventScheduler(): Promise<void> {
   );
   logger.info('[cron-scheduler] care-session LUẬT 4 resume registered (every 5 min ' + TZ + ')');
 
+  // 2026-06-18 — Digest lịch hẹn chưa hoàn thành cho TRƯỞNG PHÒNG, mỗi sáng 08:00 VN (D2/D3/D4).
+  appointmentDigestJob = cron.schedule(
+    '0 8 * * *',
+    () => { void import('../../contacts/appointment-digest.js').then((m) => m.sendManagerAppointmentDigest()); },
+    { timezone: TZ },
+  );
+  logger.info('[cron-scheduler] appointment manager-digest registered (daily 08:00 ' + TZ + ')');
+
   logger.info('[cron-scheduler] started — birthday + event-log-cleanup + scheduled-trigger-activator + paused-until-sweeper + care-session-janitor + care-session-reconcile + ' + cronJobs.size + ' scheduled_cron triggers');
 }
 
@@ -145,6 +154,7 @@ export function stopCronEventScheduler(): void {
   if (careSessionJanitorJob) { careSessionJanitorJob.stop(); careSessionJanitorJob = null; }
   if (careSessionReconcileJob) { careSessionReconcileJob.stop(); careSessionReconcileJob = null; }
   if (careSessionResumeJob) { careSessionResumeJob.stop(); careSessionResumeJob = null; }
+  if (appointmentDigestJob) { appointmentDigestJob.stop(); appointmentDigestJob = null; }
   for (const job of cronJobs.values()) job.stop();
   cronJobs.clear();
   isStarted = false;
