@@ -28,10 +28,21 @@
       <span class="fc-badge" :class="card.state">{{ badgeLabel }}</span>
     </div>
 
-    <!-- cờ "Sale gắn tay" — KH vào luồng bằng enroll thủ công -->
-    <div v-if="card.isManual" class="fc-manual" :title="manualTooltip">
-      <span class="mi"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></span>
-      Sale gắn tay<template v-if="card.enrolledByName">: {{ card.enrolledByName }}</template>
+    <!-- Nguồn + người chịu trách nhiệm + nick gửi + cờ KHOÁ quyền (anh báo 2026-06-18:
+         1 KH nhiều luồng từ nhiều nick/sale → phân biệt luồng của AI, nick NÀO, vào THỦ CÔNG
+         hay TỰ ĐỘNG; sale không-owner chỉ xem) -->
+    <div v-if="provText" class="fc-prov" :class="{ locked: !canControl }" :title="card.flowSource === 'manual' ? manualTooltip : (card.byName ? `Trigger tạo bởi ${card.byName}` : '')">
+      <span class="fc-ava">
+        <img v-if="card.byAvatarUrl" :src="card.byAvatarUrl" alt="" referrerpolicy="no-referrer" />
+        <span v-else>{{ avatarInitial }}</span>
+      </span>
+      <span class="fc-prov-txt">
+        <b>{{ provText }}</b><template v-if="card.nickName"> · Nick {{ card.nickName }}</template>
+      </span>
+      <span v-if="!canControl" class="fc-lockchip" :title="`Luồng thuộc ${card.ownerName || 'sale khác'} — bạn chỉ xem, không thao tác được`">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+        {{ card.ownerName || 'Sale khác' }}
+      </span>
     </div>
 
     <!-- dòng phụ: vào qua mục tiêu nào (chỉ khi KHÔNG phải gắn tay, tránh thừa) -->
@@ -89,8 +100,13 @@
     <div v-if="holdLabel" class="fc-hold">{{ holdLabel }}</div>
 
     <!-- actions -->
-    <div class="fc-act" :class="{ 'no-border': card.state === 'completed' || card.state === 'stopped' }">
-      <template v-if="card.state === 'active'">
+    <div class="fc-act" :class="{ 'no-border': card.state === 'completed' || card.state === 'stopped' || (!canControl && (card.state === 'active' || card.state === 'paused')) }">
+      <!-- Sale KHÔNG phải owner luồng: ẩn nút thao tác, chỉ hiện chú thích khoá (BE cũng chặn 403) -->
+      <div v-if="!canControl && (card.state === 'active' || card.state === 'paused')" class="fc-locknote">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+        Luồng của <b>{{ card.ownerName || 'sale khác' }}</b> — bạn chỉ xem
+      </div>
+      <template v-else-if="card.state === 'active'">
         <button
           class="btn primary"
           :disabled="card.busy || !card.advanceEnabled"
@@ -155,6 +171,16 @@ export interface FollowUpCardData {
   etaCompleteAt?: string | null;   // dự kiến hoàn thành cả luồng (YC3 Đợt 2 — BE đã trả)
   advanceEnabled?: boolean;        // bật nút "Gửi bước tiếp ngay" khi BE có endpoint
   holdReason?: 'running' | 'waiting_reply' | 'out_of_hours' | 'nick_offline' | 'completed' | 'stopped' | null;
+  // Quyền + nguồn luồng (anh báo 2026-06-18: 1 KH nhiều luồng từ nhiều nick/sale).
+  nickAvatarUrl?: string | null;
+  ownerUserId?: string | null;     // chủ nick = owner luồng
+  ownerName?: string | null;
+  ownerAvatarUrl?: string | null;
+  flowSource?: 'manual' | 'trigger' | null; // gắn tay | trigger tự động
+  byUserId?: string | null;        // người chịu trách nhiệm: sale gắn tay HOẶC người tạo trigger
+  byName?: string | null;
+  byAvatarUrl?: string | null;
+  canControl?: boolean;            // false → sale không-owner: chỉ xem, KHOÁ nút
 }
 
 const props = defineProps<{ card: FollowUpCardData }>();
@@ -181,6 +207,18 @@ const holdLabel = computed(() => {
 const displayTitle = computed(() =>
   props.card.sequenceName || props.card.triggerName || 'Luồng bám đuổi',
 );
+
+// Quyền thao tác: sale không-owner → KHOÁ (mặc định true cho card cũ chưa có cờ).
+const canControl = computed(() => props.card.canControl !== false);
+// Chữ cái đầu cho avatar khi không có ảnh (người chịu trách nhiệm).
+const avatarInitial = computed(() => (props.card.byName || props.card.ownerName || '?').trim().charAt(0).toUpperCase());
+// Nhãn nguồn + người chịu trách nhiệm (manual = sale gắn tay; trigger = người tạo trigger).
+const provText = computed(() => {
+  const c = props.card;
+  if (c.flowSource === 'manual') return `Gắn tay${c.byName ? ` · ${c.byName}` : ''}`;
+  if (c.flowSource === 'trigger') return `Tự động${c.byName ? ` · tạo bởi ${c.byName}` : ''}`;
+  return '';
+});
 
 // Tooltip cờ gắn tay: tên sale + lý do.
 const manualTooltip = computed(() => {
@@ -290,6 +328,31 @@ function formatRemaining(ms: number): string {
   padding: 2px 8px; cursor: help; align-self: flex-start; width: fit-content;
 }
 .fc-manual .mi { display: inline-flex; flex-shrink: 0; }
+
+/* provenance: avatar người chịu trách nhiệm + nguồn + nick gửi + cờ khoá quyền */
+.fc-prov { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11px; color: var(--ink-3); }
+.fc-ava {
+  width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; overflow: hidden;
+  background: var(--brand-soft); color: var(--brand-700); font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.fc-ava img { width: 100%; height: 100%; object-fit: cover; }
+.fc-prov-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-prov-txt b { font-weight: 600; color: var(--ink-2); }
+.fc-lockchip {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; margin-left: auto;
+  font-size: 10px; font-weight: 600; color: var(--ink-3);
+  background: var(--surface-3); border-radius: var(--r-pill); padding: 2px 7px; max-width: 45%;
+}
+.fc-lockchip svg { flex-shrink: 0; }
+/* chú thích khoá thay nút thao tác cho sale không-owner */
+.fc-locknote {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  font-size: 11px; color: var(--ink-3); background: var(--surface-3);
+  border-radius: var(--r-sm); padding: 6px 10px;
+}
+.fc-locknote svg { color: var(--ink-4); flex-shrink: 0; }
+.fc-locknote b { font-weight: 600; color: var(--ink-2); }
 .fc-badge {
   flex-shrink: 0; font-size: 10.5px; font-weight: 600; padding: 2px 8px;
   border-radius: var(--r-pill); line-height: 1.5; white-space: nowrap;

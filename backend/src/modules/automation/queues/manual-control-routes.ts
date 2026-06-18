@@ -24,6 +24,7 @@ import {
 } from './event-hooks.js';
 import { enqueueSequenceStart } from './sequence-step-worker.js';
 import { getSequenceStepQueue, sequenceStepContactPrefix } from './queue-registry.js';
+import { getOwnerScope } from '../../rbac/owner-scope.js';
 
 /**
  * Get-or-create system trigger "Bám đuổi khách hàng thủ công" cho 1 org.
@@ -321,6 +322,50 @@ async function buildManualFollowupContacts(
   return result;
 }
 
+/**
+ * Kiểm quyền THAO TÁC luồng bám đuổi (pause/stop/resume/advance) — anh báo 2026-06-18:
+ * 1 KH có nhiều luồng từ nhiều nick của nhiều sale; trước đây BẤT KỲ sale nào cũng
+ * dừng/tạm dừng được luồng của người khác (chỉ filter orgId). Nay khoá theo OWNER luồng =
+ * `CareSession.ownerUserId` (chủ nick gửi). Sale không-owner → 403 (chỉ xem). Quản lý cấp
+ * trên + admin được (theo getOwnerScope, nhất quán với endpoint đóng phiên).
+ *
+ * Trả `null` nếu được phép; `{code,error}` nếu chặn. Không tìm thấy session active khớp
+ * (luồng cũ/edge ngoài care_sessions) → CHO QUA, giữ hành vi cũ (không phá luồng hợp lệ).
+ */
+async function checkFlowControl(args: {
+  userId: string;
+  orgId: string;
+  legacyRole: string;
+  contactId: string;
+  triggerId: string;
+  sequenceId?: string;
+}): Promise<{ code: number; error: string } | null> {
+  const scope = await getOwnerScope({
+    userId: args.userId,
+    orgId: args.orgId,
+    legacyRole: args.legacyRole,
+    resource: 'care_session',
+  });
+  if (scope.canViewAll) return null; // admin/owner/grant view_all → toàn quyền
+  const sessions = await prisma.careSession.findMany({
+    where: {
+      orgId: args.orgId,
+      contactId: args.contactId,
+      sourceTriggerId: args.triggerId,
+      state: 'active',
+      ...(args.sequenceId ? { sourceSequenceId: args.sequenceId } : {}),
+    },
+    select: { ownerUserId: true },
+  });
+  if (sessions.length === 0) return null; // không attribute được owner → giữ hành vi cũ
+  const visible = new Set(scope.visibleUserIds);
+  const allMine = sessions.every((s) => visible.has(s.ownerUserId));
+  if (!allMine) {
+    return { code: 403, error: 'Luồng này thuộc sale khác — bạn chỉ xem, không thao tác được.' };
+  }
+  return null;
+}
+
 export async function registerManualControlRoutes(app: FastifyInstance): Promise<void> {
   // ── POST pause-contact ──
   app.post<{
@@ -343,6 +388,12 @@ export async function registerManualControlRoutes(app: FastifyInstance): Promise
         reply.code(404);
         return { error: 'Mục tiêu không tồn tại' };
       }
+
+      const deniedPause = await checkFlowControl({
+        userId: request.user!.id, orgId, legacyRole: request.user!.role,
+        contactId: cid, triggerId: tid,
+      });
+      if (deniedPause) { reply.code(deniedPause.code); return { error: deniedPause.error }; }
 
       await onManualPause({
         orgId,
@@ -388,6 +439,12 @@ export async function registerManualControlRoutes(app: FastifyInstance): Promise
         return { error: 'Mục tiêu không tồn tại' };
       }
 
+      const deniedStop = await checkFlowControl({
+        userId: request.user!.id, orgId, legacyRole: request.user!.role,
+        contactId: cid, triggerId: tid,
+      });
+      if (deniedStop) { reply.code(deniedStop.code); return { error: deniedStop.error }; }
+
       await onManualStop({
         orgId,
         triggerId: tid,
@@ -422,6 +479,12 @@ export async function registerManualControlRoutes(app: FastifyInstance): Promise
         reply.code(404);
         return { error: 'Mục tiêu không tồn tại' };
       }
+
+      const deniedResume = await checkFlowControl({
+        userId: request.user!.id, orgId, legacyRole: request.user!.role,
+        contactId: cid, triggerId: tid,
+      });
+      if (deniedResume) { reply.code(deniedResume.code); return { error: deniedResume.error }; }
 
       await onManualResume({
         orgId,
@@ -461,6 +524,12 @@ export async function registerManualControlRoutes(app: FastifyInstance): Promise
         reply.code(404);
         return { error: 'Mục tiêu không tồn tại' };
       }
+
+      const deniedAdvance = await checkFlowControl({
+        userId: request.user!.id, orgId, legacyRole: request.user!.role,
+        contactId: cid, triggerId: tid, sequenceId,
+      });
+      if (deniedAdvance) { reply.code(deniedAdvance.code); return { error: deniedAdvance.error }; }
 
       // LẤY enrollEpoch của phiên active để promote ĐÚNG lần gắn (bỏ job mồ côi).
       const activeSession = await prisma.careSession.findFirst({
@@ -981,6 +1050,91 @@ export async function registerManualControlRoutes(app: FastifyInstance): Promise
           }),
       );
 
+      // ── Ownership enrich (anh báo 2026-06-18: 1 KH có nhiều luồng từ nhiều nick/sale) ──
+      // Mỗi card biết: nick gửi + OWNER (chủ nick) + NGƯỜI CHỊU TRÁCH NHIỆM (sale gắn tay HOẶC
+      // người tạo trigger) + canControl (getOwnerScope). FE dùng để hiện avatar/nguồn + KHOÁ nút
+      // cho sale không-owner. Map theo (trigger+sequence) từ care_sessions active của KH.
+      const enrichWithOwnership = async <T extends { triggerId: string; sequenceId: string | null }>(
+        cards: T[],
+      ): Promise<T[]> => {
+        if (cards.length === 0) return cards;
+        const scope = await getOwnerScope({
+          userId: request.user!.id, orgId, legacyRole: request.user!.role, resource: 'care_session',
+        });
+        const sessions = await prisma.careSession.findMany({
+          where: { orgId, contactId: cid, state: 'active' },
+          select: {
+            nickId: true, ownerUserId: true, enrolledByUserId: true,
+            sourceType: true, sourceTriggerId: true, sourceSequenceId: true,
+          },
+        });
+        const nickIds = new Set<string>(), userIds = new Set<string>(), trigIds = new Set<string>();
+        for (const s of sessions) {
+          if (s.nickId) nickIds.add(s.nickId);
+          if (s.ownerUserId) userIds.add(s.ownerUserId);
+          if (s.enrolledByUserId) userIds.add(s.enrolledByUserId);
+          if (s.sourceTriggerId) trigIds.add(s.sourceTriggerId);
+        }
+        const [nicks, trigCreators] = await Promise.all([
+          nickIds.size
+            ? prisma.zaloAccount.findMany({ where: { id: { in: [...nickIds] } }, select: { id: true, displayName: true, avatarUrl: true } })
+            : Promise.resolve([] as { id: string; displayName: string | null; avatarUrl: string | null }[]),
+          trigIds.size
+            ? prisma.automationTrigger.findMany({ where: { id: { in: [...trigIds] } }, select: { id: true, createdById: true } })
+            : Promise.resolve([] as { id: string; createdById: string }[]),
+        ]);
+        for (const t of trigCreators) if (t.createdById) userIds.add(t.createdById);
+        const users = userIds.size
+          ? await prisma.user.findMany({ where: { id: { in: [...userIds] } }, select: { id: true, fullName: true, avatarUrl: true } })
+          : [];
+        const nickMap = new Map(nicks.map((n) => [n.id, n]));
+        const userMap = new Map(users.map((u) => [u.id, u]));
+        const trigCreatorMap = new Map(trigCreators.map((t) => [t.id, t.createdById]));
+        // Index session: ưu tiên key (trigger:sequence); thêm key trigger-only cho card không sequence.
+        const byKey = new Map<string, (typeof sessions)[number]>();
+        for (const s of sessions) {
+          if (s.sourceTriggerId && s.sourceSequenceId) byKey.set(`${s.sourceTriggerId}:${s.sourceSequenceId}`, s);
+          if (s.sourceTriggerId && !byKey.has(s.sourceTriggerId)) byKey.set(s.sourceTriggerId, s);
+        }
+        const visible = new Set(scope.visibleUserIds);
+        for (const card of cards) {
+          // Card CÓ sequenceId → CHỈ khớp đúng (trigger:sequence) (tránh nhầm chéo trên system
+          // trigger manual dùng chung). Card không sequence → khớp trigger-only.
+          const s = card.sequenceId
+            ? byKey.get(`${card.triggerId}:${card.sequenceId}`) ?? null
+            : byKey.get(card.triggerId) ?? null;
+          if (!s) {
+            Object.assign(card, {
+              nickName: null, nickAvatarUrl: null, ownerUserId: null, ownerName: null,
+              ownerAvatarUrl: null, flowSource: null, byUserId: null, byName: null,
+              byAvatarUrl: null, canControl: true,
+            });
+            continue;
+          }
+          const nick = s.nickId ? nickMap.get(s.nickId) : null;
+          const owner = s.ownerUserId ? userMap.get(s.ownerUserId) : null;
+          const isManual = s.sourceType === 'sequence_manual' || !!s.enrolledByUserId;
+          const byId = isManual
+            ? s.enrolledByUserId
+            : (s.sourceTriggerId ? trigCreatorMap.get(s.sourceTriggerId) ?? null : null);
+          const by = byId ? userMap.get(byId) : null;
+          const canControl = scope.canViewAll || (s.ownerUserId ? visible.has(s.ownerUserId) : true);
+          Object.assign(card, {
+            nickName: nick?.displayName ?? null,
+            nickAvatarUrl: nick?.avatarUrl ?? null,
+            ownerUserId: s.ownerUserId ?? null,
+            ownerName: owner?.fullName ?? null,
+            ownerAvatarUrl: owner?.avatarUrl ?? null,
+            flowSource: isManual ? 'manual' : 'trigger', // 'manual' | 'trigger'
+            byUserId: byId ?? null,
+            byName: by?.fullName ?? null,
+            byAvatarUrl: by?.avatarUrl ?? null,
+            canControl,
+          });
+        }
+        return cards;
+      };
+
       // ── 5) "NỞ" card manual followup: 1 card/trigger (gom-đè epoch mới nhất) → mỗi LẦN
       //       GẮN 1 card riêng (anh chốt 2026-06-15: panel chat ẩn mất luồng đã chạy xong).
       //       Dùng buildManualFollowupContacts (per-enrollment, đã test trang Theo dõi) lọc
@@ -1071,10 +1225,10 @@ export async function registerManualControlRoutes(app: FastifyInstance): Promise
             manualRuns = result.filter((c) => c.systemKind === 'manual_chat_followup');
           }
         }
-        return { contactId: cid, triggers: [...nonManual, ...manualRuns] };
+        return { contactId: cid, triggers: await enrichWithOwnership([...nonManual, ...manualRuns]) };
       }
 
-      return { contactId: cid, triggers: result };
+      return { contactId: cid, triggers: await enrichWithOwnership(result) };
     },
   );
 
