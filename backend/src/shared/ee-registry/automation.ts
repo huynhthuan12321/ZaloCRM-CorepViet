@@ -86,7 +86,9 @@ export interface TemplateVarValues {
   first_active: string; last_active: string; last_message: string;
   last_inbound: string; last_outbound: string; last_interaction: string; msg_count: string;
   uid: string; nick_name: string; kb_status: string; became_friend: string;
+  zalo_name: string;
   sale: string; sale_full: string;
+  date: string;
 }
 
 export type Style = { st: string; start: number; len: number };

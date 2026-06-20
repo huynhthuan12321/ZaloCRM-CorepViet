@@ -44,3 +44,4 @@ _chat_ui_backups/
 # Firebase service account & secrets (KHÔNG commit)
 secrets/
 .gitnexus
+.env.bak*

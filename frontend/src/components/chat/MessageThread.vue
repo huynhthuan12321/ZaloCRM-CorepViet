@@ -196,6 +196,8 @@
               </NickAvatarLock>
               <span class="nick-name">{{ conversation.zaloAccount?.displayName || '—' }}</span>
             </template>
+            <!-- T11 2026-06-20: nick đã xóa → chip xám "Đã xóa" cạnh tên nick -->
+            <span v-if="isArchivedNick" class="nick-archived-chip" title="Nick này đã bị xóa khỏi CRM — chỉ xem lại lịch sử">Đã xóa</span>
             <span class="ch-sep">|</span>
             <span
               class="msg-counts"
@@ -338,6 +340,17 @@
           <div class="virtual-banner-title">Chat nội bộ — tin nhắn KHÔNG gửi đi Zalo</div>
           <div class="virtual-banner-sub">
             Dùng để ghi nhật ký chăm sóc + đặt lịch hẹn. Trợ lý AI sẽ gợi ý câu hỏi khai thác thông tin KH cho anh/chị.
+          </div>
+        </div>
+      </div>
+
+      <!-- T11 2026-06-20: Banner cho nick đã xóa — chỉ xem lại lịch sử, không gửi/nhận. -->
+      <div v-if="isArchivedNick" class="virtual-banner archived-banner">
+        <div class="virtual-banner-icon"><InfoIcon :size="14" :stroke-width="2" /></div>
+        <div class="virtual-banner-body">
+          <div class="virtual-banner-title">Nick đã bị xóa — chỉ xem lại lịch sử</div>
+          <div class="virtual-banner-sub">
+            Kết nối lại nick này để gửi/nhận tin trở lại.
           </div>
         </div>
       </div>
@@ -600,7 +613,7 @@
           </div>
           </NickAvatarLock>
 
-          <div ref="editorWrapRef" class="editor-wrap" :class="{ 'editor-locked': !privacyVisibility.canSendInConv(conversation) }">
+          <div ref="editorWrapRef" class="editor-wrap" :class="{ 'editor-locked': !privacyVisibility.canSendInConv(conversation) || isArchivedNick }">
             <QuickTemplatePopup
               ref="templatePopupRef"
               :visible="showTemplatePopup"
@@ -631,6 +644,14 @@
             >
               <span class="editor-lock-pill">🔒 Riêng tư — chỉ chính chủ nick gửi được tin</span>
             </div>
+            <!-- T11 2026-06-20: nick đã xóa → overlay khóa ô soạn (khóa mềm UX, KHÔNG thay guard server) -->
+            <div
+              v-else-if="isArchivedNick"
+              class="editor-lock-overlay"
+              @click.stop
+            >
+              <span class="editor-lock-pill">🗑 Nick đã xóa — không gửi được. Kết nối lại để gửi tin.</span>
+            </div>
           </div>
 
           <!-- Emoji picker (hover) — sát nút Gửi -->
@@ -640,9 +661,9 @@
           <button
             class="send-btn"
             :class="{ 'send-btn-virtual': isVirtualConv }"
-            :disabled="!inputText.trim() || sending"
+            :disabled="!inputText.trim() || sending || isArchivedNick"
             @click="handleSend"
-            :title="isVirtualConv ? 'Lưu nội bộ (Enter) — KHÔNG gửi đi Zalo' : 'Gửi (Enter)'"
+            :title="isArchivedNick ? 'Nick đã xóa — không gửi được.' : isVirtualConv ? 'Lưu nội bộ (Enter) — KHÔNG gửi đi Zalo' : 'Gửi (Enter)'"
           >
             <v-icon v-if="sending" size="20">mdi-loading mdi-spin</v-icon>
             <template v-else-if="isVirtualConv">
@@ -693,19 +714,7 @@
           @created="onAppointmentCreated"
         />
 
-        <!-- Gợi ý ảnh kho theo ngữ cảnh khách (GĐ3a-4) -->
-        <div v-if="mediaSuggestions.length" class="media-suggest-bar">
-          <span class="ms-label">✨ Gợi ý ảnh dự án:</span>
-          <button
-            v-for="a in mediaSuggestions" :key="a.id"
-            class="ms-chip" :disabled="sendingSuggestId === a.id"
-            :title="'Gửi: ' + a.name"
-            @click="sendSuggestion(a)"
-          >
-            <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" alt="" />
-            <span class="ms-name">{{ a.name }}</span>
-          </button>
-        </div>
+        <!-- 2026-06-20 (anh chốt): GỠ bar "✨ Gợi ý ảnh dự án" — gợi ý không đúng + sale không dùng. -->
 
         <!-- 2026-06-12: popover "Chèn ảnh từ Kho" đã GỠ — nút giờ mở tab Media ở cột 4
              (emit 'open-media-tab' → ChatView switch ChatContactPanel sang tab Media). -->
@@ -867,7 +876,7 @@ import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount } from 'vue'
 import type { Conversation, Message } from '@/composables/use-chat';
 import { formatInOrgTz, weekdayInOrgTz, getOrgParts } from '@/composables/use-org-timezone';
 import { api } from '@/api/index';
-import { saveFromChat, saveFromChatBatch, suggestMedia, sendMediaToConversation, toggleFavorite, type MediaAssetItem } from '@/api/media';
+import { saveFromChat, saveFromChatBatch, toggleFavorite } from '@/api/media';
 import AISuggestBar from '@/components/chat/AISuggestBar.vue';
 // Mission Fix 2 (2026-05-30) — header picker GHI `Contact.statusId` (FK Status table)
 // để Wave 3 evaluateStatusGate đọc đúng cột. Trước đây CareStatusBadge ghi enum legacy
@@ -955,16 +964,19 @@ import {
 // Reaction detail popup state — anh chốt 2026-05-22: click reaction box → popup
 const reactionPopupOpen = ref(false);
 const reactionPopupReactions = ref<Array<{ emoji: string; count: number; reacted: boolean }>>([]);
-const reactionPopupDetails = ref<Array<{ userId: string; userName?: string | null; emoji: string; source?: 'crm' | 'zalo' }>>([]);
+const reactionPopupDetails = ref<Array<{ userId: string; userName?: string | null; emoji: string; source?: 'crm' | 'zalo'; avatarUrl?: string | null }>>([]);
 function onOpenReactionDetail(payload: { reactions: any[]; message: Message }) {
   reactionPopupReactions.value = payload.reactions;
-  // Build details từ message.reactions (raw row per-user per-emoji)
-  const raw = (payload.message as any).reactions ?? [];
+  // 2026-06-20 FIX: build details từ message.reactionDetails (raw per-user rows GIỮ ở
+  // normalizeMessage), KHÔNG phải message.reactions (đã tổng hợp emoji+count, mất reactor →
+  // trước đây luôn ra "Người dùng"). Nay có reactorName thật từ BE.
+  const raw = (payload.message as any).reactionDetails ?? [];
   reactionPopupDetails.value = raw.map((r: any) => ({
     userId: r.reactorId || r.userId || '',
     userName: r.reactorName || r.userName || null,
     emoji: r.emoji,
     source: r.reactorSource || r.source,
+    avatarUrl: r.reactorAvatar || null,
   }));
   reactionPopupOpen.value = true;
 }
@@ -1302,7 +1314,6 @@ watch(() => props.conversation?.id, (newId, oldId) => {
     void touchAccountSync(accId, threadId);
     void touchConversationProfile(newId);  // refresh contact profile from SDK
   }
-  void loadMediaSuggestions(); // gợi ý ảnh kho theo tag khách (GĐ3a-4)
 }, { immediate: true });
 
 /* Optimistic UI FULL: update cả allLabels (dropdown ✓) + friendship.crmTagsPerNick
@@ -1487,6 +1498,11 @@ const showOnlineIndicator = computed(() => {
 const isVirtualConv = computed(() => {
   return Boolean((props.conversation as { isVirtual?: boolean } | undefined)?.isVirtual);
 });
+
+// T11 2026-06-20: nick của conversation ĐÃ BỊ XÓA (ẩn-mềm) → badge "Đã xóa" + banner + khóa ô
+// soạn tin (khóa mềm UX, KHÔNG thay guard server). CHỈ dùng archivedAt!=null — KHÔNG suy từ
+// status='disconnected' (nick sống cũng có thể disconnected tạm).
+const isArchivedNick = computed(() => !!props.conversation?.zaloAccount?.archivedAt);
 
 // M55 2026-05-30 — Cùng chăm chip + tooltip cho header chat
 const contactAccessList = computed(() => {
@@ -2046,6 +2062,10 @@ function onOpenNote() {
   toast.push('Mở ghi chú nhanh ở panel bên phải');
 }
 const inputPlaceholder = computed(() => {
+  // T11 2026-06-20: nick đã xóa → placeholder khóa
+  if (isArchivedNick.value) {
+    return 'Nick đã xóa — không gửi được.';
+  }
   // M53 2026-05-30: virtual conv → placeholder rõ ràng là nhật ký nội bộ
   if (isVirtualConv.value) {
     return 'Ghi nội dung trao đổi — Trợ lý AI sẽ gợi ý câu hỏi tiếp theo...';
@@ -2119,31 +2139,7 @@ const imageInputRef = ref<HTMLInputElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 // 2026-06-12: showMediaPicker + MediaPickerPopover đã GỠ — nút "Chèn từ kho" giờ mở
 // tab Media ở cột 4 (emit 'open-media-tab'). Logic kho dời sang MediaTabPanel.
-// Gợi ý ảnh theo ngữ cảnh (GĐ3a-4): match tag khách với tag ảnh kho.
-const mediaSuggestions = ref<MediaAssetItem[]>([]);
-const sendingSuggestId = ref<string | null>(null);
-async function loadMediaSuggestions() {
-  mediaSuggestions.value = [];
-  const cid = props.conversation?.id;
-  if (!cid) return;
-  try {
-    const res = await suggestMedia(cid);
-    mediaSuggestions.value = res.items;
-  } catch { /* im lặng — gợi ý là phụ */ }
-}
-async function sendSuggestion(a: MediaAssetItem) {
-  if (sendingSuggestId.value) return;
-  sendingSuggestId.value = a.id;
-  try {
-    await sendMediaToConversation(a.id, props.conversation!.id);
-    toast.success(`Đã gửi "${a.name}"`);
-    mediaSuggestions.value = mediaSuggestions.value.filter((x) => x.id !== a.id);
-  } catch (e: any) {
-    toast.warning(e?.response?.data?.error || 'Gửi thất bại');
-  } finally {
-    sendingSuggestId.value = null;
-  }
-}
+// 2026-06-20: GỠ "Gợi ý ảnh dự án" (mediaSuggestions/loadMediaSuggestions/sendSuggestion) — anh chốt bỏ.
 const dragDepth = ref(0);
 const isDraggingFiles = ref(false);
 
@@ -2701,6 +2697,7 @@ async function dispatchBlockComponents(blockId: string) {
 // ── Send ────────────────────────────────────────────────────────────────────
 function handleSend() {
   if (showTemplatePopup.value) { showTemplatePopup.value = false; return; }
+  if (isArchivedNick.value) return; // T11: nick đã xóa → chặn gửi (Enter + nút). Khóa mềm UX.
   if (!inputText.value.trim()) return;
 
   // 2026-05-21 fix: lấy rich payload {text, styles} từ editor để gửi format đi Zalo.
@@ -3314,6 +3311,27 @@ watch(() => props.editingMessage?.id, async (id) => {
 .virtual-banner-body { flex: 1; }
 .virtual-banner-title { font-weight: 600; line-height: 1.4; }
 .virtual-banner-sub { font-size: 11px; color: #c2410c; margin-top: 2px; line-height: 1.4; }
+
+/* T11 2026-06-20: banner nick đã xóa — tông XÁM (clone virtual-banner) + chip xám cạnh tên nick */
+.archived-banner {
+  background: linear-gradient(90deg, #f9fafb, #f3f4f6);
+  border-bottom: 1px solid #e5e7eb;
+  color: #4b5563;
+}
+.archived-banner .virtual-banner-icon { background: #9ca3af; }
+.archived-banner .virtual-banner-sub { color: #6b7280; }
+.nick-archived-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
 
 /* M53 2026-05-30: virtual mode — bubble self border đứt nét */
 .chat-messages-area.is-virtual-mode :deep(.bubble.self) {
@@ -3972,20 +3990,4 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 .zlbl-manage:hover { background: var(--smax-grey-50); color: var(--smax-primary); }
 .manage-icon { font-size: 14px; }
-
-/* Dải gợi ý ảnh kho theo ngữ cảnh (GĐ3a-4) */
-.media-suggest-bar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 7px 12px; margin: 0 0 6px; background: #a8d8c4; border: 1px solid #8fc7af;
-  border-radius: 10px; font-size: 12.5px;
-}
-.media-suggest-bar .ms-label { color: #0a2e0e; font-weight: 500; flex-shrink: 0; }
-.ms-chip {
-  display: inline-flex; align-items: center; gap: 6px; background: #fff;
-  border: 1px solid #8fc7af; border-radius: 9999px; padding: 3px 10px 3px 3px;
-  cursor: pointer; font-size: 12px; color: #181d26; max-width: 180px;
-}
-.ms-chip:disabled { opacity: .6; cursor: default; }
-.ms-chip img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
-.ms-chip .ms-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

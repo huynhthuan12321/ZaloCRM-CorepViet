@@ -84,6 +84,8 @@ import { integrationRoutes } from './modules/integrations/integration-routes.js'
 // care-session, lists, friend-invite) → extension bundle (src/_ee/automation).
 // Telegram bridge (Zalo↔Telegram) is core — stays outside _ee.
 import { initTelegramBridge } from './modules/integrations/providers/telegram-bridge/index.js';
+// Telegram bridge routes (Zalo↔Telegram /link + provisioner) — core, stays outside _ee.
+import { telegramBridgeRoutes } from './modules/integrations/providers/telegram-bridge/telegram-bridge-routes.js';
 import { aiRoutes } from './modules/ai/ai-routes.js';
 import { chatOperationsRoutes, registerChatSocketHandlers } from './modules/chat/chat-operations-routes.js';
 import { groupRoutes } from './modules/zalo/group-routes.js';
@@ -301,6 +303,7 @@ async function bootstrap() {
   await app.register(integrationRoutes);
   // Automation + Marketing routes (blocks/sequences/triggers/broadcasts/care-session/
   // lists/friend-invite + bull-board/stats/manual-control) → extension bundle.
+  await app.register(telegramBridgeRoutes); // Telegram bridge (Zalo↔Telegram) — core
   await app.register(aiRoutes);
   await app.register(chatOperationsRoutes);
   await app.register(groupRoutes);

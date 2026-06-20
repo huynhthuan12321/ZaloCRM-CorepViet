@@ -2,19 +2,17 @@
 // (vết gãy #2). Trước đây hàm ghi vào AutomationTask stub (đã drop) → 0 việc thật
 // → Mục tiêu kích bằng SỰ KIỆN không bám đuổi được KH. Giờ enqueue BullMQ thật.
 //
-// Phủ các nhánh anh chốt (D4/D5/D7):
-//   - sequence-bound: chọn nick + enqueueSequenceStart  (happy path)
-//   - đa-luồng: KH ở Luồng A vẫn vào được Luồng B (KHÔNG còn mutex chặn)  ← D5
-//   - block-bound: skip CÓ CẢNH BÁO (không nuốt im)  ← D7
-//   - no nick (KH chưa là bạn nick nào): skip ghi lý do, KHÔNG enqueue
-//   - nick scope: truyền segmentSpec.nickIds xuống selector
+// 2026-06-20 — CHIA CỨNG THUẦN: materializer chỉ resolveEligibleNicks (pool connected)
+// rồi chia round-robin nickId = eligible[i%n] + enqueue. KHÔNG tra UID / KHÔNG failover
+// ở đây (worker lo lúc gửi). Phủ: happy, đa-luồng (D5), round-robin chia đều, no_eligible_nick,
+// nick scope, block-bound (D7), sequence disabled.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ── Mock nick-selector: bắt args + điều khiển kết quả ────────────────────────
-const pickSequenceNickForContact = vi.fn();
+// ── Mock nick-selector: materializer chỉ còn dùng resolveEligibleNicks ──────────
+const resolveEligibleNicks = vi.fn();
 vi.mock('../src/modules/automation/engine/nick-selector.js', () => ({
-  pickSequenceNickForContact: (...a: unknown[]) => (pickSequenceNickForContact as any)(...a),
+  resolveEligibleNicks: (...a: unknown[]) => (resolveEligibleNicks as any)(...a),
 }));
 
 // ── Mock enqueueSequenceStart: bắt mọi lần enqueue ───────────────────────────
@@ -29,9 +27,10 @@ vi.mock('../src/modules/automation/queues/queue-registry.js', () => ({
   getSequenceStepQueue: () => ({ add: vi.fn(), getJob: vi.fn(async () => null) }),
 }));
 
-// segment-resolver: trả contactIds cố định
+// segment-resolver: trả contactIds điều khiển được (cho test round-robin nhiều KH)
+const resolveSegmentToContactIds = vi.fn(async () => ({ contactIds: ['c1'], rejected: [] }));
 vi.mock('../src/modules/automation/engine/segment-resolver.js', () => ({
-  resolveSegmentToContactIds: vi.fn(async () => ({ contactIds: ['c1'], rejected: [] })),
+  resolveSegmentToContactIds: (...a: unknown[]) => (resolveSegmentToContactIds as any)(...a),
 }));
 
 // ── Mock prisma ──────────────────────────────────────────────────────────────
@@ -48,6 +47,8 @@ vi.mock('../src/shared/database/prisma-client.js', () => ({
       create: vi.fn(async () => ({ id: 'camp1' })),
     },
     block: { findFirst: vi.fn(async () => db.block) },
+    // resolveNextEnrollEpoch dùng careSession.aggregate — enrollEpoch=null → epoch=1.
+    careSession: { aggregate: vi.fn(async () => ({ _max: { enrollEpoch: null }, _count: { _all: 0 } })) },
   },
 }));
 
@@ -70,7 +71,10 @@ function seqTrigger(over: Record<string, unknown> = {}) {
 const event = { type: 'silent_x_days', orgId: 'org1', occurredAt: new Date(0), contactId: 'c1' } as any;
 
 beforeEach(() => {
-  pickSequenceNickForContact.mockReset();
+  resolveEligibleNicks.mockReset();
+  resolveEligibleNicks.mockResolvedValue(['n1']); // mặc định: 1 nick eligible
+  resolveSegmentToContactIds.mockReset();
+  resolveSegmentToContactIds.mockResolvedValue({ contactIds: ['c1'], rejected: [] });
   enqueueSequenceStart.mockClear();
   db.triggers = [];
   db.campaignFindFirst = null;
@@ -78,9 +82,8 @@ beforeEach(() => {
 });
 
 describe('materializeFromEvent → BullMQ (vết gãy #2)', () => {
-  it('sequence-bound: chọn nick + enqueueSequenceStart (happy path)', async () => {
+  it('sequence-bound: chia nick + enqueueSequenceStart (happy path)', async () => {
     db.triggers = [seqTrigger()];
-    pickSequenceNickForContact.mockResolvedValue({ nickId: 'n1', zaloUidInNick: 'u1', reason: 'existing_friend' });
 
     const r = await materializeFromEvent(event);
 
@@ -92,10 +95,8 @@ describe('materializeFromEvent → BullMQ (vết gãy #2)', () => {
   });
 
   it('D5 đa-luồng: KHÔNG có mutex chặn — mỗi Mục tiêu enqueue độc lập', async () => {
-    // 2 trigger khác sequence cho cùng KH → cả 2 phải enqueue (không cái nào bị skip vì "đang ở luồng khác")
     db.triggers = [seqTrigger({ id: 'tA', sequenceId: 'sA', sequence: { id: 'sA', enabled: true, steps: [{ stepId: 'x', blockId: 'b1', delayMinutes: 0 }], runtimeRules: {} } }),
                    seqTrigger({ id: 'tB', sequenceId: 'sB', sequence: { id: 'sB', enabled: true, steps: [{ stepId: 'y', blockId: 'b1', delayMinutes: 0 }], runtimeRules: {} } })];
-    pickSequenceNickForContact.mockResolvedValue({ nickId: 'n1', zaloUidInNick: 'u1', reason: 'existing_friend' });
 
     const r = await materializeFromEvent(event);
 
@@ -103,26 +104,41 @@ describe('materializeFromEvent → BullMQ (vết gãy #2)', () => {
     expect(r.tasksEnqueued).toBe(2);
   });
 
-  it('no nick (KH chưa là bạn nick nào): skip ghi lý do, KHÔNG enqueue', async () => {
+  it('CHIA CỨNG round-robin: KH thứ i → nick i%n, chia đều 2 nick', async () => {
+    const evt = { type: 'silent_x_days', orgId: 'org1', occurredAt: new Date(0) } as any; // không contactId → dùng segment
+    resolveSegmentToContactIds.mockResolvedValue({ contactIds: ['c1', 'c2', 'c3', 'c4'], rejected: [] });
+    resolveEligibleNicks.mockResolvedValue(['nA', 'nB']);
+    db.triggers = [seqTrigger({ segmentSpec: { nickIds: ['nA', 'nB'] } })];
+
+    const r = await materializeFromEvent(evt);
+
+    expect(r.tasksEnqueued).toBe(4);
+    const pairs = enqueueSequenceStart.mock.calls.map((c: any[]) => [c[0].contactId, c[0].nickId]);
+    // c1→nA(0%2), c2→nB(1%2), c3→nA(2%2), c4→nB(3%2)
+    expect(pairs).toEqual([['c1', 'nA'], ['c2', 'nB'], ['c3', 'nA'], ['c4', 'nB']]);
+  });
+
+  it('no_eligible_nick (không nick connected): skip cả trigger, KHÔNG enqueue', async () => {
     db.triggers = [seqTrigger()];
-    pickSequenceNickForContact.mockResolvedValue({ nickId: null, reason: 'no_friend_row' });
+    resolveEligibleNicks.mockResolvedValue([]);
 
     const r = await materializeFromEvent(event);
 
     expect(enqueueSequenceStart).not.toHaveBeenCalled();
-    expect(r.tasksEnqueued).toBe(0);
     expect(r.skipped).toBe(1);
-    expect(r.reasons.some((x) => x.includes('no_sendable_nick') && x.includes('no_friend_row'))).toBe(true);
+    expect(r.reasons.some((x) => x.includes('no_eligible_nick'))).toBe(true);
   });
 
-  it('nick scope: truyền segmentSpec.nickIds xuống selector', async () => {
+  it('nick scope: segmentSpec.nickIds → pool resolveEligibleNicks', async () => {
     db.triggers = [seqTrigger({ segmentSpec: { nickIds: ['nA', 'nB'] } })];
-    pickSequenceNickForContact.mockResolvedValue({ nickId: 'nA', zaloUidInNick: 'u1', reason: 'existing_friend' });
+    resolveEligibleNicks.mockResolvedValue(['nA', 'nB']);
 
     await materializeFromEvent(event);
 
-    expect(pickSequenceNickForContact).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: 'org1', contactId: 'c1', allowedNickIds: ['nA', 'nB'] }),
+    expect(resolveEligibleNicks).toHaveBeenCalledWith('org1', ['nA', 'nB']);
+    // KH đầu (i=0) → nick i%n = nA
+    expect(enqueueSequenceStart).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'c1', nickId: 'nA' }),
     );
   });
 

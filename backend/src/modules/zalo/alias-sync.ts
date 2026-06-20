@@ -65,6 +65,11 @@ export async function syncAliasesForAccount(accountId: string, orgId: string): P
     // Diff: null vs '' coerce — coi rỗng/null là không có alias
     const oldAlias = f.aliasInNick || null;
     if (newAlias === oldAlias) continue;
+    // FIX 2026-06-19 (Anh báo bug): CHỈ KÉO-VÀO alias từ Zalo, KHÔNG tự XOÁ. Zalo trả rỗng
+    // cho 1 UID có thể do alias nằm trên UID/danh tính KHÁC của cùng KH, hoặc getAliasList
+    // chưa kịp cập nhật → clear sẽ làm MẤT tên gợi nhớ ở màn chat (xung khắc với auto-alias).
+    // Muốn xoá alias thì xoá tay trong panel chat (PATCH /friends/:id alias rỗng).
+    if (!newAlias) continue;
 
     await prisma.friend.update({
       where: { id: f.id },

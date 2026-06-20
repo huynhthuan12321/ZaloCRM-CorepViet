@@ -10,6 +10,7 @@ import { prisma, tenantTransaction } from '../../shared/database/prisma-client.j
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
 import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
+import { DISPLAYABLE_NICK_WHERE } from '../zalo/zalo-scope.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { logger } from '../../shared/utils/logger.js';
@@ -131,7 +132,8 @@ export async function chatRoutes(app: FastifyInstance) {
     const user = request.user!;
     const { accountId = '', tab = '', threadType = '' } = request.query as QueryParams;
 
-    const baseWhere: any = { orgId: user.orgId, deletedAt: null, zaloAccount: { archivedAt: null } };
+    // T5-A (YC2): nick đã XÓA-có-uid vẫn hiện hội thoại (đọc-only) → DISPLAYABLE thay archivedAt:null.
+    const baseWhere: any = { orgId: user.orgId, deletedAt: null, zaloAccount: DISPLAYABLE_NICK_WHERE };
     if (accountId) baseWhere.zaloAccountId = accountId;
     if (tab) baseWhere.tab = tab;
     // 2026-06-11 — đếm theo cùng key tab như list: Cá nhân/Nhóm (threadType) loại
@@ -147,11 +149,12 @@ export async function chatRoutes(app: FastifyInstance) {
     const { getZaloScope } = await import('../zalo/zalo-scope.js');
     const zScope = await getZaloScope(user.id, user.orgId, user.role);
     if (!zScope.isOrgAdmin) {
-      const accessibleIds = zScope.accessibleIds;
-      if (accountId && accessibleIds.includes(accountId)) {
+      // T6-consumer (YC2): XEM dùng displayableIds (gồm nick xóa-có-uid đọc-only).
+      const displayableIds = zScope.displayableIds;
+      if (accountId && displayableIds.includes(accountId)) {
         baseWhere.zaloAccountId = accountId;
       } else {
-        baseWhere.zaloAccountId = { in: accessibleIds };
+        baseWhere.zaloAccountId = { in: displayableIds };
       }
     }
 
@@ -335,6 +338,9 @@ export async function chatRoutes(app: FastifyInstance) {
   app.get('/api/v1/conversations/sidebar-tags', async (request: FastifyRequest, _reply: FastifyReply) => {
     const user = request.user!;
     const { folderId = '', accountId = '' } = request.query as QueryParams;
+    // 2026-06-20 (anh báo: tag cột 2 phải theo PHẠM VI XEM cột 1, không lấy toàn hệ thống):
+    // nhận danh sách nick đang xem (accountIds=csv) → chỉ gom tag của các nick đó.
+    const accountIdsCsv = String((request.query as { accountIds?: string }).accountIds ?? '');
 
     // 1) Resolve danh sách zaloAccountId theo scope.
     let scopedAccountIds: string[] | null = null; // null = mọi nick accessible
@@ -348,6 +354,8 @@ export async function chatRoutes(app: FastifyInstance) {
       } else {
         scopedAccountIds = []; // folder không thuộc user → rỗng
       }
+    } else if (accountIdsCsv) {
+      scopedAccountIds = accountIdsCsv.split(',').map((s) => s.trim()).filter(Boolean);
     } else if (accountId) {
       scopedAccountIds = [accountId];
     }
@@ -459,7 +467,8 @@ export async function chatRoutes(app: FastifyInstance) {
       messageReplyState = '',
     } = request.query as QueryParams;
 
-    const where: any = { orgId: user.orgId, deletedAt: null, zaloAccount: { archivedAt: null } };
+    // T5-A (YC2): hội thoại nick đã XÓA-có-uid hiện lại (đọc-only) → DISPLAYABLE thay archivedAt:null.
+    const where: any = { orgId: user.orgId, deletedAt: null, zaloAccount: DISPLAYABLE_NICK_WHERE };
     if (tab) where.tab = tab;
     if (threadType === 'user' || threadType === 'group') {
       where.threadType = threadType;
@@ -772,12 +781,13 @@ export async function chatRoutes(app: FastifyInstance) {
     const { getZaloScope: _getZScope } = await import('../zalo/zalo-scope.js');
     const zScope2 = await _getZScope(user.id, user.orgId, user.role);
     if (!zScope2.isOrgAdmin) {
-      const accessibleIds = zScope2.accessibleIds;
+      // T6-consumer (YC2): danh sách hội thoại dùng displayableIds (gồm nick xóa-có-uid).
+      const displayableIds = zScope2.displayableIds;
       if (accountIdList.length > 0) {
-        const allowed = accountIdList.filter(id => accessibleIds.includes(id));
+        const allowed = accountIdList.filter(id => displayableIds.includes(id));
         where.zaloAccountId = allowed.length === 1 ? allowed[0] : { in: allowed };
       } else {
-        where.zaloAccountId = { in: accessibleIds };
+        where.zaloAccountId = { in: displayableIds };
       }
     }
 
@@ -827,16 +837,19 @@ export async function chatRoutes(app: FastifyInstance) {
                 orderBy: { createdAt: 'asc' },
                 take: 5,
               },
+              // 2026-06-20 (anh báo: badge "Cùng chăm" hiện 5 cache ≠ số thật khi click):
+              // SỐ CHÍNH XÁC qua _count (không bị cap take:5) → badge khớp detail + sau reload.
+              _count: { select: { contactAccess: true } },
             },
           },
-          zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, privacyMode: true, ownerUserId: true } },
+          zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, privacyMode: true, ownerUserId: true, archivedAt: true } },
           pins: { select: { id: true } },
           messages: {
             take: 1,
             // Primary sort by Zalo Snowflake numeric (match 100% Zalo Web), sentAt fallback
             // cho CRM-sent in-flight messages chưa nhận echo zaloMsgId.
             orderBy: [{ zaloMsgIdNum: { sort: 'desc', nulls: 'last' } }, { sentAt: 'desc' }],
-            select: { id: true, zaloMsgId: true, senderUid: true, senderName: true, content: true, contentType: true, senderType: true, sentAt: true, isDeleted: true, editedAt: true, reactions: { select: { emoji: true, reactorId: true } } },
+            select: { id: true, zaloMsgId: true, senderUid: true, senderName: true, content: true, contentType: true, senderType: true, sentAt: true, isDeleted: true, editedAt: true, reactions: { select: { emoji: true, reactorId: true, reactorName: true, reactorSource: true } } },
           },
         },
         orderBy: orderByClause,
@@ -995,10 +1008,13 @@ export async function chatRoutes(app: FastifyInstance) {
               orderBy: { createdAt: 'asc' },
               take: 20,
             },
+            // 2026-06-20: số chính xác (khớp badge cột 2) — cùng nguồn _count.
+            _count: { select: { contactAccess: true } },
           },
         },
         // PRIVACY 2026-06-11: cần privacyMode + ownerUserId để gate redact.
-        zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, status: true, privacyMode: true, ownerUserId: true } },
+        // T11-BE (YC2): + archivedAt → FE badge "Đã xóa" + banner + khóa ô soạn tin.
+        zaloAccount: { select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, status: true, privacyMode: true, ownerUserId: true, archivedAt: true } },
         pins: { select: { id: true } },
       },
     });
@@ -1008,7 +1024,8 @@ export async function chatRoutes(app: FastifyInstance) {
     // (audit C4). Chặn user ngoài quyền đọc chi tiết hội thoại của nick người khác.
     const { getZaloScope } = await import('../zalo/zalo-scope.js');
     const scope = await getZaloScope(user.id, user.orgId, user.role);
-    if (!scope.isOrgAdmin && !scope.accessibleIds.includes(conversation.zaloAccountId)) {
+    // T6-consumer (YC2): mở chi tiết dùng displayableIds (nick xóa-có-uid đọc-only). Gửi gate riêng (T7).
+    if (!scope.isOrgAdmin && !scope.displayableIds.includes(conversation.zaloAccountId)) {
       return reply.status(403).send({ error: 'Bạn không có quyền xem hội thoại này', code: 'not_in_scope' });
     }
 
@@ -1254,7 +1271,9 @@ export async function chatRoutes(app: FastifyInstance) {
       where: { id, orgId: user.orgId },
       select: {
         id: true,
-        zaloAccount: { select: { privacyMode: true, ownerUserId: true } },
+        // 2026-06-20: displayName+avatar của NICK để hiển thị reaction do sale thả qua CRM
+        // theo DANH TÍNH NICK ZALO (anh chốt: không hiện email tài khoản sale CRM).
+        zaloAccount: { select: { privacyMode: true, ownerUserId: true, displayName: true, avatarUrl: true } },
       },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
@@ -1293,7 +1312,7 @@ export async function chatRoutes(app: FastifyInstance) {
           albumKey: true,
           albumIndex: true,
           albumTotal: true,
-          reactions: { select: { emoji: true, reactorId: true } },
+          reactions: { select: { emoji: true, reactorId: true, reactorName: true, reactorSource: true } },
           // M55 2026-05-30 — sender attribution cho multi-sale cùng chăm.
           // Tin self (sale gửi qua CRM) lưu repliedByUserId — FE render mini avatar
           // tên sale phía trên bubble khi sale khác (không phải mình) gửi.
@@ -1407,15 +1426,54 @@ export async function chatRoutes(app: FastifyInstance) {
       };
     }
 
+    // 2026-06-20 (anh báo popup cảm xúc chỉ hiện "Người dùng"/email): resolve người thả → tên+avatar.
+    //  - reactor 'zalo' → Friend.zaloUidInNick (của nick) → aliasInNick/zaloDisplayName + zaloAvatarUrl
+    //    (Zalo event NHÓM không kèm tên → reactor_name rỗng → bắt buộc tra).
+    //  - reactor 'crm'  → DANH TÍNH NICK ZALO của hội thoại (anh chốt: KHÔNG hiện email sale CRM —
+    //    cảm xúc sale thả qua CRM gửi đi DƯỚI nick này, khách thấy nick thả).
+    // Batch Friend 0 N+1, chỉ chạy khi có reaction zalo.
+    const nickName = conversation.zaloAccount?.displayName || null;
+    const nickAvatar = conversation.zaloAccount?.avatarUrl || null;
+    const reactorZaloUids = new Set<string>();
+    for (const m of ordered) {
+      for (const rx of ((m as { reactions?: Array<{ reactorId: string; reactorSource: string | null }> }).reactions || [])) {
+        if (rx.reactorId && rx.reactorSource !== 'crm') reactorZaloUids.add(rx.reactorId);
+      }
+    }
+    const reactorMap = new Map<string, { name: string | null; avatar: string | null }>();
+    if (reactorZaloUids.size > 0) {
+      const frx = await prisma.friend.findMany({
+        where: { orgId: user.orgId, zaloUidInNick: { in: [...reactorZaloUids] } },
+        select: { zaloUidInNick: true, aliasInNick: true, zaloDisplayName: true, zaloAvatarUrl: true },
+      });
+      for (const f of frx) {
+        if (!reactorMap.has(f.zaloUidInNick)) {
+          reactorMap.set(f.zaloUidInNick, { name: f.aliasInNick || f.zaloDisplayName || null, avatar: f.zaloAvatarUrl || null });
+        }
+      }
+    }
+
     const redacted = ordered.map((m) => {
       const r = redactMessage(m as any, conversation as any, privacyCtx);
       // PRIVACY 2026-06-11 (audit H1): senderResolved (tên/crmName/alias KH) gán SAU
       // redactMessage → KHÔNG gán cho tin đã redact, nếu không cấp trên vẫn đọc được
       // DANH SÁCH tên KH riêng tư dù nội dung đã mờ.
       const isRedacted = (r as any).redacted === true;
+      // Enrich reaction reactor: tên + avatar resolved (tin redact → ẩn danh tính, giữ emoji/count).
+      const rawReactions = ((r as { reactions?: Array<{ emoji: string; reactorId: string; reactorName: string | null; reactorSource: string | null }> }).reactions) || [];
+      const enrichedReactions = rawReactions.map((rx) => {
+        if (isRedacted) return { ...rx, reactorName: null, reactorAvatar: null };
+        if (rx.reactorSource === 'crm') {
+          // Sale thả qua CRM → hiện DANH TÍNH NICK ZALO (không phải email tài khoản sale).
+          return { ...rx, reactorName: nickName || rx.reactorName || null, reactorAvatar: nickAvatar };
+        }
+        const hit = reactorMap.get(rx.reactorId);
+        return { ...rx, reactorName: rx.reactorName || hit?.name || null, reactorAvatar: hit?.avatar || null };
+      });
       // BigInt zaloMsgIdNum → string cho JSON serialize
       return {
         ...r,
+        reactions: enrichedReactions,
         zaloMsgIdNum: (r as any).zaloMsgIdNum?.toString() ?? null,
         senderResolved: isRedacted ? null : resolveSender(m),
       };
@@ -1452,6 +1510,16 @@ export async function chatRoutes(app: FastifyInstance) {
       include: { zaloAccount: true },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+
+    // T7 (YC2 2026-06-20): CHẶN GỬI qua nick ĐÃ XÓA (archivedAt) — kể cả hội thoại ảo. Đặt
+    // TRƯỚC isVirtual + TRƯỚC mọi nhánh tạo Message. Sau T5/T6 hội thoại nick xóa hiện lại
+    // (đọc-only) → guard này chặn sale gửi nhầm. Nick chưa-kết-nối (status) để nhánh gửi thật lo.
+    if (conversation.zaloAccount.archivedAt) {
+      return reply.status(409).send({
+        error: 'Nick này đã bị xóa — chỉ xem lại lịch sử, không gửi được. Kết nối lại nick để tiếp tục.',
+        code: 'NICK_ARCHIVED',
+      });
+    }
 
     // Fix 2026-06-03 (optimistic badge): lookup User.fullName cho metadata.sender
     // → socket emit ngay sau khi insert message có đủ tên sale → FE hiện badge

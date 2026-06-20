@@ -19,6 +19,9 @@ interface ZaloAccount {
   privacyMode?: 'main' | 'sub';
   /** Owner user của nick (chính chủ) — dùng cho gate UI privacy blur + composer lock */
   ownerUserId?: string | null;
+  /** T11 2026-06-20: thời điểm nick bị XÓA (ẩn-mềm). !=null → badge "Đã xóa" + khóa ô soạn tin.
+   *  KHÔNG suy ra từ status='disconnected' (nick sống cũng disconnected tạm). */
+  archivedAt?: string | null;
 }
 
 export interface AiSentiment {
@@ -62,9 +65,9 @@ export interface ReplyMessageRef {
   ttl?: number;
 }
 
-interface RawMessage extends Omit<Message, 'reactions' | 'reply'> {
+interface RawMessage extends Omit<Message, 'reactions' | 'reply' | 'reactionDetails'> {
   quote?: ReplyMessageRef | null;
-  reactions?: Array<{ emoji: string; reactorId: string; count?: number; reacted?: boolean }>;
+  reactions?: Array<{ emoji: string; reactorId: string; reactorName?: string | null; reactorSource?: string | null; reactorAvatar?: string | null; count?: number; reacted?: boolean }>;
 }
 
 export interface FriendshipInfo {
@@ -131,6 +134,17 @@ export interface MessageReactionView {
   reacted: boolean;
 }
 
+// 2026-06-20 (anh báo popup reaction chỉ hiện "Người dùng"): per-user rows GIỮ LẠI để
+// popup hiện đúng ai (tên thật) + emoji của họ. ReactionView (emoji+count) là tổng hợp,
+// vứt mất reactor → phải giữ riêng mảng detail này.
+export interface MessageReactionDetail {
+  reactorId: string;
+  reactorName: string | null;
+  reactorSource: string | null; // "crm" | "zalo"
+  reactorAvatar?: string | null; // avatar thật (Friend.zaloAvatarUrl) — resolve ở BE
+  emoji: string;
+}
+
 export interface Message {
   id: string;
   content: string | null;
@@ -148,6 +162,8 @@ export interface Message {
   albumTotal: number | null;
   reply?: ReplyMessageRef | null;
   reactions?: MessageReactionView[];
+  /** Per-user reaction rows (ai thả emoji gì) — cho popup chi tiết. */
+  reactionDetails?: MessageReactionDetail[];
   // Edit audit (2026-05-21) — set khi sale sửa tin trên CRM. Edit chỉ áp dụng local, không sync Zalo.
   originalContent?: string | null;
   editedAt?: string | null;
@@ -468,6 +484,14 @@ export function useChat() {
       ...base,
       reply,
       reactions: Array.from(counts.entries()).map(([emoji, count]) => ({ emoji, count, reacted: myEmojis.has(emoji) })),
+      // 2026-06-20: GIỮ per-user rows (reactorName từ BE) cho popup chi tiết — không vứt như trước.
+      reactionDetails: (message.reactions || []).map((r) => ({
+        reactorId: r.reactorId,
+        reactorName: r.reactorName ?? null,
+        reactorSource: r.reactorSource ?? null,
+        reactorAvatar: r.reactorAvatar ?? null,
+        emoji: r.emoji,
+      })),
     };
   }
 
@@ -928,7 +952,7 @@ export function useChat() {
       }
     });
 
-    socket.on('chat:reactions', (data: { messageId?: string; msgId?: string; zaloMsgId?: string; reactions: { userId: string; userName: string; reaction: string; action: 'add' | 'remove'; totalCount?: number }[] }) => {
+    socket.on('chat:reactions', (data: { messageId?: string; msgId?: string; zaloMsgId?: string; reactions: { userId: string; userName: string; avatar?: string | null; source?: string | null; reaction: string; action: 'add' | 'remove'; totalCount?: number }[] }) => {
       const msg = messages.value.find(m => m.id === data.messageId || m.id === data.msgId || m.zaloMsgId === data.zaloMsgId);
       if (!msg) return;
       // Merge với reactions hiện có thay vì replace — tránh mất emoji của user khác
@@ -938,10 +962,27 @@ export function useChat() {
         counts.set(r.emoji, r.count);
         if (r.reacted) myEmojis.add(r.emoji);
       }
+      // 2026-06-20: đồng bộ luôn per-user detail (cho popup) theo event realtime.
+      const details: MessageReactionDetail[] = [...(msg.reactionDetails || [])];
       const myId = authStore.user?.id || '';
       for (const r of data.reactions) {
         const emoji = r.reaction;
         const isMine = r.userId === myId;
+        // Cập nhật detail rows: add → thêm nếu chưa có; remove → bỏ (reactorId, emoji).
+        if (r.action === 'add') {
+          const existing = details.find((d) => d.reactorId === r.userId && d.emoji === emoji);
+          if (existing) {
+            // cập nhật tên/avatar nếu event mang thông tin mới (vd nick resolve được sau)
+            if (r.userName) existing.reactorName = r.userName;
+            if (r.avatar) existing.reactorAvatar = r.avatar;
+          } else {
+            details.push({ reactorId: r.userId, reactorName: r.userName || null, reactorSource: r.source || null, reactorAvatar: r.avatar || null, emoji });
+          }
+        } else if (r.action === 'remove') {
+          for (let i = details.length - 1; i >= 0; i--) {
+            if (details[i].reactorId === r.userId && details[i].emoji === emoji) details.splice(i, 1);
+          }
+        }
         // ANTI-DRIFT FIX 2026-05-22: prefer authoritative totalCount từ BE post-mutation.
         // Trước fix: Zalo gửi 10 events → FE increment +1 mỗi event → count=10 realtime,
         // refresh REST trả 1 (DB composite key msg×reactor×emoji = 1 row) → mismatch.
@@ -965,6 +1006,7 @@ export function useChat() {
         }
       }
       msg.reactions = Array.from(counts.entries()).map(([emoji, count]) => ({ emoji, count, reacted: myEmojis.has(emoji) }));
+      msg.reactionDetails = details;
     });
 
     // Pin/unpin: bypass cache vì pin state đã đổi server-side, cache cũ sẽ flicker
