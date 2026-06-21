@@ -6,10 +6,11 @@ import {
   sendGapToMs,
   stepDelayMs,
   nextAllowedTime,
+  addBusinessTime,
   etaCompleteAt,
   resolveWindowMinutes,
-} from '../src/modules/automation/engine/schedule-calculator.js';
-import type { SequenceStep } from '../src/modules/automation/sequences/types.js';
+} from '../src/_ee/automation/engine/schedule-calculator.js';
+import type { SequenceStep } from '../src/_ee/automation/sequences/types.js';
 
 describe('sendGapToMs — luật 2 quy đơn vị ra ms', () => {
   it('giây → ms', () => expect(sendGapToMs({ value: 30, unit: 'second' })).toBe(30_000));
@@ -120,6 +121,44 @@ describe('nextAllowedTime — luật 1 né ngoài giờ (VN UTC+7), nửa-mở [
   it('end "24:00" → chạy hết ngày (23:30 VN vẫn giữ)', () => {
     const at = new Date('2026-06-13T16:30:00Z'); // 23:30 VN
     expect(nextAllowedTime(at, { allowedTimeRange: ['06:00', '24:00'] }).getTime()).toBe(at.getTime());
+  });
+});
+
+describe('addBusinessTime — business-time CARRY qua đêm (2026-06-22, hết herd 08:00)', () => {
+  const W = { allowedTimeRange: ['08:00', '22:00'] as [string, string] };
+  it('delay=0 → SNAP (= nextAllowedTime): ngoài khung dời đầu khung kế', () => {
+    const at = new Date('2026-06-13T18:00:00Z'); // 01:00 VN ngày 14, ngoài [8,22)
+    const r = addBusinessTime(at, 0, W);
+    expect((r.getUTCHours() + 7) % 24).toBe(8);
+    expect(r.getUTCMinutes()).toBe(0);
+  });
+  it('21:00 VN + 6h → 13:00 MAI (1h tới 22:00 + nghỉ + 5h từ 08:00) — KHÔNG dồn 08:00', () => {
+    const at = new Date('2026-06-13T14:00:00Z'); // 21:00 VN
+    const r = addBusinessTime(at, 6 * 3_600_000, W);
+    expect((r.getUTCHours() + 7) % 24).toBe(13);
+    expect(r.getUTCMinutes()).toBe(0);
+    expect(r.getTime()).toBeGreaterThan(at.getTime() + 6 * 3_600_000); // qua đêm
+  });
+  it('01:00 VN + 30m → 08:30 (snap đầu khung rồi tiêu 30m bên trong)', () => {
+    const at = new Date('2026-06-13T18:00:00Z'); // 01:00 VN ngày 14
+    const r = addBusinessTime(at, 30 * 60_000, W);
+    expect((r.getUTCHours() + 7) % 24).toBe(8);
+    expect(r.getUTCMinutes()).toBe(30);
+  });
+  it('trong khung, delay ngắn không chạm biên → cộng thẳng', () => {
+    const at = new Date('2026-06-13T03:00:00Z'); // 10:00 VN
+    const r = addBusinessTime(at, 60 * 60_000, W);
+    expect(r.getTime()).toBe(at.getTime() + 60 * 60_000); // 11:00 VN
+  });
+  it('hai bước cùng delay nhưng giờ KHÁC → rơi giờ khác (rải đều, hết herd)', () => {
+    const r1 = addBusinessTime(new Date('2026-06-13T14:00:00Z'), 6 * 3_600_000, W); // 21:00→13:00
+    const r2 = addBusinessTime(new Date('2026-06-13T14:30:00Z'), 6 * 3_600_000, W); // 21:30→13:30
+    expect((r2.getTime() - r1.getTime()) / 60_000).toBe(30);
+  });
+  it('không khung → cộng thẳng wall-clock (fallback)', () => {
+    const at = new Date('2026-06-13T18:00:00Z');
+    expect(addBusinessTime(at, 3_600_000, undefined).getTime()).toBe(at.getTime() + 3_600_000);
+    expect(addBusinessTime(at, 3_600_000, {}).getTime()).toBe(at.getTime() + 3_600_000);
   });
 });
 

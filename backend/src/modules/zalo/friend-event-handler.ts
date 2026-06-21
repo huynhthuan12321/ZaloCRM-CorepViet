@@ -113,6 +113,45 @@ async function resolveContact(
  *
  * All in a single transaction to keep counters consistent.
  */
+/**
+ * Lớp 2b (2026-06-22) — chuông Follow-Up mất do lệch contact. Khi gắn/khẳng định Friend(nick,uid)
+ * vào `contactId`, re-point Conversation(nick, externalThreadId=uid) đang trỏ contact KHÁC về
+ * `contactId`. Khoá khớp AN TOÀN (nick,thread)≡friend(nick,uid) — KHÔNG đoán globalId/SĐT (vụ
+ * dedup-fuzzy đã bị CEO bỏ 20/06). Conversation có @@unique(zaloAccountId, externalThreadId) → ≤1
+ * row, chỉ đổi FK contactId (KHÔNG P2002). Best-effort: lỗi KHÔNG chặn luồng friend.
+ * @returns số conversation đã re-point.
+ */
+export async function reconcileConversationContact(args: {
+  orgId: string;
+  zaloAccountId: string;
+  contactId: string;
+  zaloUidInNick: string;
+}): Promise<number> {
+  const { orgId, zaloAccountId, contactId, zaloUidInNick } = args;
+  if (!zaloUidInNick) return 0;
+  try {
+    const res = await prisma.conversation.updateMany({
+      where: {
+        orgId,
+        zaloAccountId,
+        externalThreadId: zaloUidInNick,
+        threadType: 'user',
+        contactId: { not: contactId },
+      },
+      data: { contactId },
+    });
+    if (res.count > 0) {
+      logger.info(
+        `[reconcile-conv] re-point ${res.count} hội thoại nick=${zaloAccountId} thread=${zaloUidInNick} → contact=${contactId}`,
+      );
+    }
+    return res.count;
+  } catch (err) {
+    logger.warn(`[reconcile-conv] failed nick=${zaloAccountId} thread=${zaloUidInNick}:`, err);
+    return 0;
+  }
+}
+
 export async function applyFriendTransition(args: {
   orgId: string;
   zaloAccountId: string;
@@ -232,6 +271,10 @@ export async function applyFriendTransition(args: {
       });
     }
   });
+
+  // Lớp 2b (2026-06-22): sau khi gắn Friend(nick,uid)→contactId, re-point hội thoại đang trỏ
+  // contact KHÁC về đúng contactId → chuông Follow-Up + tab + hồ sơ khớp. Best-effort, ngoài tx.
+  await reconcileConversationContact({ orgId, zaloAccountId, contactId, zaloUidInNick });
 
   // Phase 7 — emit AutomationEvent so engine can fire triggers bound to this
   // event. Imported lazily to avoid circular dep (engine imports prisma helpers).
