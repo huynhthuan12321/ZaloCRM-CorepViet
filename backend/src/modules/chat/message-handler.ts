@@ -14,6 +14,7 @@ import { automationEventBus } from '../../shared/ee-registry/event-bus.js';
 import { applyContactAggregateFromMessage, applyContactInteraction, applyFriendAggregate } from '../contacts/contact-aggregate.js';
 import { followMergedInto } from '../contacts/resolve-contact.js';
 import { findExistingUserConversation } from './conversation-resolver.js';
+import { captureZaloProfile } from '../contacts/zalo-profile-capture.js';
 import { onInboundMessage as onInboundScoring, onOutboundMessage as onOutboundScoring } from '../scoring/scoring-hooks.js';
 import { syncReminderFromMessage } from '../contacts/reminder-sync.js';
 import { uploadBuffer } from '../../shared/storage/minio-client.js';
@@ -41,6 +42,10 @@ export interface IncomingMessage {
   // Per-identity (per-account) display name + avatar — lưu vào Friend.zaloDisplayName/AvatarUrl
   contactZaloDisplayName?: string;
   contactZaloAvatarUrl?: string;
+  // Đợt 1 capture (getUserInfo đã trả) — gender/ngày sinh/SĐT công khai → captureZaloProfile.
+  contactGender?: unknown;
+  contactSdob?: unknown;
+  contactPhone?: string;
   groupName?: string;       // group name if group message
   groupAvatarUrl?: string;  // group avatar URL from Zalo (via getGroupInfo.avt)
   groupMembersCount?: number; // total members in group
@@ -924,6 +929,23 @@ async function upsertContact(msg: IncomingMessage, orgId: string): Promise<strin
     if (Object.keys(patch).length > 0) {
       await prisma.contact.update({ where: { id: contact.id }, data: patch });
     }
+  }
+
+  // Đợt 1 (message-handler): capture gender/ngày sinh/SĐT công khai từ getUserInfo (listener đã
+  // fetch + cache) — upsertContact bỏ các field này. Additive, best-effort, fill-không-đè + diff.
+  // Gate: chỉ chạy khi getUserInfo trả demographic/SĐT → tránh tải hot-path khi không có gì mới.
+  if (contactUid && (msg.contactGender != null || msg.contactSdob || msg.contactPhone)) {
+    void captureZaloProfile({
+      uid: contactUid,
+      zaloName: msg.contactZaloDisplayName ?? null,
+      avatar: msg.contactZaloAvatarUrl ?? null,
+      globalId: globalId || null,
+      username: username || null,
+      gender: msg.contactGender ?? null,
+      sdob: msg.contactSdob ?? null,
+      dob: null,
+      phoneNumber: msg.contactPhone ?? null,
+    }, { orgId, contactId: contact.id, nickId: msg.accountId });
   }
 
   return contact.id;

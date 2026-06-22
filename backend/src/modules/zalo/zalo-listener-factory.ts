@@ -241,6 +241,8 @@ export interface UserInfoCacheEntry {
   phone?: string;
   globalId: string;   // Zalo toàn cục, không đổi giữa các viewer account — khóa dedup chính
   username: string;   // Zalo handle (t_xxx) — cũng toàn cục, debug-friendly
+  gender?: unknown;   // raw 0/1 (Đợt 1 capture — message-handler lưu về Contact)
+  sdob?: unknown;     // ngày sinh chuỗi (DD/MM/YYYY | YYYY-MM-DD)
   cachedAt: number;
 }
 
@@ -251,10 +253,10 @@ async function resolveZaloName(
   api: any,
   uid: string,
   cache: Map<string, UserInfoCacheEntry>,
-): Promise<{ zaloName: string; avatar: string; globalId: string; username: string }> {
+): Promise<{ zaloName: string; avatar: string; globalId: string; username: string; phone: string; gender: unknown; sdob: unknown }> {
   const cached = cache.get(uid);
   if (cached && Date.now() - cached.cachedAt < USER_INFO_CACHE_TTL_MS) {
-    return { zaloName: cached.zaloName, avatar: cached.avatar, globalId: cached.globalId, username: cached.username };
+    return { zaloName: cached.zaloName, avatar: cached.avatar, globalId: cached.globalId, username: cached.username, phone: cached.phone ?? '', gender: cached.gender ?? null, sdob: cached.sdob ?? null };
   }
 
   try {
@@ -273,15 +275,17 @@ async function resolveZaloName(
         phone: profile.phoneNumber || '',
         globalId: String(profile.globalId || ''),
         username: String(profile.username || ''),
+        gender: profile.gender ?? null,
+        sdob: profile.sdob ?? null,
         cachedAt: Date.now(),
       };
       cache.set(uid, entry);
-      return { zaloName: entry.zaloName, avatar: entry.avatar, globalId: entry.globalId, username: entry.username };
+      return { zaloName: entry.zaloName, avatar: entry.avatar, globalId: entry.globalId, username: entry.username, phone: entry.phone ?? '', gender: entry.gender ?? null, sdob: entry.sdob ?? null };
     }
   } catch (err) {
     logger.warn(`[zalo] getUserInfo failed for ${uid}:`, err);
   }
-  return { zaloName: '', avatar: '', globalId: '', username: '' };
+  return { zaloName: '', avatar: '', globalId: '', username: '', phone: '', gender: null, sdob: null };
 }
 
 interface ResolvedGroup {
@@ -608,6 +612,10 @@ export function attachZaloListener(ctx: ListenerContext): void {
       // Snapshot tên + avatar Zalo của KH nhìn từ nick này (lưu vào Friend.zaloDisplayName/AvatarUrl)
       let contactZaloDisplayName: string = '';
       let contactZaloAvatarUrl: string = '';
+      // Đợt 1 capture: getUserInfo đã trả gender/sdob/SĐT công khai — đưa về Contact (trước rớt).
+      let contactGender: unknown = null;
+      let contactSdob: unknown = null;
+      let contactPhone: string = '';
       if (senderUid && api.getUserInfo) {
         const resolveUid = message.isSelf ? (message.threadId || '') : senderUid;
         if (resolveUid) {
@@ -616,6 +624,9 @@ export function attachZaloListener(ctx: ListenerContext): void {
           contactUsername = userInfo.username;
           contactZaloDisplayName = userInfo.zaloName;
           contactZaloAvatarUrl = userInfo.avatar;
+          contactGender = userInfo.gender;
+          contactSdob = userInfo.sdob;
+          contactPhone = userInfo.phone;
           if (message.isSelf) {
             if (userInfo.zaloName) recipientName = userInfo.zaloName;
             if (userInfo.avatar && message.threadId) updateContactAvatar(message.threadId, userInfo.avatar);
@@ -662,6 +673,9 @@ export function attachZaloListener(ctx: ListenerContext): void {
         contactUsername: contactUsername || undefined,
         contactZaloDisplayName: contactZaloDisplayName || undefined,
         contactZaloAvatarUrl: contactZaloAvatarUrl || undefined,
+        contactGender: contactGender ?? undefined,
+        contactSdob: contactSdob ?? undefined,
+        contactPhone: contactPhone || undefined,
         groupName,
         groupAvatarUrl,
         groupMembersCount,
