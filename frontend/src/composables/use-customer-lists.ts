@@ -133,7 +133,10 @@ export function useCustomerLists() {
   const listsStatus = ref<ListStatusFilter>('active');
   const listsSearch = ref('');
   const listsPage = ref(1);
-  const listsLimit = ref(20);
+  const listsLimit = ref(50);
+  // Phase Multi-Source 2026-06-22 — lọc nhóm nguồn server-side + stats band toàn tập (không theo trang).
+  const listsPlatform = ref<'all' | 'leadads' | 'paste'>('all');
+  const listsStats = ref({ totalLists: 0, leadAdsLists: 0, pasteLists: 0, totalEntries: 0, totalHasZalo: 0 });
 
   // Detail state
   const currentList = ref<CustomerListSummary | null>(null);
@@ -159,10 +162,12 @@ export function useCustomerLists() {
           page: listsPage.value,
           limit: listsLimit.value,
           search: listsSearch.value || undefined,
+          platform: listsPlatform.value !== 'all' ? listsPlatform.value : undefined,
         },
       });
       lists.value = res.data.lists ?? [];
       listsTotal.value = res.data.total ?? 0;
+      if (res.data.stats) listsStats.value = res.data.stats;
     } catch (err) {
       console.error('[customer-lists] fetchLists failed:', err);
       lists.value = [];
@@ -384,6 +389,8 @@ export function useCustomerLists() {
     listsSearch,
     listsPage,
     listsLimit,
+    listsPlatform,
+    listsStats,
     fetchLists,
     fetchListById,
     currentList,
