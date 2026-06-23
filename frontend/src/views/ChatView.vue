@@ -191,10 +191,15 @@ const authStore = useAuthStore();
 
 // ════════ Zalo accounts (for FilterRail nick picker) ════════
 const { accounts: zaloAccounts, fetchAccounts: fetchZaloAccounts } = useZaloAccounts();
-const selectedAccountIds = ref<string[]>([]);
 // work-scope (nguồn chân lý mới; accountFilter là facade bắc qua nó). Dùng validateAgainst
 // để lọc scope đã lưu chỉ còn nick CÓ QUYỀN — bảo mật, Anh nhấn mạnh 2026-06-15.
 const workScope = useWorkScope();
+// FIX 2026-06-23 (anh báo: chỉ mở 1 nick mà bộ tag cột 2 vẫn load ALL): selectedAccountIds
+// truyền xuống ConversationList để fetch /conversations/sidebar-tags theo PHẠM VI XEM.
+// TRƯỚC ĐÂY là ref CHẾT luôn [] (không gán bao giờ) → FE gửi accountIds rỗng → BE trả tag
+// của MỌI nick. Nối thẳng vào workScope.accountIds (nguồn chân lý PHẠM VI XEM): mở 1 nick →
+// chỉ tag nick đó; rỗng = tất cả nick có quyền (đúng thiết kế). Reactive → đổi nick tự refetch.
+const selectedAccountIds = computed(() => workScope.accountIds.value);
 
 // 2026-06-09 (anh chốt) — NHỚ "Phạm vi xem" qua reload/tắt-mở tab. Lưu {folderId, accountId}
 // vào localStorage. Khôi phục lúc mount SAU khi fetchZaloAccounts (để validate quyền):
