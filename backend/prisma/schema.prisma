@@ -4048,3 +4048,90 @@ model MediaUsageEvent {
   @@index([orgId, createdAt])
   @@map("media_usage_events")
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Broadcast tự động (Community extension) 2026-07-06
+// Gửi tin hàng loạt tới Tệp khách hàng (CustomerList) theo lịch:
+//   once (1 lần) | daily (hàng ngày) | weekly (ngày trong tuần).
+// Worker cron gửi RẢI TIN (pacing delaySecMin..Max) qua zaloOps (rate-limiter
+// SdkLimit gate thêm 1 lớp). KHÔNG khai báo FK relation sang Organization/
+// CustomerList/ZaloAccount để không đụng model core — validate ở route.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model BroadcastJob {
+  id             String  @id @default(uuid())
+  orgId          String  @map("org_id")
+  createdById    String  @map("created_by_id")
+  name           String
+  customerListId String  @map("customer_list_id") // tệp KH đích
+  zaloAccountId  String  @map("zalo_account_id") // nick gửi
+
+  // Nội dung: text hỗ trợ biến {{ten}} {{sdt}}; ảnh kèm (URL media MinIO/S3, optional)
+  messageText String  @map("message_text") @db.Text
+  imageUrl    String? @map("image_url")
+
+  // Lịch: 'once' → scheduledAt; 'daily' → timeOfDay; 'weekly' → daysOfWeek + timeOfDay
+  scheduleType String    @map("schedule_type") // 'once' | 'daily' | 'weekly'
+  scheduledAt  DateTime? @map("scheduled_at")
+  timeOfDay    String?   @map("time_of_day") // "HH:mm" giờ VN (UTC+7)
+  daysOfWeek   Int[]     @default([]) @map("days_of_week") // 0=CN..6=T7 (JS getDay)
+
+  // Chống block: trần mỗi lần chạy + giãn cách ngẫu nhiên giữa 2 tin
+  maxPerRun   Int @default(50) @map("max_per_run")
+  delaySecMin Int @default(30) @map("delay_sec_min")
+  delaySecMax Int @default(90) @map("delay_sec_max")
+
+  status    String    @default("active") // 'active' | 'paused' | 'done'
+  nextRunAt DateTime? @map("next_run_at")
+  lastRunAt DateTime? @map("last_run_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  runs BroadcastRun[]
+
+  @@index([orgId, status])
+  @@index([status, nextRunAt])
+  @@map("broadcast_jobs")
+}
+
+model BroadcastRun {
+  id    String       @id @default(uuid())
+  jobId String       @map("job_id")
+  job   BroadcastJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  orgId String       @map("org_id")
+
+  status       String    @default("running") // 'running' | 'done' | 'error'
+  startedAt    DateTime  @default(now()) @map("started_at")
+  endedAt      DateTime? @map("ended_at")
+  lastSentAt   DateTime? @map("last_sent_at") // pacing: chỉ gửi tiếp khi đã qua delay
+  sentCount    Int       @default(0) @map("sent_count")
+  failedCount  Int       @default(0) @map("failed_count")
+  skippedCount Int       @default(0) @map("skipped_count")
+  error        String?
+
+  items BroadcastRunItem[]
+
+  @@index([jobId])
+  @@index([orgId, status])
+  @@map("broadcast_runs")
+}
+
+model BroadcastRunItem {
+  id    String       @id @default(uuid())
+  runId String       @map("run_id")
+  run   BroadcastRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  orgId String       @map("org_id")
+
+  entryId String  @map("entry_id") // CustomerListEntry.id
+  phone   String?
+  name    String?
+  zaloUid String? @map("zalo_uid")
+
+  status    String // 'sent' | 'failed' | 'skipped'
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([runId, entryId])
+  @@map("broadcast_run_items")
+}

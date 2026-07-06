@@ -41,6 +41,8 @@ const route = useRoute();
 const navItems = [
   { to: '/marketing/group-scan', label: 'Quét nhóm', icon: 'mdi-account-group-outline' },
   { to: '/marketing/lists', label: 'Tệp khách hàng', icon: 'mdi-format-list-bulleted' },
+  // Community extension 2026-07-06 — Broadcast tự động (gửi tin hàng loạt theo lịch).
+  { to: '/marketing/broadcasts', label: 'Broadcast tự động', icon: 'mdi-bullhorn-variant-outline' },
 ];
 
 function isActive(to: string): boolean {
