@@ -93,6 +93,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'pipeline',   name: 'Reports.Pipeline',   component: () => import('@/views/reports/PipelineReport.vue'),   meta: { resource: 'engagement_score' } },
       { path: 'engagement', name: 'Reports.Engagement', component: () => import('@/views/reports/EngagementReport.vue'), meta: { resource: 'engagement_score' } },
       { path: 'audit',      name: 'Reports.Audit',      component: () => import('@/views/reports/AuditReport.vue'),      meta: { resource: 'engagement_score' } },
+      // Broadcast tự động (🟢 Community extension 2026-07-06)
+      { path: 'broadcast',  name: 'Reports.Broadcast',  component: () => import('@/views/reports/BroadcastReport.vue'),  meta: { resource: 'engagement_score' } },
       ...eeReportsChildren,
     ],
   },

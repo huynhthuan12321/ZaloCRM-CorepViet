@@ -334,6 +334,8 @@ async function bootstrap() {
   // Broadcast tự động (🟢 Community extension 2026-07-06)
   const { broadcastRoutes } = await import('./modules/broadcast/broadcast-routes.js');
   await app.register(broadcastRoutes);
+  const { broadcastReportRoutes } = await import('./modules/broadcast/broadcast-report-routes.js');
+  await app.register(broadcastReportRoutes);
   await app.register(groupModerationRoutes);
   await app.register(friendRoutes);
   await app.register(profileRoutes);

@@ -47,6 +47,8 @@
             <v-list-item v-if="isExtension" to="/reports/automation"  title="Automation & Chăm sóc" prepend-icon="mdi-cog-sync-outline" />
             <v-list-item to="/reports/engagement"  title="Engagement KH"         prepend-icon="mdi-fire" />
             <v-list-item to="/reports/audit"       title="Audit & Sức khỏe HT"   prepend-icon="mdi-shield-check-outline" />
+            <!-- Broadcast tự động (🟢 Community extension 2026-07-06) -->
+            <v-list-item to="/reports/broadcast"   title="Broadcast tự động"     prepend-icon="mdi-bullhorn-outline" />
             <v-divider />
             <v-list-item to="/analytics" title="Phân tích nâng cao" prepend-icon="mdi-chart-line" />
           </v-list>
