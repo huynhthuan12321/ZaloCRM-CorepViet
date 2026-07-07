@@ -228,4 +228,41 @@ export async function resolveJobContent(
   }
   const blocks = await prisma.contentBlock.findMany({
     where: { id: { in: job.contentBlockIds } },
-    select: { id: true, messageText: true, imageUrl
+    select: { id: true, messageText: true, imageUrl: true },
+  });
+  const blockMap = new Map(blocks.map((b) => [b.id, b]));
+  // Giữ đúng thứ tự đã chọn trong job.contentBlockIds (Map lookup bỏ qua block đã xoá).
+  const ordered = job.contentBlockIds.map((id) => blockMap.get(id)).filter((b): b is NonNullable<typeof b> => !!b);
+  if (ordered.length === 0) {
+    return { messageText: job.messageText, imageUrl: job.imageUrl, blockId: null };
+  }
+  const pick = ordered[processedCount % ordered.length];
+  return { messageText: pick.messageText, imageUrl: pick.imageUrl, blockId: pick.id };
+}
+
+async function recordItem(
+  run: RunRow, entryId: string, phone: string, name: string | null,
+  zaloUid: string | null, status: 'sent' | 'failed' | 'skipped', error: string | null,
+): Promise<void> {
+  const counter = status === 'sent' ? 'sentCount' : status === 'failed' ? 'failedCount' : 'skippedCount';
+  await prisma.$transaction([
+    prisma.broadcastRunItem.create({
+      data: { runId: run.id, orgId: run.orgId, entryId, phone, name, zaloUid, status, error },
+    }),
+    prisma.broadcastRun.update({
+      where: { id: run.id },
+      data: { [counter]: { increment: 1 }, ...(status === 'sent' ? { lastSentAt: new Date() } : {}) },
+    }),
+  ]);
+}
+
+async function finishRun(runId: string, job: { id: string; scheduleType: string }, status: 'done' | 'error'): Promise<void> {
+  await prisma.broadcastRun.update({
+    where: { id: runId },
+    data: { status, endedAt: new Date() },
+  });
+  if (job.scheduleType === 'once') {
+    await prisma.broadcastJob.update({ where: { id: job.id }, data: { status: 'done' } });
+  }
+  logger.info(`[broadcast-cron] run=${runId} finished (${status})`);
+}

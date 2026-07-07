@@ -218,4 +218,57 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
       if (welcomeErr) return reply.status(400).send({ error: welcomeErr });
       data.welcomeEnabled = b.welcomeEnabled === true;
       if (b.welcomeMsg !== undefined) data.welcomeMsg = b.welcomeMsg?.trim() ?? '';
-      
+      if (b.welcomeBlockIds !== undefined) data.welcomeBlockIds = b.welcomeBlockIds;
+      // Bật chào cho job đã chạy → xếp hàng cả các lời mời ĐÃ gửi trước đó chưa chào.
+      // Item cũ (trước vòng 6) thiếu contactId → backfill từ FriendshipAttempt
+      // (khớp nick + zaloUidFound) rồi mới đánh 'waiting'.
+      if (b.welcomeEnabled === true && !existing.welcomeEnabled) {
+        await prisma.$executeRaw`
+          UPDATE target_run_items tri
+             SET contact_id = fa.contact_id
+            FROM friendship_attempts fa
+           WHERE tri.job_id = ${existing.id}
+             AND tri.contact_id IS NULL
+             AND tri.status = 'sent'
+             AND tri.zalo_uid IS NOT NULL
+             AND fa.zalo_account_id = ${existing.zaloAccountId}
+             AND fa.zalo_uid_found = tri.zalo_uid
+        `;
+        await prisma.targetRunItem.updateMany({
+          where: { jobId: existing.id, status: 'sent', welcomeStatus: null, contactId: { not: null } },
+          data: { welcomeStatus: 'waiting' },
+        });
+      }
+    }
+
+    const job = await prisma.targetJob.update({ where: { id: existing.id }, data });
+    return { job };
+  });
+
+  // ── DELETE /target-jobs/:id ─────────────────────────────────────────────
+  app.delete<{ Params: { id: string } }>('/api/v1/target-jobs/:id', async (request, reply) => {
+    if (!requireTargetAdmin(request, reply)) return;
+    const user = request.user!;
+    const existing = await prisma.targetJob.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: 'not_found' });
+    await prisma.targetJob.delete({ where: { id: existing.id } });
+    return { ok: true };
+  });
+
+  // ── GET /target-jobs/:id/items ───────────────────────────────────────────
+  app.get<{ Params: { id: string }; Querystring: { status?: string } }>(
+    '/api/v1/target-jobs/:id/items',
+    async (request, reply) => {
+      const user = request.user!;
+      const job = await prisma.targetJob.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
+      if (!job) return reply.status(404).send({ error: 'not_found' });
+      const { status } = request.query;
+      const items = await prisma.targetRunItem.findMany({
+        where: { jobId: job.id, ...(status ? { status } : {}) },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      });
+      return { items };
+    },
+  );
+}

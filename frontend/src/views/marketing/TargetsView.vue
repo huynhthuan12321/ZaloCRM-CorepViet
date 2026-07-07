@@ -398,4 +398,135 @@ function welcomeStatusLabel(s: string): string {
 }
 function fmtDate(d: string | null): string {
   if (!d) return '—';
-  return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2
+  return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+onMounted(async () => {
+  await load();
+  pollTimer = setInterval(load, 15_000); // job đang chạy → cập nhật số liệu
+});
+onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
+</script>
+
+<style scoped>
+.tg-view { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+.mkt-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 20px 12px; border-bottom: 1px solid var(--border, #e5e4e7); }
+.mtt { font-size: 18px; font-weight: 700; }
+.mts { font-size: 13px; color: var(--text-secondary, #666); margin-top: 2px; max-width: 720px; }
+.actions { display: flex; gap: 8px; flex-shrink: 0; }
+.tg-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.tg-empty { text-align: center; color: var(--text-secondary, #888); padding: 32px 0; }
+.tg-card { display: flex; justify-content: space-between; gap: 12px; border: 1px solid var(--border, #e5e4e7); border-radius: 10px; padding: 12px 14px; background: var(--surface, #fff); }
+.tg-card.st-paused { opacity: 0.75; }
+.tg-card-head { display: flex; align-items: center; gap: 8px; }
+.tg-name { font-weight: 700; }
+.tg-badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+.b-active { background: #e1f5e9; color: #1b7a3d; }
+.b-paused { background: #fdf3d7; color: #8a6d00; }
+.b-done { background: #ececf0; color: #555; }
+.tg-meta { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--text-secondary, #666); margin-top: 4px; }
+.tg-msg { font-size: 13px; margin-top: 6px; color: var(--text, #333); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 640px; }
+.tg-run { margin-top: 6px; font-size: 12.5px; color: var(--text-secondary, #555); }
+.run-badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; font-weight: 600; margin-right: 6px; }
+.r-sent { background: #e1f5e9; color: #1b7a3d; }
+.r-no_zalo { background: #ececf0; color: #555; }
+.r-failed { background: #fde3e1; color: #a12318; }
+.r-skipped { background: #ececf0; color: #555; }
+.w-waiting { background: #dcedff; color: #135ba1; }
+.w-sent { background: #e1f5e9; color: #1b7a3d; }
+.w-failed { background: #fde3e1; color: #a12318; }
+.f-check { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
+.f-check input { margin-top: 2px; }
+.f-block-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 180px; overflow: auto; }
+.f-block-item { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border, #e5e4e7); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+.f-block-name { font-weight: 600; flex-shrink: 0; }
+.f-block-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tg-card-actions { display: flex; gap: 4px; align-items: flex-start; flex-shrink: 0; }
+.btn-link { background: none; border: none; color: #135ba1; cursor: pointer; font-size: 12.5px; text-decoration: underline; padding: 0; }
+.danger { color: #a12318; }
+.tg-overlay { position: fixed; inset: 0; background: rgba(20, 20, 30, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.tg-modal { background: var(--surface, #fff); border-radius: 12px; padding: 18px 20px; width: 560px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); overflow: auto; }
+.tg-modal-wide { width: 760px; }
+.tg-modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
+.btn-x { background: none; border: none; cursor: pointer; padding: 2px; }
+.tg-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.f-label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 4px; }
+.f-hint { font-weight: 400; color: var(--text-secondary, #888); }
+.f-input { width: 100%; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 7px 10px; font-size: 13.5px; background: var(--surface, #fff); color: inherit; }
+.f-row { display: flex; gap: 10px; }
+.f-col { flex: 1; min-width: 0; }
+.f-tabs { display: flex; gap: 6px; }
+.f-tab { border: 1px solid var(--border, #d5d4d8); background: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.f-tab.on { background: #0e445a; color: #fff; border-color: #0e445a; }
+.f-adv { margin-top: 12px; font-size: 13px; }
+.f-adv summary { cursor: pointer; font-weight: 600; }
+.tg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tg-table th, .tg-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #eee); }
+.err { color: #a12318; font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>-digit', year: 'numeric' });
+}
+
+onMounted(async () => {
+  await load();
+  pollTimer = setInterval(load, 15_000); // job đang chạy → cập nhật số liệu
+});
+onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
+</script>
+
+<style scoped>
+.tg-view { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+.mkt-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 20px 12px; border-bottom: 1px solid var(--border, #e5e4e7); }
+.mtt { font-size: 18px; font-weight: 700; }
+.mts { font-size: 13px; color: var(--text-secondary, #666); margin-top: 2px; max-width: 720px; }
+.actions { display: flex; gap: 8px; flex-shrink: 0; }
+.tg-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.tg-empty { text-align: center; color: var(--text-secondary, #888); padding: 32px 0; }
+.tg-card { display: flex; justify-content: space-between; gap: 12px; border: 1px solid var(--border, #e5e4e7); border-radius: 10px; padding: 12px 14px; background: var(--surface, #fff); }
+.tg-card.st-paused { opacity: 0.75; }
+.tg-card-head { display: flex; align-items: center; gap: 8px; }
+.tg-name { font-weight: 700; }
+.tg-badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+.b-active { background: #e1f5e9; color: #1b7a3d; }
+.b-paused { background: #fdf3d7; color: #8a6d00; }
+.b-done { background: #ececf0; color: #555; }
+.tg-meta { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--text-secondary, #666); margin-top: 4px; }
+.tg-msg { font-size: 13px; margin-top: 6px; color: var(--text, #333); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 640px; }
+.tg-run { margin-top: 6px; font-size: 12.5px; color: var(--text-secondary, #555); }
+.run-badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; font-weight: 600; margin-right: 6px; }
+.r-sent { background: #e1f5e9; color: #1b7a3d; }
+.r-no_zalo { background: #ececf0; color: #555; }
+.r-failed { background: #fde3e1; color: #a12318; }
+.r-skipped { background: #ececf0; color: #555; }
+.w-waiting { background: #dcedff; color: #135ba1; }
+.w-sent { background: #e1f5e9; color: #1b7a3d; }
+.w-failed { background: #fde3e1; color: #a12318; }
+.f-check { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
+.f-check input { margin-top: 2px; }
+.f-block-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 180px; overflow: auto; }
+.f-block-item { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border, #e5e4e7); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+.f-block-name { font-weight: 600; flex-shrink: 0; }
+.f-block-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tg-card-actions { display: flex; gap: 4px; align-items: flex-start; flex-shrink: 0; }
+.btn-link { background: none; border: none; color: #135ba1; cursor: pointer; font-size: 12.5px; text-decoration: underline; padding: 0; }
+.danger { color: #a12318; }
+
+.tg-overlay { position: fixed; inset: 0; background: rgba(20, 20, 30, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.tg-modal { background: var(--surface, #fff); border-radius: 12px; padding: 18px 20px; width: 560px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); overflow: auto; }
+.tg-modal-wide { width: 760px; }
+.tg-modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
+.btn-x { background: none; border: none; cursor: pointer; padding: 2px; }
+.tg-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.f-label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 4px; }
+.f-hint { font-weight: 400; color: var(--text-secondary, #888); }
+.f-input { width: 100%; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 7px 10px; font-size: 13.5px; background: var(--surface, #fff); color: inherit; }
+.f-row { display: flex; gap: 10px; }
+.f-col { flex: 1; min-width: 0; }
+.f-tabs { display: flex; gap: 6px; }
+.f-tab { border: 1px solid var(--border, #d5d4d8); background: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.f-tab.on { background: #0e445a; color: #fff; border-color: #0e445a; }
+.f-adv { margin-top: 12px; font-size: 13px; }
+.f-adv summary { cursor: pointer; font-weight: 600; }
+.tg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tg-table th, .tg-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #eee); }
+.err { color: #a12318; font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>

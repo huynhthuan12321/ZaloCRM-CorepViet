@@ -253,4 +253,35 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     return { job };
   });
 
-  // ── DELETE /b
+  // ── DELETE /broadcast-jobs/:id ─────────────────────────────────────────
+  app.delete<{ Params: { id: string } }>('/api/v1/broadcast-jobs/:id', async (request, reply) => {
+    if (!requireBroadcastAdmin(request, reply)) return;
+    const user = request.user!;
+    const existing = await prisma.broadcastJob.findFirst({
+      where: { id: request.params.id, orgId: user.orgId }, select: { id: true },
+    });
+    if (!existing) return reply.status(404).send({ error: 'not_found' });
+    await prisma.broadcastJob.delete({ where: { id: existing.id } });
+    return { ok: true };
+  });
+
+  // ── GET /broadcast-jobs/:id/runs/:runId/items ──────────────────────────
+  app.get<{ Params: { id: string; runId: string }; Querystring: { status?: string } }>(
+    '/api/v1/broadcast-jobs/:id/runs/:runId/items',
+    async (request, reply) => {
+      const user = request.user!;
+      const run = await prisma.broadcastRun.findFirst({
+        where: { id: request.params.runId, jobId: request.params.id, orgId: user.orgId },
+        select: { id: true },
+      });
+      if (!run) return reply.status(404).send({ error: 'not_found' });
+      const { status } = request.query;
+      const items = await prisma.broadcastRunItem.findMany({
+        where: { runId: run.id, ...(status ? { status } : {}) },
+        orderBy: { createdAt: 'asc' },
+        take: 1000,
+      });
+      return { items };
+    },
+  );
+}
