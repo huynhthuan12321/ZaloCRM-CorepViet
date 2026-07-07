@@ -42,7 +42,11 @@
             <span><v-icon size="14">mdi-clock-outline</v-icon> {{ scheduleLabel(job) }}</span>
             <span v-if="job.nextRunAt"><v-icon size="14">mdi-calendar-arrow-right</v-icon> Lần tới: {{ fmtDate(job.nextRunAt) }}</span>
           </div>
-          <div class="bc-msg" :title="job.messageText">{{ job.messageText }}</div>
+          <div v-if="job.contentBlocks?.length" class="bc-msg">
+            <v-icon size="14">mdi-shuffle-variant</v-icon>
+            Xoay vòng {{ job.contentBlocks.length }} khối: {{ job.contentBlocks.map((b) => b.name).join(', ') }}
+          </div>
+          <div v-else class="bc-msg" :title="job.messageText">{{ job.messageText }}</div>
           <div v-if="job.latestRun" class="bc-run">
             <span class="run-badge" :class="'r-' + job.latestRun.status">
               {{ job.latestRun.status === 'running' ? 'Đang gửi' : 'Lần gần nhất' }}
@@ -102,22 +106,53 @@
           </div>
         </div>
 
-        <label class="f-label">Nội dung tin <span class="f-hint">— biến: <code v-pre>{{ten}}</code> tên khách, <code v-pre>{{sdt}}</code> SĐT</span></label>
-        <textarea v-model="form.messageText" class="f-input" rows="4"
-          placeholder="Chào {{ten}}, bên em đang có chương trình ưu đãi…"></textarea>
-
-        <label class="f-label">Ảnh kèm (tuỳ chọn)</label>
-        <div class="f-image-row">
-          <img v-if="form.imageUrl" :src="form.imageUrl" class="f-image-preview" />
-          <div class="f-image-actions">
-            <button type="button" class="btn btn-ghost btn-sm" @click="openMediaPicker">
-              <v-icon size="16">mdi-image-multiple-outline</v-icon> Chọn từ Kho media
-            </button>
-            <button v-if="form.imageUrl" type="button" class="btn btn-ghost btn-sm danger" @click="form.imageUrl = ''">
-              <v-icon size="16">mdi-close</v-icon> Bỏ ảnh
-            </button>
-          </div>
+        <label class="f-label">Nội dung</label>
+        <div class="f-tabs">
+          <button type="button" class="f-tab" :class="{ on: form.contentMode === 'text' }" @click="form.contentMode = 'text'">Gõ tay</button>
+          <button type="button" class="f-tab" :class="{ on: form.contentMode === 'blocks' }" @click="onSelectBlocksMode">
+            <v-icon size="14">mdi-shuffle-variant</v-icon> Khối nội dung (xoay vòng chống spam)
+          </button>
         </div>
+
+        <template v-if="form.contentMode === 'text'">
+          <label class="f-label" style="margin-top:10px">Nội dung tin <span class="f-hint">— biến: <code v-pre>{{ten}}</code> tên khách, <code v-pre>{{sdt}}</code> SĐT</span></label>
+          <textarea v-model="form.messageText" class="f-input" rows="4"
+            placeholder="Chào {{ten}}, bên em đang có chương trình ưu đãi…"></textarea>
+
+          <label class="f-label">Ảnh kèm (tuỳ chọn)</label>
+          <div class="f-image-row">
+            <img v-if="form.imageUrl" :src="form.imageUrl" class="f-image-preview" />
+            <div class="f-image-actions">
+              <button type="button" class="btn btn-ghost btn-sm" @click="openMediaPicker">
+                <v-icon size="16">mdi-image-multiple-outline</v-icon> Chọn từ Kho media
+              </button>
+              <button v-if="form.imageUrl" type="button" class="btn btn-ghost btn-sm danger" @click="form.imageUrl = ''">
+                <v-icon size="16">mdi-close</v-icon> Bỏ ảnh
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="f-hint" style="margin:10px 0 6px">
+            Chọn nhiều khối — mỗi tin gửi sẽ lấy 1 khối kế tiếp theo thứ tự chọn, tránh gửi
+            1 mẫu giống hệt nhau. Chưa có khối? Tạo ở <RouterLink to="/marketing/content-blocks">Khối nội dung</RouterLink>.
+          </div>
+          <div v-if="contentBlocks.length === 0" class="bc-empty" style="padding:16px 0">Chưa có khối nội dung nào.</div>
+          <div v-else class="f-block-list">
+            <label v-for="b in contentBlocks" :key="b.id" class="f-block-item">
+              <input type="checkbox" :checked="form.contentBlockIds.includes(b.id)" @change="toggleBlock(b.id)" />
+              <img v-if="b.imageUrl" :src="b.imageUrl" class="f-block-thumb" />
+              <div class="f-block-info">
+                <div class="f-block-name">
+                  <span v-if="form.contentBlockIds.includes(b.id)" class="f-block-order">{{ form.contentBlockIds.indexOf(b.id) + 1 }}</span>
+                  {{ b.name }}
+                </div>
+                <div class="f-block-text">{{ b.messageText }}</div>
+              </div>
+            </label>
+          </div>
+        </template>
 
         <label class="f-label">Lịch gửi</label>
         <div class="f-tabs">
@@ -229,12 +264,17 @@ interface JobRow {
   timeOfDay: string | null; daysOfWeek: number[]; nextRunAt: string | null;
   list: { id: string; name: string; hasZaloEntries: number } | null;
   nick: { id: string; displayName: string | null; phone: string | null; status: string } | null;
+  contentBlocks?: Array<{ id: string; name: string }>;
   latestRun: { id: string; status: string; sentCount: number; failedCount: number; skippedCount: number } | null;
+}
+interface ContentBlockRow {
+  id: string; name: string; messageText: string; imageUrl: string | null;
 }
 
 const jobs = ref<JobRow[]>([]);
 const lists = ref<Array<{ id: string; name: string; hasZaloEntries: number }>>([]);
 const nicks = ref<Array<{ id: string; displayName: string | null; phone: string | null; status: string }>>([]);
+const contentBlocks = ref<ContentBlockRow[]>([]);
 const loading = ref(true);
 const showCreate = ref(false);
 const creating = ref(false);
@@ -252,6 +292,7 @@ const dowOptions = [
 
 const form = reactive({
   name: '', customerListId: '', zaloAccountId: '', messageText: '', imageUrl: '',
+  contentMode: 'text' as 'text' | 'blocks', contentBlockIds: [] as string[],
   scheduleType: 'once' as 'once' | 'daily' | 'weekly',
   scheduledAtLocal: '', timeOfDay: '08:00', daysOfWeek: [] as number[],
   maxPerRun: 50, delaySecMin: 30, delaySecMax: 90,
@@ -304,6 +345,20 @@ async function openCreate(): Promise<void> {
   }
 }
 
+async function onSelectBlocksMode(): Promise<void> {
+  form.contentMode = 'blocks';
+  if (contentBlocks.value.length === 0) {
+    const res = await api.get('/content-blocks');
+    contentBlocks.value = res.data.blocks;
+  }
+}
+
+function toggleBlock(id: string): void {
+  const i = form.contentBlockIds.indexOf(id);
+  if (i >= 0) form.contentBlockIds.splice(i, 1);
+  else form.contentBlockIds.push(id);
+}
+
 function toggleDow(d: number): void {
   const i = form.daysOfWeek.indexOf(d);
   if (i >= 0) form.daysOfWeek.splice(i, 1);
@@ -314,7 +369,8 @@ async function createJob(): Promise<void> {
   if (!form.name.trim()) return void toast('Nhập tên broadcast', 'error');
   if (!form.customerListId) return void toast('Chọn tệp khách hàng', 'error');
   if (!form.zaloAccountId) return void toast('Chọn nick Zalo gửi', 'error');
-  if (!form.messageText.trim()) return void toast('Nhập nội dung tin', 'error');
+  if (form.contentMode === 'text' && !form.messageText.trim()) return void toast('Nhập nội dung tin', 'error');
+  if (form.contentMode === 'blocks' && form.contentBlockIds.length === 0) return void toast('Chọn ít nhất 1 khối nội dung', 'error');
   if (form.scheduleType === 'once' && !form.scheduledAtLocal) return void toast('Chọn ngày giờ gửi', 'error');
   if (form.scheduleType === 'weekly' && form.daysOfWeek.length === 0) return void toast('Chọn ngày trong tuần', 'error');
 
@@ -322,7 +378,9 @@ async function createJob(): Promise<void> {
   try {
     await api.post('/broadcast-jobs', {
       name: form.name, customerListId: form.customerListId, zaloAccountId: form.zaloAccountId,
-      messageText: form.messageText, imageUrl: form.imageUrl || null,
+      messageText: form.contentMode === 'text' ? form.messageText : '',
+      imageUrl: form.contentMode === 'text' ? form.imageUrl || null : null,
+      contentBlockIds: form.contentMode === 'blocks' ? form.contentBlockIds : [],
       scheduleType: form.scheduleType,
       scheduledAt: form.scheduleType === 'once' ? new Date(form.scheduledAtLocal).toISOString() : null,
       timeOfDay: form.scheduleType !== 'once' ? form.timeOfDay : null,
@@ -331,7 +389,7 @@ async function createJob(): Promise<void> {
     });
     toast('Đã tạo broadcast', 'success');
     showCreate.value = false;
-    Object.assign(form, { name: '', messageText: '', imageUrl: '', scheduledAtLocal: '', daysOfWeek: [] });
+    Object.assign(form, { name: '', messageText: '', imageUrl: '', contentMode: 'text', contentBlockIds: [], scheduledAtLocal: '', daysOfWeek: [] });
     await load();
   } catch (err: any) {
     toast(`Lỗi: ${err?.response?.data?.error ?? 'không tạo được'}`, 'error');
@@ -457,4 +515,13 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 .f-media-item { border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 0; cursor: pointer; overflow: hidden; aspect-ratio: 1; background: none; }
 .f-media-item:hover { border-color: #0e445a; }
 .f-media-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.f-block-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow: auto; }
+.f-block-item { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.f-block-item:hover { border-color: #0e445a; }
+.f-block-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+.f-block-info { min-width: 0; flex: 1; }
+.f-block-name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.f-block-order { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: #0e445a; color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.f-block-text { font-size: 12px; color: var(--text-secondary, #888); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

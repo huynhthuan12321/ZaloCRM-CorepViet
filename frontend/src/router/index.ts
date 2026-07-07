@@ -227,6 +227,10 @@ const routes: RouteRecordRaw[] = [
           { path: 'lists/:id', name: 'CE.ListDetail', component: () => import('@/views/marketing/ListDetailView.vue'), meta: { requiresAuth: true } },
           // Broadcast tự động — Community extension 2026-07-06.
           { path: 'broadcasts', name: 'CE.Broadcasts', component: () => import('@/views/marketing/BroadcastsView.vue'), meta: { requiresAuth: true } },
+          // Khối nội dung — Community extension 2026-07-07.
+          { path: 'content-blocks', name: 'CE.ContentBlocks', component: () => import('@/views/marketing/ContentBlocksView.vue'), meta: { requiresAuth: true } },
+          // Mục tiêu (auto kết bạn) — Community extension 2026-07-07.
+          { path: 'targets', name: 'CE.Targets', component: () => import('@/views/marketing/TargetsView.vue'), meta: { requiresAuth: true } },
         ],
       } as RouteRecordRaw]
     : []),

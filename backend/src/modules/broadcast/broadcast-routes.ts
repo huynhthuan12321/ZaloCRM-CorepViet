@@ -24,6 +24,9 @@ interface JobBody {
   zaloAccountId?: string;
   messageText?: string;
   imageUrl?: string | null;
+  // Khối nội dung (spin content) — khi có, cron xoay vòng nội dung từ đây thay vì
+  // messageText/imageUrl phía trên. Rỗng = dùng messageText/imageUrl gõ tay như cũ.
+  contentBlockIds?: string[];
   scheduleType?: ScheduleType;
   scheduledAt?: string | null;
   timeOfDay?: string | null;
@@ -75,8 +78,9 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     });
-    // Đính kèm tên tệp + tên nick cho UI (không có FK relation → join tay)
-    const [lists, nicks] = await Promise.all([
+    // Đính kèm tên tệp + tên nick + tên khối nội dung cho UI (không có FK relation → join tay)
+    const allBlockIds = [...new Set(jobs.flatMap((j) => j.contentBlockIds))];
+    const [lists, nicks, blocks] = await Promise.all([
       prisma.customerList.findMany({
         where: { id: { in: [...new Set(jobs.map((j) => j.customerListId))] } },
         select: { id: true, name: true, hasZaloEntries: true },
@@ -85,14 +89,19 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         where: { id: { in: [...new Set(jobs.map((j) => j.zaloAccountId))] } },
         select: { id: true, displayName: true, phone: true, status: true },
       }),
+      allBlockIds.length
+        ? prisma.contentBlock.findMany({ where: { id: { in: allBlockIds } }, select: { id: true, name: true } })
+        : Promise.resolve([]),
     ]);
     const listMap = new Map(lists.map((l) => [l.id, l]));
     const nickMap = new Map(nicks.map((n) => [n.id, n]));
+    const blockMap = new Map(blocks.map((b) => [b.id, b]));
     return {
       jobs: jobs.map((j) => ({
         ...j,
         list: listMap.get(j.customerListId) ?? null,
         nick: nickMap.get(j.zaloAccountId) ?? null,
+        contentBlocks: j.contentBlockIds.map((id) => blockMap.get(id) ?? { id, name: 'Khối đã xoá' }),
         latestRun: j.runs[0] ?? null,
         runs: undefined,
       })),
@@ -106,16 +115,19 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     const b = request.body ?? {};
 
     if (!b.name?.trim()) return reply.status(400).send({ error: 'name_required' });
-    if (!b.messageText?.trim()) return reply.status(400).send({ error: 'messageText_required' });
+    const blockIds = (b.contentBlockIds ?? []).filter(Boolean);
+    if (blockIds.length === 0 && !b.messageText?.trim()) return reply.status(400).send({ error: 'messageText_required' });
     const schedErr = validateSchedule(b);
     if (schedErr) return reply.status(400).send({ error: schedErr });
 
-    const [list, nick] = await Promise.all([
+    const [list, nick, blockCount] = await Promise.all([
       prisma.customerList.findFirst({ where: { id: b.customerListId ?? '', orgId: user.orgId }, select: { id: true } }),
       prisma.zaloAccount.findFirst({ where: { id: b.zaloAccountId ?? '', orgId: user.orgId }, select: { id: true } }),
+      blockIds.length ? prisma.contentBlock.count({ where: { id: { in: blockIds }, orgId: user.orgId } }) : Promise.resolve(0),
     ]);
     if (!list) return reply.status(400).send({ error: 'customerList_not_found' });
     if (!nick) return reply.status(400).send({ error: 'zaloAccount_not_found' });
+    if (blockIds.length && blockCount !== blockIds.length) return reply.status(400).send({ error: 'contentBlock_not_found' });
 
     const scheduledAt = b.scheduledAt ? new Date(b.scheduledAt) : null;
     const nextRunAt = computeNextRunAt({
@@ -131,8 +143,9 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         name: b.name.trim(),
         customerListId: list.id,
         zaloAccountId: nick.id,
-        messageText: b.messageText,
-        imageUrl: b.imageUrl?.trim() || null,
+        messageText: blockIds.length ? '' : b.messageText!,
+        imageUrl: blockIds.length ? null : b.imageUrl?.trim() || null,
+        contentBlockIds: blockIds,
         scheduleType: b.scheduleType!,
         scheduledAt,
         timeOfDay: b.timeOfDay ?? null,
@@ -172,6 +185,7 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     if (b.name !== undefined) data.name = b.name.trim();
     if (b.messageText !== undefined) data.messageText = b.messageText;
     if (b.imageUrl !== undefined) data.imageUrl = b.imageUrl?.trim() || null;
+    if (b.contentBlockIds !== undefined) data.contentBlockIds = b.contentBlockIds.filter(Boolean);
     if (b.maxPerRun !== undefined) data.maxPerRun = Math.min(500, Math.max(1, b.maxPerRun));
     if (b.delaySecMin !== undefined) data.delaySecMin = Math.max(5, b.delaySecMin);
     if (b.delaySecMax !== undefined) data.delaySecMax = Math.max(5, b.delaySecMax);

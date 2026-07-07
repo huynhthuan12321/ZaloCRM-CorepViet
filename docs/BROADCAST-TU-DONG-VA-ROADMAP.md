@@ -3,6 +3,23 @@
 > Ngày: 06/07/2026 · Người thực hiện: Huỳnh Ngọc Thuận (với Claude)
 > Nền tảng: ZCRM v3.4 Community (AGPL-3.0) — tự code lại tính năng EE trên bản mã nguồn mở.
 
+## Trạng thái triển khai
+
+| Vòng | Commit GitHub | Nội dung | Server production |
+|---|---|---|---|
+| 1 | [`6660df8`](https://github.com/huynhthuan12321/ZaloCRM-CorepViet/commit/6660df8) | Broadcast tự động (CRUD job, cron gửi rải, modal tạo) | ✅ Đã deploy, test gửi thật thành công (06/07/2026) |
+| 2 | [`c3b9880`](https://github.com/huynhthuan12321/ZaloCRM-CorepViet/commit/c3b9880) | RBAC + khung giờ 8h-21h + chọn ảnh Kho media + báo cáo thống kê | ✅ Đã deploy, test aggregation + time-window thành công (06/07/2026) |
+| 3 | _(chưa commit)_ | Mục 3.1 roadmap — **Khối nội dung (Content Block)** + xoay vòng (spin content) trong Broadcast | ✅ Đã deploy lên server, test CRUD + tích hợp (07/07/2026). Test gửi thật xoay vòng cần chờ khung giờ 8h-21h |
+| 4 | _(chưa commit)_ | Mục 3.2 roadmap — **Mục tiêu (auto kết bạn)** — model `TargetJob`/`TargetRunItem` mới, tái dùng `campaign-service.ts` có sẵn (trước đó là dead code, route không đăng ký) | ✅ Đã deploy lên server, **test gửi thật thành công** (07/07/2026, trong khung giờ 8h-21h) |
+
+Repo: [huynhthuan12321/ZaloCRM-CorepViet](https://github.com/huynhthuan12321/ZaloCRM-CorepViet), nhánh `main`.
+Server: `/opt/ZaloCRM-CorepViet` (Docker Compose) — khớp 100% với vòng 4 (chưa push code vòng 3+4 lên GitHub).
+
+> **Kiểm tra chéo toàn bộ ZaloCRM (07/07/2026):** đã audit trực tiếp code (không suy đoán) để xác nhận
+> tính năng nào thật sự có/thiếu trong bản Community. Xem mục **1b** bên dưới — phát hiện quan trọng:
+> `campaign-service.ts` (Mục tiêu) là code THẬT, hoạt động được, nhưng route của nó **chưa từng được
+> đăng ký** trong `app.ts` → hoàn toàn không gọi được trước khi mình sửa ở vòng 4.
+
 ---
 
 ## 1. Bối cảnh
@@ -12,6 +29,30 @@ Các tính năng EE (Mục tiêu, Phiên chăm sóc, Luồng kịch bản, Khố
 
 **Pháp lý:** code mới hoàn toàn trên nền AGPL-3.0 (không copy code EE) → hợp pháp.
 Dùng nội bộ: không ràng buộc. Nếu phân phối/bán SaaS: phải công khai mã nguồn phần tự viết (AGPL §13) và không dùng thương hiệu "ZCRM".
+
+---
+
+## 1b. Kiểm tra chéo toàn bộ ZaloCRM (07/07/2026) — checklist đã/chưa triển khai
+
+Audit trực tiếp code (đọc file, không suy đoán từ tên biến/model) để xác nhận trạng thái thật.
+Kiến trúc gốc: `backend/src/_ee/` + `frontend/src/_ee/` (bundle EE) **không tồn tại** trong repo này —
+mọi hook EE fallback về no-op (`shared/ee-registry/automation.ts`, `.../integrations.ts`), mọi route
+EE fallback về mảng rỗng (`frontend/src/_ee-stubs/`). Schema Prisma vẫn giữ đủ model EE (vì migration
+dùng chung DB) nên *trông* như đã có sẵn — nhưng code đọc/ghi ý nghĩa thì thường không có.
+
+| Tính năng | Model DB | Backend | Frontend | Kết luận |
+|---|---|---|---|---|
+| Broadcast tự động | `BroadcastJob`/`Run`/`RunItem` | ✅ đầy đủ (tự viết) | ✅ đầy đủ (tự viết) | **Xong** (mục 2) |
+| Khối nội dung | `ContentBlock` | ✅ đầy đủ (tự viết) | ✅ đầy đủ (tự viết) | **Xong** (mục 2c) |
+| **Mục tiêu** (auto kết bạn) | `FriendshipAttempt` — đầy đủ | `campaign-service.ts` thật (gọi Zalo API thật) nhưng `campaign-routes.ts` **chưa từng đăng ký trong `app.ts`** → chết, gọi không được | Chỉ có nhãn tên trong `ROUTE_TITLES`, không route thật | Dead code → **đã tự triển khai lại** (mục 2d) |
+| Phiên chăm sóc | `CareSession`/`CareSessionEvent` — đầy đủ | Chỉ bị đọc (`groupBy`) cho báo cáo/filter, không có engine tạo/đóng phiên | Không có trang | Nền có, chưa dùng — **chưa làm** |
+| Luồng kịch bản | `AutomationSequence`/`SequenceStep` (không phải tên "Flow" như đoán ban đầu) — đầy đủ | Chỉ đọc cho báo cáo | Không có trang | Nền có, chưa dùng — **chưa làm** |
+| Bot Auto (trả lời tự động) | Không có | 0 logic keyword/auto-reply; hook EE (`onCustomerReaction`, `sendStrangerFollowUp`) toàn no-op | Không có | **Chưa bắt đầu** |
+| Zalo Ads Lead Form | Chỉ có type enum `LeadSource`, không có model | Không có file adapter nào — `providers/` chỉ có Google Sheets, Telegram bot/bridge, Zapier webhook chung | Chỉ có nhãn tên | **Chưa bắt đầu** |
+
+**Đính chính so với ghi chú cũ:** mục 3.6 (Zalo Ads) từng ghi "repo đã có nền Multi-Source Lead Ads
+(FB/TikTok) trong `list-import-service.ts`" — **không đúng**. File đó chỉ parse paste-text/CSV đã
+tách cột sẵn (số điện thoại VN), không gọi API lead-ads nào của FB/TikTok/Zalo Ads/Google.
 
 ---
 
@@ -76,28 +117,134 @@ docker logs zalo-crm-app --tail 20 | grep broadcast
 
 ### Lưu ý vận hành
 
-- Chưa chạy test build tự động — lần build đầu nếu lỗi TypeScript, xem log và sửa.
 - Test với tệp nhỏ (5–10 số) trước khi gửi tệp lớn.
 - Gửi tới người **chưa kết bạn** có thể rơi vào hộp "người lạ" hoặc thất bại → nên chạy kết bạn trước (xem Mục tiêu bên dưới).
 - Ảnh kèm: URL phải là link server truy cập được (S3_PUBLIC_URL của MinIO/R2).
 - Nội dung nên cá nhân hoá (dùng `{{ten}}`) và đổi mẫu thường xuyên để giảm rủi ro Zalo đánh spam.
+
+### Kết quả test gửi thật (06/07/2026)
+
+Tạo tệp test 1 số an toàn (0363556463) → resolve UID qua `find-zalo` → tạo job `once` →
+`run-now` → cron gửi thành công trong tick kế tiếp (`sentCount:1, failedCount:0`), job tự
+chuyển `done`. Đã dọn dữ liệu test sau khi xác nhận.
+
+---
+
+## 2b. Hoàn thiện Broadcast: RBAC + khung giờ gửi + chọn ảnh + báo cáo (06/07/2026)
+
+### RBAC — chỉ owner/admin quản lý broadcast
+`backend/src/modules/broadcast/broadcast-routes.ts`: thêm `requireBroadcastAdmin()`,
+áp cho POST/PATCH/DELETE/run-now (tạo/sửa/xoá/chạy). GET (xem danh sách/log) vẫn mở cho
+mọi user đăng nhập trong org. Test: owner vẫn thao tác bình thường, không regression.
+
+### Khung giờ gửi 8h–21h — tránh phiền khách ban đêm
+`backend/src/modules/broadcast/broadcast-service.ts`: thêm `isWithinSendWindow(at)` (giờ VN,
+UTC+7). Gate đặt trong `broadcast-cron.ts::processRun()` — ngoài khung giờ thì tick bỏ qua,
+không gửi, không tính lỗi cho khách, tự thử lại tick sau. Test thật lúc 22:57 (ngoài giờ):
+run được tạo nhưng `sentCount:0` — không tin nào rời hệ thống.
+
+### Chọn ảnh từ Kho media trong modal
+`frontend/src/views/marketing/BroadcastsView.vue`: thay ô dán URL bằng nút "Chọn từ Kho
+media" → modal grid gọi `listMedia({ kind: 'image' })` từ `@/api/media`, click ảnh để chọn.
+
+### Báo cáo thống kê Broadcast
+Trang mới `/reports/broadcast` (tab "Broadcast" trong menu Báo cáo + `ReportsShell`):
+
+| File | Vai trò |
+|---|---|
+| `backend/src/modules/broadcast/broadcast-report-routes.ts` | `GET /api/v1/reports/broadcast?from=&to=` — KPI tổng, breakdown theo nick, theo tệp, 20 run gần nhất |
+| `frontend/src/views/reports/BroadcastReport.vue` | Trang báo cáo: KPI card + 2 bảng (theo nick/theo tệp) + bảng lịch sử run |
+| `frontend/src/views/reports/ReportsShell.vue` | Thêm tab "Broadcast" |
+| `frontend/src/router/index.ts` | Route `reports/broadcast` (name `Reports.Broadcast`) |
+| `frontend/src/layouts/DefaultLayout.vue` | Thêm mục "Broadcast tự động" vào dropdown Báo cáo sidebar |
+
+Chỉ owner/admin xem (khớp quyền quản lý broadcast). Test aggregation trên server: chèn 1
+run giả (8 gửi/2 lỗi/1 bỏ qua) → API trả đúng `successRatePct: 80`, join tên nick + tên tệp
+chính xác. Đã dọn dữ liệu test.
+
+---
+
+## 2c. Đã triển khai: Khối nội dung (Content Block) (07/07/2026)
+
+Kho nội dung tái dùng (text + biến động + ảnh) cho Broadcast tự động — chọn nhiều khối
+cho 1 job để **xoay vòng** (spin content) mỗi tin gửi, tránh gửi 1 mẫu giống hệt nhau.
+
+> Model độc lập `ContentBlock` thay vì mở rộng `MessageTemplate` như dự tính ban đầu — vì
+> khảo sát code thấy `MessageTemplate` (schema có sẵn: folder/shortcut/tags/usageCount) lại
+> **không có route CRUD nào trong mã nguồn Community** (chỉ dùng nội bộ cho welcome-message/
+> scoring), tức tính năng "gõ `/` chèn mẫu" thực chất là EE. Xây `ContentBlock` riêng, gọn,
+> mở cho mọi user (không cần owner/admin) — giống MessageTemplate lẽ ra phải có.
+
+### File đã thêm / sửa
+
+| File | Vai trò |
+|---|---|
+| `backend/prisma/schema.prisma` | Model `ContentBlock` (name/messageText/imageUrl/usageCount) + `BroadcastJob.contentBlockIds String[]` |
+| `backend/prisma/migrations/20260707000000_content_blocks/migration.sql` | Migration additive |
+| `backend/src/modules/content-blocks/content-block-routes.ts` | CRUD `/api/v1/content-blocks` (mở cho mọi user đăng nhập) |
+| `backend/src/modules/broadcast/broadcast-routes.ts` | Validate: `messageText` không bắt buộc nếu có `contentBlockIds`; join tên khối cho UI |
+| `backend/src/modules/broadcast/broadcast-cron.ts` | `resolveJobContent()` — xoay vòng theo `processedCount % số khối`, giữ đúng thứ tự đã chọn; tăng `usageCount` khối khi gửi thành công |
+| `frontend/src/views/marketing/ContentBlocksView.vue` | Trang quản lý khối: tạo/sửa/xoá, chọn ảnh Kho media |
+| `frontend/src/views/marketing/BroadcastsView.vue` | Modal tạo broadcast: tab "Gõ tay" / "Khối nội dung (xoay vòng)" — multi-select có đánh số thứ tự |
+| `frontend/src/router/index.ts`, `CommunityMarketingShell.vue` | Route + menu `/marketing/content-blocks` |
+
+### Test đã chạy (07/07/2026)
+- CRUD `/api/v1/content-blocks`: tạo 2 khối, list, auth guard (401 không token) — đúng.
+- Tạo broadcast job chỉ với `contentBlockIds` (không `messageText`) → được chấp nhận, không lỗi validate.
+- `GET /broadcast-jobs` trả `contentBlocks: [{id,name}]` đúng thứ tự đã chọn.
+- **Chưa test được** gửi thật xoay vòng nhiều khối (lúc test là 07:11 VN, trước khung giờ 8h-21h) — logic xoay vòng (`resolveJobContent`) đã review kỹ, dùng cùng pipeline gửi đã test thành công ở vòng 1. Nên test lại bằng tay khi có nhu cầu gửi thật.
+- Đã dọn toàn bộ dữ liệu test (2 khối, 1 tệp, 1 job).
+
+---
+
+## 2d. Đã triển khai: Mục tiêu (auto kết bạn) (07/07/2026)
+
+Tự động gửi lời mời kết bạn tới **Tệp khách hàng** — chạy liên tục (không lịch định kỳ
+như Broadcast) tới khi hết đối tượng hoặc chạm tổng tối đa. Tái dùng `campaign-service.ts`
+có sẵn (`attemptFriendRequest` — vốn là dead code vì route chưa đăng ký) thay vì viết lại
+từ đầu, để giữ đúng audit trail `FriendshipAttempt` + mirror `Friend` "Đã gửi lời mời" sẵn có.
+
+> **Rủi ro kỹ thuật quan trọng đã xử lý:** `attemptFriendRequest()` tạo row `FriendshipAttempt`
+> (unique theo nick+contact) **trước khi** gọi Zalo API. Nếu cron cứ gọi đều khi nick đã chạm
+> trần `friend_action` (30/ngày mặc định), sẽ "đốt" vĩnh viễn từng contact thành lỗi — không
+> thể thử lại contact đó với nick này nữa. Giải pháp: pre-check qua `zaloRateLimiter.checkLimits()`
+> (đã có sẵn, không ghi nhận gì) trước khi thử — nick chạm trần thì bỏ qua cả tick, không đụng
+> tới contact nào.
+
+### File đã thêm / sửa
+
+| File | Vai trò |
+|---|---|
+| `backend/prisma/schema.prisma` | Model `TargetJob` (tệp/nick/lời nhắn/tổng tối đa/giãn cách) + `TargetRunItem` (log) |
+| `backend/prisma/migrations/20260707010000_target_jobs/migration.sql` | Migration additive |
+| `backend/src/modules/target/target-routes.ts` | CRUD `/api/v1/target-jobs` (owner/admin only, giống Broadcast) |
+| `backend/src/modules/target/target-cron.ts` | Worker 30s: pre-check rate-limit → resolve Contact (`resolveOrCreateContact` có sẵn) nếu entry chưa có → `attemptFriendRequest` (campaign-service có sẵn) → ghi log |
+| `frontend/src/views/marketing/TargetsView.vue` | Trang quản lý: tạo/pause/resume/xoá, log kết quả từng đối tượng |
+| `frontend/src/router/index.ts`, `CommunityMarketingShell.vue` | Route + menu `/marketing/targets` (đặt trước Broadcast trong menu — nên chạy trước) |
+
+### Test đã chạy (07/07/2026, trong khung giờ 8h-21h)
+- Auth guard đúng (401 không token).
+- Tạo tệp test 1 số, `find-zalo` resolve UID thật.
+- Tạo Target job → cron tick sau ~30s → **gọi Zalo API thật** (`sendFriendRequest`).
+- Kết quả: số test đã là bạn của nick từ trước → Zalo trả lỗi hợp lệ "User đã là bạn bè" →
+  ghi nhận đúng `failedCount:1`, log rõ lý do, job tự chuyển `done` sau khi hết đối tượng.
+  Xác nhận toàn bộ pipeline (tạo Contact → FriendshipAttempt → gọi Zalo API → xử lý lỗi
+  không crash) chạy đúng end-to-end. Chưa test được nhánh "sent" thành công (cần 1 số lạ
+  chưa kết bạn — không có sẵn số test phù hợp).
+- Đã dọn dữ liệu test.
+
+### Còn thiếu (fast-follow)
+- Nguồn target từ **Quét nhóm** (GroupMember) — hiện chỉ hỗ trợ Tệp khách hàng. GroupMember
+  có UID trực tiếp (không cần `findUser` qua SĐT) nhưng không phải Contact, cần thêm bước
+  convert/link Contact riêng — việc nhỏ tiếp theo nếu cần.
+- Không thấy nghẽn nào ở phần "chạy TRƯỚC Broadcast" — chỉ là gợi ý vận hành (đặt trước
+  Broadcast trong menu để nhắc thứ tự), không có ràng buộc kỹ thuật giữa 2 tính năng.
 
 ---
 
 ## 3. Cần triển khai tiếp (roadmap tự code các tính năng EE còn lại)
 
 Thứ tự đề xuất từ dễ → khó, tái dùng nền móng có sẵn:
-
-### 3.1. Khối nội dung (Content Block) — ~2-3 ngày
-- Model `ContentBlock` (text/ảnh/biến động), mở rộng từ `MessageTemplate` có sẵn.
-- Mục đích: kho nội dung tái dùng cho Broadcast + Luồng kịch bản.
-- Nâng cấp Broadcast: chọn block thay vì gõ tay + **xoay vòng nhiều mẫu** (spin content) chống spam.
-
-### 3.2. Mục tiêu (auto kết bạn theo target) — ~1 tuần
-- Mở rộng `FriendshipAttempt` + `campaign-service.ts` (dispatcher đã có sẵn).
-- Nguồn target: Tệp khách hàng + kết quả **Quét nhóm** (GroupMember).
-- Giới hạn lời mời/ngày/nick (category `friend_request` trong SdkLimit).
-- Quan trọng: chạy TRƯỚC broadcast để tăng tỉ lệ gửi thành công.
 
 ### 3.3. Luồng kịch bản (Flow/Drip automation) — ~2-4 tuần, khó nhất
 - Model `Flow` + `FlowStep` (trigger → chờ X ngày → gửi block → rẽ nhánh theo phản hồi/tag).
@@ -116,11 +263,11 @@ Thứ tự đề xuất từ dễ → khó, tái dùng nền móng có sẵn:
 - Webhook endpoint nhận lead từ Zalo OA/Ads → tạo `CustomerListEntry` theo `#mã` chiến dịch.
 - Lưu ý: repo đã có nền Multi-Source Lead Ads (FB/TikTok) trong `list-import-service.ts` → làm theo mẫu đó.
 
-### Việc nhỏ nên làm sớm
-- [x] Chạy build + test thực tế tính năng Broadcast trên server — 06/07/2026, gửi thật thành công tới số test 0363556463
+### Việc nhỏ nên làm sớm — ĐÃ XONG 4/4 (06/07/2026)
+- [x] Chạy build + test thực tế tính năng Broadcast trên server — gửi thật thành công tới số test 0363556463
 - [x] Chọn ảnh từ Kho media trực tiếp trong modal (thay vì dán URL) — `BroadcastsView.vue` gọi `listMedia()`, grid chọn ảnh
-- [x] Thêm RBAC: giới hạn quyền tạo broadcast theo nhóm quyền (hiện: mọi user đăng nhập) — POST/PATCH/DELETE/run-now chỉ owner/admin (`requireBroadcastAdmin` trong `broadcast-routes.ts`)
-- [ ] Thống kê broadcast vào trang Báo cáo (tỉ lệ gửi thành công theo nick/tệp)
+- [x] Thêm RBAC: giới hạn quyền tạo broadcast theo nhóm quyền — POST/PATCH/DELETE/run-now chỉ owner/admin (`requireBroadcastAdmin` trong `broadcast-routes.ts`)
+- [x] Thống kê broadcast vào trang Báo cáo (tỉ lệ gửi thành công theo nick/tệp) — trang `/reports/broadcast` (xem mục 2b)
 - [x] Cửa sổ giờ gửi (không gửi ngoài 8h–21h) — tránh phiền khách ban đêm — `isWithinSendWindow()` trong `broadcast-service.ts`, gate trong `processRun()`, đã test thật lúc 22:57 (ngoài giờ) → run tạo nhưng sentCount=0
 
 ---

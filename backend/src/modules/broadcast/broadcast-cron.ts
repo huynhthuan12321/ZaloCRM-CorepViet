@@ -145,10 +145,14 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
       return;
     }
 
-    // 2. Gửi tin (text hoặc ảnh + caption)
-    const text = renderMessage(job.messageText, { name, phone });
-    if (job.imageUrl) {
-      const media = await downloadMediaToTemp({ url: job.imageUrl }, 'image/jpeg');
+    // 2. Nội dung: xoay vòng Khối nội dung (spin content) nếu job có contentBlockIds,
+    //    ngược lại dùng messageText/imageUrl gõ tay như cũ.
+    const content = await resolveJobContent(job, processed);
+
+    // 3. Gửi tin (text hoặc ảnh + caption)
+    const text = renderMessage(content.messageText, { name, phone });
+    if (content.imageUrl) {
+      const media = await downloadMediaToTemp({ url: content.imageUrl }, 'image/jpeg');
       try {
         await zaloOps.sendImage(job.zaloAccountId, uid, 0, [media.path], io, text);
       } finally {
@@ -158,6 +162,9 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
       await zaloOps.sendMessage(job.zaloAccountId, uid, 0, { msg: text }, io);
     }
     await recordItem(run, entry.id, phone, name, uid, 'sent', null);
+    if (content.blockId) {
+      await prisma.contentBlock.update({ where: { id: content.blockId }, data: { usageCount: { increment: 1 } } }).catch(() => {});
+    }
     logger.info(`[broadcast-cron] run=${run.id} sent → ${phone}`);
   } catch (err: any) {
     if (err instanceof ZaloOpError && (err.code === 'RATE_LIMITED' || err.code === 'NOT_CONNECTED')) {
@@ -167,6 +174,32 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
     }
     await recordItem(run, entry.id, phone, name, null, 'failed', String(err?.message ?? err).slice(0, 500));
   }
+}
+
+/**
+ * Xoay vòng nội dung theo Khối nội dung (spin content chống spam): mỗi tin thứ N
+ * trong run lấy block thứ (N % số block) theo đúng thứ tự job.contentBlockIds.
+ * contentBlockIds rỗng → dùng messageText/imageUrl gõ tay của job (như cũ).
+ */
+async function resolveJobContent(
+  job: { messageText: string; imageUrl: string | null; contentBlockIds: string[] },
+  processedCount: number,
+): Promise<{ messageText: string; imageUrl: string | null; blockId: string | null }> {
+  if (job.contentBlockIds.length === 0) {
+    return { messageText: job.messageText, imageUrl: job.imageUrl, blockId: null };
+  }
+  const blocks = await prisma.contentBlock.findMany({
+    where: { id: { in: job.contentBlockIds } },
+    select: { id: true, messageText: true, imageUrl: true },
+  });
+  const blockMap = new Map(blocks.map((b) => [b.id, b]));
+  // Giữ đúng thứ tự đã chọn trong job.contentBlockIds (Map lookup bỏ qua block đã xoá).
+  const ordered = job.contentBlockIds.map((id) => blockMap.get(id)).filter((b): b is NonNullable<typeof b> => !!b);
+  if (ordered.length === 0) {
+    return { messageText: job.messageText, imageUrl: job.imageUrl, blockId: null };
+  }
+  const pick = ordered[processedCount % ordered.length];
+  return { messageText: pick.messageText, imageUrl: pick.imageUrl, blockId: pick.id };
 }
 
 async function recordItem(

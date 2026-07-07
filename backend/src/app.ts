@@ -336,6 +336,12 @@ async function bootstrap() {
   await app.register(broadcastRoutes);
   const { broadcastReportRoutes } = await import('./modules/broadcast/broadcast-report-routes.js');
   await app.register(broadcastReportRoutes);
+  // Khối nội dung (🟢 Community extension 2026-07-07)
+  const { contentBlockRoutes } = await import('./modules/content-blocks/content-block-routes.js');
+  await app.register(contentBlockRoutes);
+  // Mục tiêu — auto kết bạn (🟢 Community extension 2026-07-07)
+  const { targetRoutes } = await import('./modules/target/target-routes.js');
+  await app.register(targetRoutes);
   await app.register(groupModerationRoutes);
   await app.register(friendRoutes);
   await app.register(profileRoutes);
@@ -404,6 +410,9 @@ async function bootstrap() {
     // Broadcast tự động (🟢 Community extension) — worker gửi tin theo lịch, tick 30s
     const { startBroadcastCron } = await import('./modules/broadcast/broadcast-cron.js');
     startBroadcastCron(io);
+    // Mục tiêu — auto kết bạn (🟢 Community extension) — worker gửi lời mời, tick 30s
+    const { startTargetCron } = await import('./modules/target/target-cron.js');
+    startTargetCron();
     // Group info refresh periodic (mỗi 6h) — làm tươi avatar/tên/sĩ số nhóm chống
     // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).
     const { startGroupInfoSyncCron } = await import('./modules/zalo/group-info-sync-cron.js');

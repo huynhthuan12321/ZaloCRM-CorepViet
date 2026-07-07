@@ -4050,6 +4050,30 @@ model MediaUsageEvent {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Khối nội dung (Content Block — Community extension) 2026-07-06
+// Kho nội dung tái dùng (text + biến động + ảnh) cho Broadcast tự động — chọn
+// nhiều block cho 1 job để "xoay vòng" (spin content) chống spam thay vì gửi
+// 1 mẫu giống hệt nhau tới mọi khách. KHÔNG khai báo FK sang Organization để
+// không đụng model core — validate orgId ở route.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model ContentBlock {
+  id          String  @id @default(uuid())
+  orgId       String  @map("org_id")
+  createdById String  @map("created_by_id")
+  name        String
+  messageText String  @map("message_text") @db.Text // hỗ trợ biến {{ten}} {{sdt}}
+  imageUrl    String? @map("image_url")
+  usageCount  Int     @default(0) @map("usage_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([orgId])
+  @@map("content_blocks")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Broadcast tự động (Community extension) 2026-07-06
 // Gửi tin hàng loạt tới Tệp khách hàng (CustomerList) theo lịch:
 //   once (1 lần) | daily (hàng ngày) | weekly (ngày trong tuần).
@@ -4066,9 +4090,12 @@ model BroadcastJob {
   customerListId String  @map("customer_list_id") // tệp KH đích
   zaloAccountId  String  @map("zalo_account_id") // nick gửi
 
-  // Nội dung: text hỗ trợ biến {{ten}} {{sdt}}; ảnh kèm (URL media MinIO/S3, optional)
-  messageText String  @map("message_text") @db.Text
-  imageUrl    String? @map("image_url")
+  // Nội dung: text hỗ trợ biến {{ten}} {{sdt}}; ảnh kèm (URL media MinIO/S3, optional).
+  // Nếu contentBlockIds không rỗng → bỏ qua messageText/imageUrl, xoay vòng nội dung
+  // từ ContentBlock (spin content chống spam) — mỗi tin gửi lấy 1 block kế tiếp theo thứ tự.
+  messageText     String   @map("message_text") @db.Text
+  imageUrl        String?  @map("image_url")
+  contentBlockIds String[] @default([]) @map("content_block_ids")
 
   // Lịch: 'once' → scheduledAt; 'daily' → timeOfDay; 'weekly' → daysOfWeek + timeOfDay
   scheduleType String    @map("schedule_type") // 'once' | 'daily' | 'weekly'
@@ -4134,4 +4161,65 @@ model BroadcastRunItem {
 
   @@index([runId, entryId])
   @@map("broadcast_run_items")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Mục tiêu (Target — auto kết bạn, Community extension) 2026-07-07
+// Chạy liên tục (không lịch định kỳ như Broadcast) tới khi hết đối tượng trong
+// Tệp khách hàng hoặc chạm maxTotal — gửi lời mời kết bạn qua campaign-service
+// (attemptFriendRequest có sẵn, tái dùng nguyên trạng: tạo FriendshipAttempt +
+// cập nhật Contact + mirror Friend "Đã gửi lời mời"). KHÔNG khai báo FK sang
+// Organization/CustomerList/ZaloAccount để không đụng model core.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model TargetJob {
+  id             String @id @default(uuid())
+  orgId          String @map("org_id")
+  createdById    String @map("created_by_id")
+  name           String
+  customerListId String @map("customer_list_id") // tệp KH nguồn target
+  zaloAccountId  String @map("zalo_account_id") // nick gửi lời mời
+
+  requestMsg String @map("request_msg") @db.Text // lời nhắn kèm lời mời kết bạn
+
+  // Chống block: tổng tối đa + giãn cách ngẫu nhiên. Trần tin/ngày/nick (category
+  // friend_action trong SdkLimit) đã tự gate qua zaloOps — job chỉ pre-check qua
+  // zaloRateLimiter.checkLimits() trước khi thử, tránh "đốt" contact thành lỗi
+  // vĩnh viễn khi nick đã chạm trần (FriendshipAttempt unique theo nick+contact).
+  maxTotal    Int @default(200) @map("max_total")
+  delaySecMin Int @default(60) @map("delay_sec_min")
+  delaySecMax Int @default(180) @map("delay_sec_max")
+
+  status      String    @default("active") // 'active' | 'paused' | 'done'
+  sentCount   Int       @default(0) @map("sent_count")
+  noZaloCount Int       @default(0) @map("no_zalo_count")
+  failedCount Int       @default(0) @map("failed_count")
+  lastSentAt  DateTime? @map("last_sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items TargetRunItem[]
+
+  @@index([orgId, status])
+  @@map("target_jobs")
+}
+
+model TargetRunItem {
+  id    String    @id @default(uuid())
+  jobId String    @map("job_id")
+  job   TargetJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  orgId String    @map("org_id")
+
+  entryId String  @map("entry_id") // CustomerListEntry.id
+  phone   String?
+  name    String?
+  zaloUid String? @map("zalo_uid")
+
+  status    String // 'sent' | 'no_zalo' | 'failed' | 'skipped'
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([jobId, entryId])
+  @@map("target_run_items")
 }
