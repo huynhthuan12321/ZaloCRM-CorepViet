@@ -4,15 +4,17 @@
  * target-cron.ts — Worker Mục tiêu (auto kết bạn).
  *
  * Tick mỗi 30s, mỗi job active thử gửi TỐI ĐA 1 lời mời/tick, tôn trọng giãn cách
- * delaySecMin..Max + khung giờ 8h-21h (dùng chung broadcast-service). Nguồn target:
- * CustomerListEntry của tệp với hasZalo=true, chưa xử lý trong job này.
+ * delaySecMin..Max + khung giờ 8h-21h (dùng chung broadcast-service). 2 nguồn target:
+ *   - customer_list: CustomerListEntry có hasZalo=true — cần findUser qua SĐT trước
+ *     (attemptFriendRequest, campaign-service có sẵn).
+ *   - group_scan: GroupMember (isFriend=false) của scan — ĐÃ có UID sẵn (memberUid),
+ *     gửi thẳng không cần findUser (attemptFriendRequestByUid).
  *
- * QUAN TRỌNG: attemptFriendRequest() (campaign-service, có sẵn từ trước) tạo
- * FriendshipAttempt NGAY (unique theo nick+contact) trước khi gọi Zalo API — nếu
- * cứ gọi đều khi nick đã chạm trần friend_action, sẽ "đốt" vĩnh viễn từng contact
- * thành lỗi (không thể thử lại contact đó với nick này nữa). Nên PRE-CHECK qua
- * zaloRateLimiter.checkLimits() (không tốn gì, không ghi nhận) trước khi thử —
- * nick chạm trần thì bỏ qua tick, không đụng tới contact nào cả.
+ * QUAN TRỌNG: cả 2 hàm attemptFriendRequest*() tạo FriendshipAttempt NGAY (unique
+ * theo nick+contact) trước khi gọi Zalo API — nếu cứ gọi đều khi nick đã chạm trần
+ * friend_action, sẽ "đốt" vĩnh viễn từng contact thành lỗi (không thể thử lại contact
+ * đó với nick này nữa). Nên PRE-CHECK qua zaloRateLimiter.checkLimits() (không tốn gì,
+ * không ghi nhận) trước khi thử — nick chạm trần thì bỏ qua tick, không đụng contact nào.
  */
 import cron from 'node-cron';
 import { prisma } from '../../shared/database/prisma-client.js';
@@ -20,7 +22,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { resolveOrCreateContact } from '../contacts/resolve-contact.js';
-import { attemptFriendRequest } from '../campaign/campaign-service.js';
+import { attemptFriendRequest, attemptFriendRequestByUid } from '../campaign/campaign-service.js';
 import { renderMessage, randomDelayMs, isWithinSendWindow } from '../broadcast/broadcast-service.js';
 
 let running = false;
@@ -41,8 +43,8 @@ export function startTargetCron(): void {
 }
 
 type JobRow = {
-  id: string; orgId: string; customerListId: string; zaloAccountId: string;
-  requestMsg: string; maxTotal: number; delaySecMin: number; delaySecMax: number;
+  id: string; orgId: string; sourceType: string; customerListId: string | null; groupScanId: string | null;
+  zaloAccountId: string; requestMsg: string; maxTotal: number; delaySecMin: number; delaySecMax: number;
   lastSentAt: Date | null; sentCount: number; noZaloCount: number; failedCount: number;
 };
 
@@ -54,7 +56,7 @@ export async function runTargetTick(): Promise<void> {
     prisma.targetJob.findMany({
       where: { status: 'active' },
       select: {
-        id: true, orgId: true, customerListId: true, zaloAccountId: true,
+        id: true, orgId: true, sourceType: true, customerListId: true, groupScanId: true, zaloAccountId: true,
         requestMsg: true, maxTotal: true, delaySecMin: true, delaySecMax: true,
         lastSentAt: true, sentCount: true, noZaloCount: true, failedCount: true,
       },
@@ -84,11 +86,19 @@ async function processJob(job: JobRow, now: Date): Promise<void> {
   const check = await zaloRateLimiter.checkLimits(job.zaloAccountId, 'friend_action');
   if (!check.allowed) return; // chờ tick sau, giữ nguyên target chưa xử lý
 
-  // Người kế tiếp: entry có Zalo, chưa xử lý trong job này
+  if (job.sourceType === 'group_scan') {
+    await processGroupScanTarget(job);
+  } else {
+    await processCustomerListTarget(job);
+  }
+}
+
+// ── Nguồn: Tệp khách hàng (CustomerListEntry, cần findUser qua SĐT) ─────────
+async function processCustomerListTarget(job: JobRow): Promise<void> {
   const done = await prisma.targetRunItem.findMany({ where: { jobId: job.id }, select: { entryId: true } });
   const entry = await prisma.customerListEntry.findFirst({
     where: {
-      customerListId: job.customerListId,
+      customerListId: job.customerListId ?? '',
       hasZalo: true,
       ...(done.length ? { id: { notIn: done.map((d) => d.entryId) } } : {}),
     },
@@ -105,22 +115,19 @@ async function processJob(job: JobRow, now: Date): Promise<void> {
   const name = entry.zaloName ?? entry.nameRaw ?? null;
 
   try {
-    // 1. Đảm bảo entry có Contact (attemptFriendRequest cần contactId) — tạo nếu chưa có.
+    // Đảm bảo entry có Contact (attemptFriendRequest cần contactId) — tạo nếu chưa có.
     let contactId = entry.contactId;
     if (!contactId) {
       const c = await resolveOrCreateContact({
-        orgId: job.orgId,
-        zaloAccountId: job.zaloAccountId,
-        zaloUidInNick: entry.zaloUid,
-        phone: entry.phoneE164,
-        fallbackFullName: name,
+        orgId: job.orgId, zaloAccountId: job.zaloAccountId,
+        zaloUidInNick: entry.zaloUid, phone: entry.phoneE164, fallbackFullName: name,
       });
       contactId = c.id;
       await prisma.customerListEntry.update({ where: { id: entry.id }, data: { contactId } });
     }
 
-    // 2. Gửi lời mời kết bạn — tái dùng nguyên vẹn attemptFriendRequest (đã có
-    //    audit trail FriendshipAttempt + mirror Friend "Đã gửi lời mời").
+    // Gửi lời mời kết bạn — tái dùng nguyên vẹn attemptFriendRequest (đã có
+    // audit trail FriendshipAttempt + mirror Friend "Đã gửi lời mời").
     const message = renderMessage(job.requestMsg, { name, phone });
     const outcome = await attemptFriendRequest({
       orgId: job.orgId, zaloAccountId: job.zaloAccountId, contactId, phone, message,
@@ -145,8 +152,71 @@ async function processJob(job: JobRow, now: Date): Promise<void> {
   }
 }
 
+// ── Nguồn: Quét nhóm (GroupMember, đã có UID sẵn, gửi thẳng không cần findUser) ──
+async function processGroupScanTarget(job: JobRow): Promise<void> {
+  const scan = await prisma.groupScan.findUnique({ where: { id: job.groupScanId ?? '' }, select: { groupIds: true } });
+  const groupIds: string[] = Array.isArray(scan?.groupIds) ? (scan!.groupIds as unknown[]).map(String) : [];
+  if (groupIds.length === 0) {
+    await prisma.targetJob.update({ where: { id: job.id }, data: { status: 'done' } });
+    logger.info(`[target-cron] job=${job.id} done (scan không còn tồn tại/rỗng)`);
+    return;
+  }
+
+  // Nick luôn là member trong nhóm của chính nó — loại trừ, không tự kết bạn với chính mình.
+  const self = await prisma.zaloAccount.findUnique({ where: { id: job.zaloAccountId }, select: { zaloUid: true } });
+
+  const done = await prisma.targetRunItem.findMany({ where: { jobId: job.id }, select: { entryId: true } });
+  const member = await prisma.groupMember.findFirst({
+    where: {
+      zaloAccountId: job.zaloAccountId,
+      groupId: { in: groupIds },
+      isFriend: false,
+      ...(self?.zaloUid ? { memberUid: { not: self.zaloUid } } : {}),
+      ...(done.length ? { id: { notIn: done.map((d) => d.entryId) } } : {}),
+    },
+    orderBy: { lastSeenAt: 'desc' },
+    select: { id: true, memberUid: true, displayName: true, zaloName: true },
+  });
+  if (!member) {
+    await prisma.targetJob.update({ where: { id: job.id }, data: { status: 'done' } });
+    logger.info(`[target-cron] job=${job.id} done (hết member chưa kết bạn trong nhóm đã quét)`);
+    return;
+  }
+
+  const name = member.displayName ?? member.zaloName ?? null;
+
+  try {
+    let contactId: string;
+    {
+      const c = await resolveOrCreateContact({
+        orgId: job.orgId, zaloAccountId: job.zaloAccountId,
+        zaloUidInNick: member.memberUid, fallbackFullName: name,
+      });
+      contactId = c.id;
+    }
+
+    const message = renderMessage(job.requestMsg, { name, phone: null });
+    const outcome = await attemptFriendRequestByUid({
+      orgId: job.orgId, zaloAccountId: job.zaloAccountId, contactId, zaloUid: member.memberUid, message,
+    });
+
+    if (outcome.ok) {
+      await recordItem(job.id, job.orgId, member.id, null, name, outcome.zaloUid, 'sent', null);
+      logger.info(`[target-cron] job=${job.id} sent → uid=${member.memberUid}`);
+    } else {
+      await recordItem(job.id, job.orgId, member.id, null, name, null, 'failed', `${outcome.errorCode}: ${outcome.errorDetail}`.slice(0, 500));
+    }
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      await recordItem(job.id, job.orgId, member.id, null, name, null, 'skipped', 'da_tung_thu_contact_nay');
+      return;
+    }
+    await recordItem(job.id, job.orgId, member.id, null, name, null, 'failed', String(err?.message ?? err).slice(0, 500));
+  }
+}
+
 async function recordItem(
-  jobId: string, orgId: string, entryId: string, phone: string, name: string | null,
+  jobId: string, orgId: string, entryId: string, phone: string | null, name: string | null,
   zaloUid: string | null, status: 'sent' | 'no_zalo' | 'failed' | 'skipped', error: string | null,
 ): Promise<void> {
   const counter = status === 'sent' ? 'sentCount' : status === 'no_zalo' ? 'noZaloCount' : status === 'failed' ? 'failedCount' : null;

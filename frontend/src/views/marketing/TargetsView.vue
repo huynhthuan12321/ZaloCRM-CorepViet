@@ -37,7 +37,11 @@
             <span class="tg-badge" :class="'b-' + job.status">{{ statusLabel(job.status) }}</span>
           </div>
           <div class="tg-meta">
-            <span><v-icon size="14">mdi-format-list-bulleted</v-icon> {{ job.list?.name ?? '—' }}
+            <span v-if="job.sourceType === 'group_scan'">
+              <v-icon size="14">mdi-account-group-outline</v-icon>
+              {{ job.groupScan ? `Nhóm đã quét (${job.groupScan.scannedGroups} nhóm, ${Math.max(0, job.groupScan.memberCount - job.groupScan.friendCount)} chưa kết bạn)` : 'Nhóm đã quét (đã xoá)' }}
+            </span>
+            <span v-else><v-icon size="14">mdi-format-list-bulleted</v-icon> {{ job.list?.name ?? '—' }}
               <template v-if="job.list"> ({{ job.list.hasZaloEntries }} có Zalo)</template></span>
             <span><v-icon size="14">mdi-account-circle-outline</v-icon> {{ job.nick?.displayName ?? job.nick?.phone ?? '—' }}</span>
             <span><v-icon size="14">mdi-counter</v-icon> Tối đa {{ job.maxTotal }} lời mời</span>
@@ -75,26 +79,44 @@
         <label class="f-label">Tên mục tiêu</label>
         <input v-model="form.name" class="f-input" placeholder="VD: Kết bạn KH tháng 7" />
 
-        <div class="f-row">
-          <div class="f-col">
-            <label class="f-label">Tệp khách hàng</label>
-            <select v-model="form.customerListId" class="f-input">
-              <option value="" disabled>— chọn tệp —</option>
-              <option v-for="l in lists" :key="l.id" :value="l.id">
-                {{ l.name }} ({{ l.hasZaloEntries }} có Zalo)
-              </option>
-            </select>
-          </div>
-          <div class="f-col">
-            <label class="f-label">Nick Zalo gửi</label>
-            <select v-model="form.zaloAccountId" class="f-input">
-              <option value="" disabled>— chọn nick —</option>
-              <option v-for="n in nicks" :key="n.id" :value="n.id">
-                {{ n.displayName || n.phone }} {{ n.status !== 'connected' ? '(mất kết nối)' : '' }}
-              </option>
-            </select>
-          </div>
+        <label class="f-label">Nick Zalo gửi</label>
+        <select v-model="form.zaloAccountId" class="f-input" @change="onNickChange">
+          <option value="" disabled>— chọn nick —</option>
+          <option v-for="n in nicks" :key="n.id" :value="n.id">
+            {{ n.displayName || n.phone }} {{ n.status !== 'connected' ? '(mất kết nối)' : '' }}
+          </option>
+        </select>
+
+        <label class="f-label">Nguồn target</label>
+        <div class="f-tabs">
+          <button type="button" class="f-tab" :class="{ on: form.sourceType === 'customer_list' }" @click="form.sourceType = 'customer_list'">Tệp khách hàng</button>
+          <button type="button" class="f-tab" :class="{ on: form.sourceType === 'group_scan' }" @click="onSelectGroupScanMode">Nhóm đã quét</button>
         </div>
+
+        <template v-if="form.sourceType === 'customer_list'">
+          <label class="f-label" style="margin-top:10px">Tệp khách hàng</label>
+          <select v-model="form.customerListId" class="f-input">
+            <option value="" disabled>— chọn tệp —</option>
+            <option v-for="l in lists" :key="l.id" :value="l.id">
+              {{ l.name }} ({{ l.hasZaloEntries }} có Zalo)
+            </option>
+          </select>
+        </template>
+        <template v-else>
+          <label class="f-label" style="margin-top:10px">Scan đã quét <span class="f-hint">— chỉ scan của nick đang chọn</span></label>
+          <div v-if="!form.zaloAccountId" class="tg-empty" style="padding:12px 0">Chọn nick trước đã.</div>
+          <div v-else-if="groupScansLoading" class="tg-empty" style="padding:12px 0">Đang tải…</div>
+          <div v-else-if="groupScans.length === 0" class="tg-empty" style="padding:12px 0">
+            Nick này chưa có scan nào (Quét nhóm → chọn nhóm → quét).
+          </div>
+          <select v-else v-model="form.groupScanId" class="f-input">
+            <option value="" disabled>— chọn scan —</option>
+            <option v-for="s in groupScans" :key="s.id" :value="s.id">
+              {{ s.groupNames.length ? s.groupNames.join(', ') : s.scannedGroups + ' nhóm' }}
+              — {{ s.notFriendCount }} chưa kết bạn ({{ fmtDate(s.createdAt) }})
+            </option>
+          </select>
+        </template>
 
         <label class="f-label">Lời nhắn kèm lời mời kết bạn <span class="f-hint">— biến: <code v-pre>{{ten}}</code> tên khách, <code v-pre>{{sdt}}</code> SĐT</span></label>
         <textarea v-model="form.requestMsg" class="f-input" rows="3"
@@ -164,22 +186,30 @@ const { push: toast } = useToast();
 const { confirm } = useConfirm();
 
 interface JobRow {
-  id: string; name: string; status: string; requestMsg: string;
+  id: string; name: string; status: string; requestMsg: string; sourceType: 'customer_list' | 'group_scan';
   maxTotal: number; sentCount: number; noZaloCount: number; failedCount: number;
   list: { id: string; name: string; hasZaloEntries: number } | null;
+  groupScan: { id: string; scannedGroups: number; memberCount: number; friendCount: number } | null;
   nick: { id: string; displayName: string | null; phone: string | null; status: string } | null;
+}
+interface GroupScanOption {
+  id: string; scannedGroups: number; memberCount: number; friendCount: number;
+  notFriendCount: number; createdAt: string; groupNames: string[];
 }
 
 const jobs = ref<JobRow[]>([]);
 const lists = ref<Array<{ id: string; name: string; hasZaloEntries: number }>>([]);
 const nicks = ref<Array<{ id: string; displayName: string | null; phone: string | null; status: string }>>([]);
+const groupScans = ref<GroupScanOption[]>([]);
+const groupScansLoading = ref(false);
 const loading = ref(true);
 const showCreate = ref(false);
 const creating = ref(false);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const form = reactive({
-  name: '', customerListId: '', zaloAccountId: '', requestMsg: '',
+  name: '', sourceType: 'customer_list' as 'customer_list' | 'group_scan',
+  customerListId: '', groupScanId: '', zaloAccountId: '', requestMsg: '',
   maxTotal: 200, delaySecMin: 60, delaySecMax: 180,
 });
 
@@ -213,21 +243,45 @@ async function openCreate(): Promise<void> {
   }
 }
 
+async function onNickChange(): Promise<void> {
+  groupScans.value = [];
+  form.groupScanId = '';
+  if (form.sourceType === 'group_scan' && form.zaloAccountId) await loadGroupScans();
+}
+
+async function onSelectGroupScanMode(): Promise<void> {
+  form.sourceType = 'group_scan';
+  if (form.zaloAccountId && groupScans.value.length === 0) await loadGroupScans();
+}
+
+async function loadGroupScans(): Promise<void> {
+  groupScansLoading.value = true;
+  try {
+    const res = await api.get(`/target-jobs/group-scans/${form.zaloAccountId}`);
+    groupScans.value = res.data.scans;
+  } finally {
+    groupScansLoading.value = false;
+  }
+}
+
 async function createJob(): Promise<void> {
   if (!form.name.trim()) return void toast('Nhập tên mục tiêu', 'error');
-  if (!form.customerListId) return void toast('Chọn tệp khách hàng', 'error');
   if (!form.zaloAccountId) return void toast('Chọn nick Zalo gửi', 'error');
+  if (form.sourceType === 'customer_list' && !form.customerListId) return void toast('Chọn tệp khách hàng', 'error');
+  if (form.sourceType === 'group_scan' && !form.groupScanId) return void toast('Chọn scan đã quét', 'error');
 
   creating.value = true;
   try {
     await api.post('/target-jobs', {
-      name: form.name, customerListId: form.customerListId, zaloAccountId: form.zaloAccountId,
+      name: form.name, sourceType: form.sourceType, zaloAccountId: form.zaloAccountId,
+      customerListId: form.sourceType === 'customer_list' ? form.customerListId : undefined,
+      groupScanId: form.sourceType === 'group_scan' ? form.groupScanId : undefined,
       requestMsg: form.requestMsg || undefined,
       maxTotal: form.maxTotal, delaySecMin: form.delaySecMin, delaySecMax: form.delaySecMax,
     });
     toast('Đã tạo mục tiêu', 'success');
     showCreate.value = false;
-    Object.assign(form, { name: '', requestMsg: '' });
+    Object.assign(form, { name: '', requestMsg: '', sourceType: 'customer_list', groupScanId: '' });
     await load();
   } catch (err: any) {
     toast(`Lỗi: ${err?.response?.data?.error ?? 'không tạo được'}`, 'error');
@@ -316,6 +370,9 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 .f-input { width: 100%; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 7px 10px; font-size: 13.5px; background: var(--surface, #fff); color: inherit; }
 .f-row { display: flex; gap: 10px; }
 .f-col { flex: 1; min-width: 0; }
+.f-tabs { display: flex; gap: 6px; }
+.f-tab { border: 1px solid var(--border, #d5d4d8); background: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.f-tab.on { background: #0e445a; color: #fff; border-color: #0e445a; }
 .f-adv { margin-top: 12px; font-size: 13px; }
 .f-adv summary { cursor: pointer; font-weight: 600; }
 .tg-table { width: 100%; border-collapse: collapse; font-size: 13px; }

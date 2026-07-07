@@ -4173,12 +4173,18 @@ model BroadcastRunItem {
 // ═══════════════════════════════════════════════════════════════════════════
 
 model TargetJob {
-  id             String @id @default(uuid())
-  orgId          String @map("org_id")
-  createdById    String @map("created_by_id")
-  name           String
-  customerListId String @map("customer_list_id") // tệp KH nguồn target
-  zaloAccountId  String @map("zalo_account_id") // nick gửi lời mời
+  id          String @id @default(uuid())
+  orgId       String @map("org_id")
+  createdById String @map("created_by_id")
+  name        String
+
+  // Nguồn target: 'customer_list' → customerListId (SĐT, cần findUser); 'group_scan' →
+  // groupScanId (GroupMember đã có UID sẵn từ Quét nhóm, không cần findUser). zaloAccountId
+  // gửi lời mời — khi group_scan, PHẢI trùng với zaloAccountId đã quét ra scan đó.
+  sourceType     String  @default("customer_list") @map("source_type") // 'customer_list' | 'group_scan'
+  customerListId String? @map("customer_list_id")
+  groupScanId    String? @map("group_scan_id")
+  zaloAccountId  String  @map("zalo_account_id") // nick gửi lời mời
 
   requestMsg String @map("request_msg") @db.Text // lời nhắn kèm lời mời kết bạn
 
@@ -4211,7 +4217,7 @@ model TargetRunItem {
   job   TargetJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   orgId String    @map("org_id")
 
-  entryId String  @map("entry_id") // CustomerListEntry.id
+  entryId String  @map("entry_id") // CustomerListEntry.id (customer_list) hoặc GroupMember.id (group_scan)
   phone   String?
   name    String?
   zaloUid String? @map("zalo_uid")

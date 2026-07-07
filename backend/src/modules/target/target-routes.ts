@@ -4,12 +4,13 @@
  * target-routes.ts — Mục tiêu (auto kết bạn): CRUD job + log.
  *
  * Endpoints:
- *   GET    /api/v1/target-jobs             — danh sách job (org scope)
- *   POST   /api/v1/target-jobs             — tạo job (chạy ngay, liên tục tới khi xong)
- *   GET    /api/v1/target-jobs/:id         — chi tiết
- *   PATCH  /api/v1/target-jobs/:id         — sửa / pause / resume
- *   DELETE /api/v1/target-jobs/:id         — xoá (cascade log)
- *   GET    /api/v1/target-jobs/:id/items   — log từng đối tượng
+ *   GET    /api/v1/target-jobs                         — danh sách job (org scope)
+ *   POST   /api/v1/target-jobs                         — tạo job (chạy ngay, liên tục tới khi xong)
+ *   GET    /api/v1/target-jobs/:id                     — chi tiết
+ *   PATCH  /api/v1/target-jobs/:id                     — sửa / pause / resume
+ *   DELETE /api/v1/target-jobs/:id                     — xoá (cascade log)
+ *   GET    /api/v1/target-jobs/:id/items                — log từng đối tượng
+ *   GET    /api/v1/target-jobs/group-scans/:accountId   — scan khả dụng làm nguồn target
  */
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
@@ -19,7 +20,9 @@ import { DEFAULT_REQUEST_MESSAGE } from '../campaign/campaign-service.js';
 
 interface JobBody {
   name?: string;
+  sourceType?: 'customer_list' | 'group_scan';
   customerListId?: string;
+  groupScanId?: string;
   zaloAccountId?: string;
   requestMsg?: string;
   maxTotal?: number;
@@ -49,24 +52,66 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
       where: { orgId: user.orgId },
       orderBy: { createdAt: 'desc' },
     });
-    const [lists, nicks] = await Promise.all([
+    const [lists, nicks, scans] = await Promise.all([
       prisma.customerList.findMany({
-        where: { id: { in: [...new Set(jobs.map((j) => j.customerListId))] } },
+        where: { id: { in: [...new Set(jobs.map((j) => j.customerListId).filter((x): x is string => !!x))] } },
         select: { id: true, name: true, hasZaloEntries: true },
       }),
       prisma.zaloAccount.findMany({
         where: { id: { in: [...new Set(jobs.map((j) => j.zaloAccountId))] } },
         select: { id: true, displayName: true, phone: true, status: true },
       }),
+      prisma.groupScan.findMany({
+        where: { id: { in: [...new Set(jobs.map((j) => j.groupScanId).filter((x): x is string => !!x))] } },
+        select: { id: true, scannedGroups: true, memberCount: true, friendCount: true, createdAt: true },
+      }),
     ]);
     const listMap = new Map(lists.map((l) => [l.id, l]));
     const nickMap = new Map(nicks.map((n) => [n.id, n]));
+    const scanMap = new Map(scans.map((s) => [s.id, s]));
     return {
       jobs: jobs.map((j) => ({
         ...j,
-        list: listMap.get(j.customerListId) ?? null,
+        list: j.customerListId ? listMap.get(j.customerListId) ?? null : null,
+        groupScan: j.groupScanId ? scanMap.get(j.groupScanId) ?? null : null,
         nick: nickMap.get(j.zaloAccountId) ?? null,
       })),
+    };
+  });
+
+  // ── GET /target-jobs/group-scans/:accountId — scan khả dụng cho nick này ──
+  app.get<{ Params: { accountId: string } }>('/api/v1/target-jobs/group-scans/:accountId', async (request, reply) => {
+    const user = request.user!;
+    const nick = await prisma.zaloAccount.findFirst({ where: { id: request.params.accountId, orgId: user.orgId }, select: { id: true } });
+    if (!nick) return reply.status(400).send({ error: 'zaloAccount_not_found' });
+
+    const scans = await prisma.groupScan.findMany({
+      where: { zaloAccountId: nick.id, orgId: user.orgId, state: { in: ['completed', 'partial'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { id: true, scannedGroups: true, memberCount: true, friendCount: true, createdAt: true, groupIds: true },
+    });
+
+    // Gắn tên nhóm (tối đa 3 nhóm đầu, đủ để hiển thị gợi nhớ) qua Conversation.groupName.
+    const allGroupIds = [...new Set(scans.flatMap((s) => (Array.isArray(s.groupIds) ? (s.groupIds as unknown[]).map(String) : []).slice(0, 3)))];
+    const convos = allGroupIds.length
+      ? await prisma.conversation.findMany({
+          where: { zaloAccountId: nick.id, externalThreadId: { in: allGroupIds }, threadType: 'group' },
+          select: { externalThreadId: true, groupName: true },
+        })
+      : [];
+    const nameMap = new Map(convos.map((c) => [c.externalThreadId, c.groupName]));
+
+    return {
+      scans: scans.map((s) => {
+        const ids = Array.isArray(s.groupIds) ? (s.groupIds as unknown[]).map(String) : [];
+        const names = ids.slice(0, 3).map((gid) => nameMap.get(gid) || null).filter(Boolean);
+        return {
+          id: s.id, scannedGroups: s.scannedGroups, memberCount: s.memberCount,
+          friendCount: s.friendCount, notFriendCount: Math.max(0, s.memberCount - s.friendCount),
+          createdAt: s.createdAt, groupNames: names,
+        };
+      }),
     };
   });
 
@@ -75,22 +120,39 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
     if (!requireTargetAdmin(request, reply)) return;
     const user = request.user!;
     const b = request.body ?? {};
+    const sourceType = b.sourceType === 'group_scan' ? 'group_scan' : 'customer_list';
 
     if (!b.name?.trim()) return reply.status(400).send({ error: 'name_required' });
 
-    const [list, nick] = await Promise.all([
-      prisma.customerList.findFirst({ where: { id: b.customerListId ?? '', orgId: user.orgId }, select: { id: true } }),
-      prisma.zaloAccount.findFirst({ where: { id: b.zaloAccountId ?? '', orgId: user.orgId }, select: { id: true } }),
-    ]);
-    if (!list) return reply.status(400).send({ error: 'customerList_not_found' });
+    const nick = await prisma.zaloAccount.findFirst({ where: { id: b.zaloAccountId ?? '', orgId: user.orgId }, select: { id: true } });
     if (!nick) return reply.status(400).send({ error: 'zaloAccount_not_found' });
+
+    let customerListId: string | null = null;
+    let groupScanId: string | null = null;
+
+    if (sourceType === 'customer_list') {
+      const list = await prisma.customerList.findFirst({ where: { id: b.customerListId ?? '', orgId: user.orgId }, select: { id: true } });
+      if (!list) return reply.status(400).send({ error: 'customerList_not_found' });
+      customerListId = list.id;
+    } else {
+      const scan = await prisma.groupScan.findFirst({
+        where: { id: b.groupScanId ?? '', orgId: user.orgId },
+        select: { id: true, zaloAccountId: true, state: true },
+      });
+      if (!scan) return reply.status(400).send({ error: 'groupScan_not_found' });
+      if (scan.zaloAccountId !== nick.id) return reply.status(400).send({ error: 'groupScan_nick_mismatch', hint: 'Nick gửi phải trùng nick đã quét nhóm' });
+      if (scan.state !== 'completed' && scan.state !== 'partial') return reply.status(400).send({ error: 'groupScan_not_ready' });
+      groupScanId = scan.id;
+    }
 
     const job = await prisma.targetJob.create({
       data: {
         orgId: user.orgId,
         createdById: user.id,
         name: b.name.trim(),
-        customerListId: list.id,
+        sourceType,
+        customerListId,
+        groupScanId,
         zaloAccountId: nick.id,
         requestMsg: b.requestMsg?.trim() || DEFAULT_REQUEST_MESSAGE,
         maxTotal: Math.min(2000, Math.max(1, b.maxTotal ?? 200)),
@@ -98,7 +160,7 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
         delaySecMax: Math.max(10, b.delaySecMax ?? 180),
       },
     });
-    logger.info(`[target] job created id=${job.id} by=${user.id}`);
+    logger.info(`[target] job created id=${job.id} by=${user.id} source=${sourceType}`);
     return reply.status(201).send({ job });
   });
 

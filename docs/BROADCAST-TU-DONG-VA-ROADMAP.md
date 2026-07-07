@@ -11,9 +11,10 @@
 | 2 | [`c3b9880`](https://github.com/huynhthuan12321/ZaloCRM-CorepViet/commit/c3b9880) | RBAC + khung giờ 8h-21h + chọn ảnh Kho media + báo cáo thống kê | ✅ Đã deploy, test aggregation + time-window thành công (06/07/2026) |
 | 3 | _(chưa commit)_ | Mục 3.1 roadmap — **Khối nội dung (Content Block)** + xoay vòng (spin content) trong Broadcast | ✅ Đã deploy lên server, test CRUD + tích hợp (07/07/2026). Test gửi thật xoay vòng cần chờ khung giờ 8h-21h |
 | 4 | _(chưa commit)_ | Mục 3.2 roadmap — **Mục tiêu (auto kết bạn)** — model `TargetJob`/`TargetRunItem` mới, tái dùng `campaign-service.ts` có sẵn (trước đó là dead code, route không đăng ký) | ✅ Đã deploy lên server, **test gửi thật thành công** (07/07/2026, trong khung giờ 8h-21h) |
+| 5 | _(chưa commit)_ | Mục tiêu — thêm nguồn target **Quét nhóm** (GroupMember) + `attemptFriendRequestByUid` (gửi thẳng bằng UID, không cần findUser SĐT) | ✅ Đã deploy, **test gửi thật thành công tới người lạ** (07/07/2026) — phát hiện + sửa 1 bug thật (tự kết bạn với chính mình) |
 
 Repo: [huynhthuan12321/ZaloCRM-CorepViet](https://github.com/huynhthuan12321/ZaloCRM-CorepViet), nhánh `main`.
-Server: `/opt/ZaloCRM-CorepViet` (Docker Compose) — khớp 100% với vòng 4 (chưa push code vòng 3+4 lên GitHub).
+Server: `/opt/ZaloCRM-CorepViet` (Docker Compose) — khớp 100% với vòng 5 (chưa push code vòng 3+4+5 lên GitHub).
 
 > **Kiểm tra chéo toàn bộ ZaloCRM (07/07/2026):** đã audit trực tiếp code (không suy đoán) để xác nhận
 > tính năng nào thật sự có/thiếu trong bản Community. Xem mục **1b** bên dưới — phát hiện quan trọng:
@@ -233,12 +234,48 @@ từ đầu, để giữ đúng audit trail `FriendshipAttempt` + mirror `Friend
   chưa kết bạn — không có sẵn số test phù hợp).
 - Đã dọn dữ liệu test.
 
-### Còn thiếu (fast-follow)
-- Nguồn target từ **Quét nhóm** (GroupMember) — hiện chỉ hỗ trợ Tệp khách hàng. GroupMember
-  có UID trực tiếp (không cần `findUser` qua SĐT) nhưng không phải Contact, cần thêm bước
-  convert/link Contact riêng — việc nhỏ tiếp theo nếu cần.
+### Còn thiếu (fast-follow) — ĐÃ XONG 2/2 (07/07/2026, xem mục 2e)
+- [x] Nguồn target từ **Quét nhóm** (GroupMember)
+- [x] Test nhánh "gửi thành công" thực tế
 - Không thấy nghẽn nào ở phần "chạy TRƯỚC Broadcast" — chỉ là gợi ý vận hành (đặt trước
   Broadcast trong menu để nhắc thứ tự), không có ràng buộc kỹ thuật giữa 2 tính năng.
+
+---
+
+## 2e. Mở rộng Mục tiêu: nguồn Quét nhóm + test gửi thành công thật (07/07/2026)
+
+### Nguồn target thứ 2: Quét nhóm (GroupMember)
+`TargetJob.sourceType`: `'customer_list'` (như cũ, cần `findUser` qua SĐT) hoặc
+`'group_scan'` — nguồn mới, dùng kết quả **Quét nhóm** (`GroupScan`/`GroupMember`).
+Khác biệt quan trọng: `GroupMember` đã có sẵn `memberUid` (từ lúc quét), **không cần
+`findUser`** — gửi thẳng lời mời. Thêm hàm mới `attemptFriendRequestByUid()` (nửa sau
+của `attemptFriendRequest`, bỏ bước discovery) trong `campaign-service.ts`.
+
+| File | Vai trò |
+|---|---|
+| `backend/prisma/migrations/20260707020000_target_group_scan_source/migration.sql` | Thêm `source_type`, `group_scan_id`; `customer_list_id` thành optional |
+| `backend/src/modules/campaign/campaign-service.ts` | `attemptFriendRequestByUid()` — gửi thẳng bằng UID có sẵn |
+| `backend/src/modules/target/target-cron.ts` | Tách `processCustomerListTarget()` / `processGroupScanTarget()` theo `sourceType` |
+| `backend/src/modules/target/target-routes.ts` | Validate nguồn (nick gửi phải trùng nick đã quét); endpoint mới `GET /target-jobs/group-scans/:accountId` liệt kê scan khả dụng (kèm tên nhóm qua join `Conversation.groupName`) |
+| `frontend/src/views/marketing/TargetsView.vue` | Tab chọn nguồn "Tệp khách hàng" / "Nhóm đã quét", dropdown scan hiện tên nhóm + số chưa kết bạn |
+
+### Bug thật phát hiện + sửa khi test
+`GroupMember` roster của 1 nhóm **luôn bao gồm chính nick đang quét** (nick là member
+của group của chính nó). Query đầu tiên không loại trừ → `resolveOrCreateContact` tạo
+**Contact trùng tên chính nick** ("Huỳnh Thuận Cờ Rếp Việt"), rồi `sendFriendRequest`
+tới UID của chính mình → Zalo trả lỗi hợp lệ "User không hợp lệ". Sửa: query loại trừ
+`memberUid = self.zaloUid` (lấy từ `ZaloAccount.zaloUid`) trước khi chọn target. Đã dọn
+Contact/FriendshipAttempt lỗi bằng SQL trực tiếp trước khi deploy lại.
+
+### Test đã chạy (07/07/2026, trong khung giờ 8h-21h)
+- 2 scan có sẵn trên server (227 và 13 member chưa kết bạn) — endpoint liệt kê scan hoạt động đúng.
+- Lần test đầu: dính bug tự kết bạn với chính mình (xem trên) → sửa → deploy lại.
+- Lần test 2: tạo job `sourceType=group_scan`, `maxTotal=1` → cron tick → **gửi lời mời kết bạn
+  thật thành công tới người lạ thật** ("Đào Văn Mong", UID thật) — `sentCount:1`, không lỗi.
+  **Đây là bằng chứng đầu tiên xác nhận nhánh "sent" (gửi thành công) hoạt động đúng**
+  (trước đó chỉ test được nhánh lỗi "đã là bạn bè" vì không có số lạ phù hợp).
+- Đã xoá `TargetJob` test, **giữ nguyên** `Contact`/`FriendshipAttempt`/lời mời đã gửi vì đây
+  là dữ liệu CRM thật (không phải rác test) — sales có thể theo dõi tiếp trong Friends/Contact.
 
 ---
 
