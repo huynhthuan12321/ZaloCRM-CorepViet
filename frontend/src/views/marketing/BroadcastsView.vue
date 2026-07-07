@@ -36,7 +36,10 @@
             <span class="bc-badge" :class="'b-' + job.status">{{ statusLabel(job.status) }}</span>
           </div>
           <div class="bc-meta">
-            <span><v-icon size="14">mdi-format-list-bulleted</v-icon> {{ job.list?.name ?? '—' }}
+            <span v-if="job.sourceType === 'friends'">
+              <v-icon size="14">mdi-account-heart-outline</v-icon> Bạn bè đã kết bạn của nick
+            </span>
+            <span v-else><v-icon size="14">mdi-format-list-bulleted</v-icon> {{ job.list?.name ?? 'Tệp đã xoá' }}
               <template v-if="job.list"> ({{ job.list.hasZaloEntries }} có Zalo)</template></span>
             <span><v-icon size="14">mdi-account-circle-outline</v-icon> {{ job.nick?.displayName ?? job.nick?.phone ?? '—' }}</span>
             <span><v-icon size="14">mdi-clock-outline</v-icon> {{ scheduleLabel(job) }}</span>
@@ -85,26 +88,48 @@
         <label class="f-label">Tên broadcast</label>
         <input v-model="form.name" class="f-input" placeholder="VD: Khuyến mãi tháng 7" />
 
-        <div class="f-row">
-          <div class="f-col">
-            <label class="f-label">Tệp khách hàng</label>
-            <select v-model="form.customerListId" class="f-input">
-              <option value="" disabled>— chọn tệp —</option>
-              <option v-for="l in lists" :key="l.id" :value="l.id">
-                {{ l.name }} ({{ l.hasZaloEntries }} có Zalo)
-              </option>
-            </select>
-          </div>
-          <div class="f-col">
-            <label class="f-label">Nick Zalo gửi</label>
-            <select v-model="form.zaloAccountId" class="f-input">
-              <option value="" disabled>— chọn nick —</option>
-              <option v-for="n in nicks" :key="n.id" :value="n.id">
-                {{ n.displayName || n.phone }} {{ n.status !== 'connected' ? '(mất kết nối)' : '' }}
-              </option>
-            </select>
-          </div>
+        <label class="f-label">Nick Zalo gửi</label>
+        <select v-model="form.zaloAccountId" class="f-input" @change="onNickChange">
+          <option value="" disabled>— chọn nick —</option>
+          <option v-for="n in nicks" :key="n.id" :value="n.id">
+            {{ n.displayName || n.phone }} {{ n.status !== 'connected' ? '(mất kết nối)' : '' }}
+          </option>
+        </select>
+
+        <label class="f-label">Người nhận</label>
+        <div class="f-tabs">
+          <button type="button" class="f-tab" :class="{ on: form.sourceType === 'friends' }" @click="form.sourceType = 'friends'">
+            <v-icon size="14">mdi-account-heart-outline</v-icon> Bạn bè đã kết bạn
+          </button>
+          <button type="button" class="f-tab" :class="{ on: form.sourceType === 'customer_list' }" @click="form.sourceType = 'customer_list'">
+            <v-icon size="14">mdi-format-list-bulleted</v-icon> Tệp khách hàng
+          </button>
         </div>
+
+        <template v-if="form.sourceType === 'friends'">
+          <div class="f-note" style="margin-top:8px">
+            <v-icon size="15">mdi-shield-check-outline</v-icon>
+            Gửi tới <b>toàn bộ bạn bè đã kết bạn</b> của nick đang chọn — tin vào thẳng hộp chat, an toàn hơn.
+            <template v-if="form.zaloAccountId">
+              <b>{{ friendCount === null ? '…' : friendCount.toLocaleString('vi-VN') }}</b> bạn bè.
+            </template>
+            <template v-else>Chọn nick để xem số bạn bè.</template>
+          </div>
+        </template>
+        <template v-else>
+          <label class="f-label" style="margin-top:8px">Tệp khách hàng</label>
+          <select v-model="form.customerListId" class="f-input">
+            <option value="" disabled>— chọn tệp —</option>
+            <option v-for="l in lists" :key="l.id" :value="l.id">
+              {{ l.name }} ({{ l.hasZaloEntries }} có Zalo)
+            </option>
+          </select>
+          <div class="f-note warn" style="margin-top:6px">
+            <v-icon size="15">mdi-alert-outline</v-icon>
+            Tệp SĐT có thể gồm <b>người chưa kết bạn</b> — tin dễ rơi vào hộp "người lạ" hoặc bị chặn.
+            Nên chạy <RouterLink to="/marketing/targets">Mục tiêu</RouterLink> kết bạn trước, hoặc dùng nguồn Bạn bè.
+          </div>
+        </template>
 
         <label class="f-label">Nội dung</label>
         <div class="f-tabs">
@@ -260,6 +285,7 @@ const { confirm } = useConfirm();
 
 interface JobRow {
   id: string; name: string; status: string; messageText: string; imageUrl: string | null;
+  sourceType: 'customer_list' | 'friends';
   scheduleType: 'once' | 'daily' | 'weekly'; scheduledAt: string | null;
   timeOfDay: string | null; daysOfWeek: number[]; nextRunAt: string | null;
   list: { id: string; name: string; hasZaloEntries: number } | null;
@@ -291,12 +317,24 @@ const dowOptions = [
 ];
 
 const form = reactive({
-  name: '', customerListId: '', zaloAccountId: '', messageText: '', imageUrl: '',
+  name: '', sourceType: 'friends' as 'customer_list' | 'friends',
+  customerListId: '', zaloAccountId: '', messageText: '', imageUrl: '',
   contentMode: 'text' as 'text' | 'blocks', contentBlockIds: [] as string[],
   scheduleType: 'once' as 'once' | 'daily' | 'weekly',
   scheduledAtLocal: '', timeOfDay: '08:00', daysOfWeek: [] as number[],
   maxPerRun: 50, delaySecMin: 30, delaySecMax: 90,
 });
+
+const friendCount = ref<number | null>(null);
+
+async function onNickChange(): Promise<void> {
+  friendCount.value = null;
+  if (!form.zaloAccountId) return;
+  try {
+    const res = await api.get(`/broadcast-jobs/friend-count/${form.zaloAccountId}`);
+    friendCount.value = res.data.count;
+  } catch { friendCount.value = 0; }
+}
 
 const itemsModal = reactive({
   open: false, jobName: '',
@@ -367,8 +405,9 @@ function toggleDow(d: number): void {
 
 async function createJob(): Promise<void> {
   if (!form.name.trim()) return void toast('Nhập tên broadcast', 'error');
-  if (!form.customerListId) return void toast('Chọn tệp khách hàng', 'error');
   if (!form.zaloAccountId) return void toast('Chọn nick Zalo gửi', 'error');
+  if (form.sourceType === 'customer_list' && !form.customerListId) return void toast('Chọn tệp khách hàng', 'error');
+  if (form.sourceType === 'friends' && !friendCount.value) return void toast('Nick này chưa có bạn bè đã kết bạn', 'error');
   if (form.contentMode === 'text' && !form.messageText.trim()) return void toast('Nhập nội dung tin', 'error');
   if (form.contentMode === 'blocks' && form.contentBlockIds.length === 0) return void toast('Chọn ít nhất 1 khối nội dung', 'error');
   if (form.scheduleType === 'once' && !form.scheduledAtLocal) return void toast('Chọn ngày giờ gửi', 'error');
@@ -377,7 +416,8 @@ async function createJob(): Promise<void> {
   creating.value = true;
   try {
     await api.post('/broadcast-jobs', {
-      name: form.name, customerListId: form.customerListId, zaloAccountId: form.zaloAccountId,
+      name: form.name, sourceType: form.sourceType, zaloAccountId: form.zaloAccountId,
+      customerListId: form.sourceType === 'customer_list' ? form.customerListId : undefined,
       messageText: form.contentMode === 'text' ? form.messageText : '',
       imageUrl: form.contentMode === 'text' ? form.imageUrl || null : null,
       contentBlockIds: form.contentMode === 'blocks' ? form.contentBlockIds : [],
@@ -389,7 +429,8 @@ async function createJob(): Promise<void> {
     });
     toast('Đã tạo broadcast', 'success');
     showCreate.value = false;
-    Object.assign(form, { name: '', messageText: '', imageUrl: '', contentMode: 'text', contentBlockIds: [], scheduledAtLocal: '', daysOfWeek: [] });
+    Object.assign(form, { name: '', sourceType: 'friends', customerListId: '', messageText: '', imageUrl: '', contentMode: 'text', contentBlockIds: [], scheduledAtLocal: '', daysOfWeek: [] });
+    friendCount.value = null;
     await load();
   } catch (err: any) {
     toast(`Lỗi: ${err?.response?.data?.error ?? 'không tạo được'}`, 'error');
@@ -406,7 +447,7 @@ async function setStatus(job: JobRow, status: 'active' | 'paused'): Promise<void
 async function runNow(job: JobRow): Promise<void> {
   if (!(await confirm({
     title: 'Chạy ngay?',
-    message: `Gửi broadcast "${job.name}" tới tệp "${job.list?.name}" ngay bây giờ (worker bắt đầu trong ~30 giây).`,
+    message: `Gửi broadcast "${job.name}" tới ${job.sourceType === 'friends' ? 'bạn bè đã kết bạn của nick' : `tệp "${job.list?.name}"`} ngay bây giờ (worker bắt đầu trong ~30 giây).`,
     confirmText: 'Chạy ngay',
   }))) return;
   await api.post(`/broadcast-jobs/${job.id}/run-now`);
@@ -492,36 +533,6 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 .bc-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .f-label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 4px; }
 .f-hint { font-weight: 400; color: var(--text-secondary, #888); }
-.f-input { width: 100%; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 7px 10px; font-size: 13.5px; background: var(--surface, #fff); color: inherit; }
-.f-row { display: flex; gap: 10px; }
-.f-col { flex: 1; min-width: 0; }
-.f-grow { flex: 2; }
-.f-tabs { display: flex; gap: 6px; }
-.f-tab { border: 1px solid var(--border, #d5d4d8); background: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-.f-tab.on { background: #0e445a; color: #fff; border-color: #0e445a; }
-.f-dows { display: flex; gap: 4px; flex-wrap: wrap; }
-.f-dow { border: 1px solid var(--border, #d5d4d8); background: none; border-radius: 6px; padding: 5px 9px; font-size: 12.5px; cursor: pointer; }
-.f-dow.on { background: #0e445a; color: #fff; border-color: #0e445a; }
-.f-adv { margin-top: 12px; font-size: 13px; }
-.f-adv summary { cursor: pointer; font-weight: 600; }
-.bc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.bc-table th, .bc-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #eee); }
-.err { color: #a12318; font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.f-image-row { display: flex; align-items: center; gap: 10px; }
-.f-image-preview { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border, #d5d4d8); flex-shrink: 0; }
-.f-image-actions { display: flex; gap: 6px; }
-.f-media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; max-height: 60vh; overflow: auto; }
-.f-media-item { border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 0; cursor: pointer; overflow: hidden; aspect-ratio: 1; background: none; }
-.f-media-item:hover { border-color: #0e445a; }
-.f-media-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-.f-block-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow: auto; }
-.f-block-item { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
-.f-block-item:hover { border-color: #0e445a; }
-.f-block-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
-.f-block-info { min-width: 0; flex: 1; }
-.f-block-name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-.f-block-order { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: #0e445a; color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0; }
-.f-block-text { font-size: 12px; color: var(--text-secondary, #888); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-</style>
+.f-note { font-size: 12.5px; line-height: 1.5; color: var(--text-secondary, #555); background: #f0f7f3; border: 1px solid #d3e8dd; border-radius: 8px; padding: 8px 10px; }
+.f-note.warn { background: #fdf6e3; border-color: #f0e2b8; }
+.f-input

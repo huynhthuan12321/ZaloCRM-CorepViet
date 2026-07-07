@@ -110,38 +110,30 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
     return;
   }
 
-  // Người nhận kế tiếp: entry có Zalo, chưa xử lý trong run này
+  // Người nhận kế tiếp — tuỳ nguồn (tệp KH SĐT hoặc bạn bè đã kết bạn của nick)
   const done = await prisma.broadcastRunItem.findMany({
     where: { runId: run.id }, select: { entryId: true },
   });
-  const entry = await prisma.customerListEntry.findFirst({
-    where: {
-      customerListId: job.customerListId,
-      hasZalo: true,
-      ...(done.length ? { id: { notIn: done.map((d) => d.entryId) } } : {}),
-    },
-    orderBy: { rowIndex: 'asc' },
-    select: { id: true, phoneLocal: true, phoneE164: true, nameRaw: true, zaloName: true, zaloUid: true, resolvedByNickId: true },
-  });
-  if (!entry) {
+  const doneIds = done.map((d) => d.entryId);
+
+  const recipient = job.sourceType === 'friends'
+    ? await pickFriendRecipient(job, doneIds)
+    : await pickListRecipient(job, doneIds);
+  if (!recipient) {
     await finishRun(run.id, job, 'done');
     return;
   }
-
-  const phone = entry.phoneLocal ?? entry.phoneE164 ?? '';
-  const name = entry.zaloName ?? entry.nameRaw ?? null;
+  const { entryId, phone, name } = recipient;
 
   try {
     // 1. Resolve UID theo nick gửi (UID Zalo là per-nick)
-    let uid: string | null = null;
-    if (entry.resolvedByNickId === job.zaloAccountId && entry.zaloUid) {
-      uid = entry.zaloUid;
-    } else {
+    let uid: string | null = recipient.uid;
+    if (!uid && phone) {
       const user = await zaloOps.findUser(job.zaloAccountId, phone);
       uid = (user as any)?.uid ?? null;
     }
     if (!uid) {
-      await recordItem(run, entry.id, phone, name, null, 'skipped', 'khong_tim_thay_uid');
+      await recordItem(run, entryId, phone ?? '', name, null, 'skipped', 'khong_tim_thay_uid');
       return;
     }
 
@@ -161,27 +153,73 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
     } else {
       await zaloOps.sendMessage(job.zaloAccountId, uid, 0, { msg: text }, io);
     }
-    await recordItem(run, entry.id, phone, name, uid, 'sent', null);
+    await recordItem(run, entryId, phone ?? '', name, uid, 'sent', null);
     if (content.blockId) {
       await prisma.contentBlock.update({ where: { id: content.blockId }, data: { usageCount: { increment: 1 } } }).catch(() => {});
     }
-    logger.info(`[broadcast-cron] run=${run.id} sent → ${phone}`);
+    logger.info(`[broadcast-cron] run=${run.id} sent → ${phone ?? uid}`);
   } catch (err: any) {
     if (err instanceof ZaloOpError && (err.code === 'RATE_LIMITED' || err.code === 'NOT_CONNECTED')) {
       // Nick chạm trần hoặc mất kết nối — KHÔNG tính fail cho khách, chờ tick sau
       logger.warn(`[broadcast-cron] run=${run.id} paused by nick: ${err.code}`);
       return;
     }
-    await recordItem(run, entry.id, phone, name, null, 'failed', String(err?.message ?? err).slice(0, 500));
+    await recordItem(run, entryId, phone ?? '', name, null, 'failed', String(err?.message ?? err).slice(0, 500));
   }
+}
+
+type Recipient = { entryId: string; phone: string | null; name: string | null; uid: string | null };
+
+/** Nguồn Tệp khách hàng: entry SĐT có Zalo, UID resolve theo nick (findUser nếu khác nick). */
+async function pickListRecipient(
+  job: { customerListId: string | null; zaloAccountId: string },
+  doneIds: string[],
+): Promise<Recipient | null> {
+  if (!job.customerListId) return null;
+  const entry = await prisma.customerListEntry.findFirst({
+    where: {
+      customerListId: job.customerListId,
+      hasZalo: true,
+      ...(doneIds.length ? { id: { notIn: doneIds } } : {}),
+    },
+    orderBy: { rowIndex: 'asc' },
+    select: { id: true, phoneLocal: true, phoneE164: true, nameRaw: true, zaloName: true, zaloUid: true, resolvedByNickId: true },
+  });
+  if (!entry) return null;
+  return {
+    entryId: entry.id,
+    phone: entry.phoneLocal ?? entry.phoneE164 ?? null,
+    name: entry.zaloName ?? entry.nameRaw ?? null,
+    // UID có sẵn nếu chính nick này đã resolve; khác nick → để null, processRun findUser theo phone
+    uid: entry.resolvedByNickId === job.zaloAccountId ? entry.zaloUid : null,
+  };
+}
+
+/** Nguồn Bạn bè: Friend đã kết bạn (accepted) của nick — UID sẵn (zaloUidInNick), không cần findUser. */
+async function pickFriendRecipient(
+  job: { zaloAccountId: string },
+  doneIds: string[],
+): Promise<Recipient | null> {
+  const friend = await prisma.friend.findFirst({
+    where: {
+      zaloAccountId: job.zaloAccountId,
+      friendshipStatus: 'accepted',
+      ...(doneIds.length ? { id: { notIn: doneIds } } : {}),
+    },
+    orderBy: { becameFriendAt: 'asc' },
+    select: { id: true, zaloUidInNick: true, zaloDisplayName: true },
+  });
+  if (!friend) return null;
+  return { entryId: friend.id, phone: null, name: friend.zaloDisplayName, uid: friend.zaloUidInNick };
 }
 
 /**
  * Xoay vòng nội dung theo Khối nội dung (spin content chống spam): mỗi tin thứ N
  * trong run lấy block thứ (N % số block) theo đúng thứ tự job.contentBlockIds.
  * contentBlockIds rỗng → dùng messageText/imageUrl gõ tay của job (như cũ).
+ * (export: target-cron dùng lại cho tin chào khi khách chấp nhận kết bạn — vòng 6)
  */
-async function resolveJobContent(
+export async function resolveJobContent(
   job: { messageText: string; imageUrl: string | null; contentBlockIds: string[] },
   processedCount: number,
 ): Promise<{ messageText: string; imageUrl: string | null; blockId: string | null }> {
@@ -190,41 +228,4 @@ async function resolveJobContent(
   }
   const blocks = await prisma.contentBlock.findMany({
     where: { id: { in: job.contentBlockIds } },
-    select: { id: true, messageText: true, imageUrl: true },
-  });
-  const blockMap = new Map(blocks.map((b) => [b.id, b]));
-  // Giữ đúng thứ tự đã chọn trong job.contentBlockIds (Map lookup bỏ qua block đã xoá).
-  const ordered = job.contentBlockIds.map((id) => blockMap.get(id)).filter((b): b is NonNullable<typeof b> => !!b);
-  if (ordered.length === 0) {
-    return { messageText: job.messageText, imageUrl: job.imageUrl, blockId: null };
-  }
-  const pick = ordered[processedCount % ordered.length];
-  return { messageText: pick.messageText, imageUrl: pick.imageUrl, blockId: pick.id };
-}
-
-async function recordItem(
-  run: RunRow, entryId: string, phone: string, name: string | null,
-  zaloUid: string | null, status: 'sent' | 'failed' | 'skipped', error: string | null,
-): Promise<void> {
-  const counter = status === 'sent' ? 'sentCount' : status === 'failed' ? 'failedCount' : 'skippedCount';
-  await prisma.$transaction([
-    prisma.broadcastRunItem.create({
-      data: { runId: run.id, orgId: run.orgId, entryId, phone, name, zaloUid, status, error },
-    }),
-    prisma.broadcastRun.update({
-      where: { id: run.id },
-      data: { [counter]: { increment: 1 }, ...(status === 'sent' ? { lastSentAt: new Date() } : {}) },
-    }),
-  ]);
-}
-
-async function finishRun(runId: string, job: { id: string; scheduleType: string }, status: 'done' | 'error'): Promise<void> {
-  await prisma.broadcastRun.update({
-    where: { id: runId },
-    data: { status, endedAt: new Date() },
-  });
-  if (job.scheduleType === 'once') {
-    await prisma.broadcastJob.update({ where: { id: job.id }, data: { status: 'done' } });
-  }
-  logger.info(`[broadcast-cron] run=${runId} finished (${status})`);
-}
+    select: { id: true, messageText: true, imageUrl

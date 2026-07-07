@@ -4087,7 +4087,12 @@ model BroadcastJob {
   orgId          String  @map("org_id")
   createdById    String  @map("created_by_id")
   name           String
-  customerListId String  @map("customer_list_id") // tệp KH đích
+  // Nguồn người nhận: 'customer_list' → customerListId (SĐT trong tệp — có thể là
+  // NGƯỜI LẠ chưa kết bạn, tin dễ vào hộp "người lạ"/bị chặn); 'friends' → toàn bộ
+  // Bạn bè ĐÃ kết bạn (Friend.friendshipStatus='accepted') của nick gửi — an toàn,
+  // tin vào thẳng hộp chat. Mặc định customer_list (giữ tương thích job cũ).
+  sourceType     String  @default("customer_list") @map("source_type") // 'customer_list' | 'friends'
+  customerListId String? @map("customer_list_id") // tệp KH đích (khi sourceType=customer_list)
   zaloAccountId  String  @map("zalo_account_id") // nick gửi
 
   // Nội dung: text hỗ trợ biến {{ten}} {{sdt}}; ảnh kèm (URL media MinIO/S3, optional).
@@ -4202,6 +4207,15 @@ model TargetJob {
   failedCount Int       @default(0) @map("failed_count")
   lastSentAt  DateTime? @map("last_sent_at")
 
+  // Tin chào khi khách chấp nhận kết bạn (vòng 6). welcomeBlockIds ưu tiên hơn
+  // welcomeMsg (xoay vòng chống spam, dùng chung resolveJobContent với Broadcast).
+  welcomeEnabled     Boolean   @default(false) @map("welcome_enabled")
+  welcomeMsg         String    @default("") @map("welcome_msg") @db.Text
+  welcomeBlockIds    String[]  @default([]) @map("welcome_block_ids")
+  welcomedCount      Int       @default(0) @map("welcomed_count")
+  welcomeFailedCount Int       @default(0) @map("welcome_failed_count")
+  lastWelcomeAt      DateTime? @map("last_welcome_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -4226,6 +4240,14 @@ model TargetRunItem {
   error     String?
   createdAt DateTime @default(now()) @map("created_at")
 
+  // Tin chào (vòng 6): contactId để đối chiếu FriendshipAttempt.state='accepted'.
+  // welcomeStatus: null (job không bật chào) | 'waiting' | 'sent' | 'failed'
+  contactId     String?   @map("contact_id")
+  welcomeStatus String?   @map("welcome_status")
+  welcomeSentAt DateTime? @map("welcome_sent_at")
+  welcomeError  String?   @map("welcome_error")
+
   @@index([jobId, entryId])
+  @@index([jobId, welcomeStatus])
   @@map("target_run_items")
 }

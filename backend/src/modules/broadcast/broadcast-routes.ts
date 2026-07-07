@@ -20,6 +20,9 @@ import { computeNextRunAt, parseTimeOfDay, type ScheduleType } from './broadcast
 
 interface JobBody {
   name?: string;
+  // 'customer_list' (mặc định) = gửi tệp SĐT (có thể là người lạ);
+  // 'friends' = gửi bạn bè đã kết bạn của nick (an toàn hơn).
+  sourceType?: 'customer_list' | 'friends';
   customerListId?: string;
   zaloAccountId?: string;
   messageText?: string;
@@ -82,7 +85,7 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     const allBlockIds = [...new Set(jobs.flatMap((j) => j.contentBlockIds))];
     const [lists, nicks, blocks] = await Promise.all([
       prisma.customerList.findMany({
-        where: { id: { in: [...new Set(jobs.map((j) => j.customerListId))] } },
+        where: { id: { in: [...new Set(jobs.map((j) => j.customerListId).filter((x): x is string => !!x))] } },
         select: { id: true, name: true, hasZaloEntries: true },
       }),
       prisma.zaloAccount.findMany({
@@ -99,13 +102,22 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     return {
       jobs: jobs.map((j) => ({
         ...j,
-        list: listMap.get(j.customerListId) ?? null,
+        list: j.customerListId ? listMap.get(j.customerListId) ?? null : null,
         nick: nickMap.get(j.zaloAccountId) ?? null,
         contentBlocks: j.contentBlockIds.map((id) => blockMap.get(id) ?? { id, name: 'Khối đã xoá' }),
         latestRun: j.runs[0] ?? null,
         runs: undefined,
       })),
     };
+  });
+
+  // ── GET /broadcast-jobs/friend-count/:accountId — số bạn bè đã kết bạn của nick ──
+  app.get<{ Params: { accountId: string } }>('/api/v1/broadcast-jobs/friend-count/:accountId', async (request, reply) => {
+    const user = request.user!;
+    const nick = await prisma.zaloAccount.findFirst({ where: { id: request.params.accountId, orgId: user.orgId }, select: { id: true } });
+    if (!nick) return reply.status(400).send({ error: 'zaloAccount_not_found' });
+    const count = await prisma.friend.count({ where: { zaloAccountId: nick.id, friendshipStatus: 'accepted' } });
+    return { count };
   });
 
   // ── POST /broadcast-jobs ───────────────────────────────────────────────
@@ -115,19 +127,29 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     const b = request.body ?? {};
 
     if (!b.name?.trim()) return reply.status(400).send({ error: 'name_required' });
+    const sourceType = b.sourceType === 'friends' ? 'friends' : 'customer_list';
     const blockIds = (b.contentBlockIds ?? []).filter(Boolean);
     if (blockIds.length === 0 && !b.messageText?.trim()) return reply.status(400).send({ error: 'messageText_required' });
     const schedErr = validateSchedule(b);
     if (schedErr) return reply.status(400).send({ error: schedErr });
 
-    const [list, nick, blockCount] = await Promise.all([
-      prisma.customerList.findFirst({ where: { id: b.customerListId ?? '', orgId: user.orgId }, select: { id: true } }),
+    const [nick, blockCount] = await Promise.all([
       prisma.zaloAccount.findFirst({ where: { id: b.zaloAccountId ?? '', orgId: user.orgId }, select: { id: true } }),
       blockIds.length ? prisma.contentBlock.count({ where: { id: { in: blockIds }, orgId: user.orgId } }) : Promise.resolve(0),
     ]);
-    if (!list) return reply.status(400).send({ error: 'customerList_not_found' });
     if (!nick) return reply.status(400).send({ error: 'zaloAccount_not_found' });
     if (blockIds.length && blockCount !== blockIds.length) return reply.status(400).send({ error: 'contentBlock_not_found' });
+
+    // Nguồn tệp KH cần customerListId hợp lệ; nguồn friends không cần (lấy bạn bè của nick).
+    let customerListId: string | null = null;
+    if (sourceType === 'customer_list') {
+      const list = await prisma.customerList.findFirst({ where: { id: b.customerListId ?? '', orgId: user.orgId }, select: { id: true } });
+      if (!list) return reply.status(400).send({ error: 'customerList_not_found' });
+      customerListId = list.id;
+    } else {
+      const friendCount = await prisma.friend.count({ where: { zaloAccountId: nick.id, friendshipStatus: 'accepted' } });
+      if (friendCount === 0) return reply.status(400).send({ error: 'no_friends', hint: 'Nick này chưa có bạn bè đã kết bạn' });
+    }
 
     const scheduledAt = b.scheduledAt ? new Date(b.scheduledAt) : null;
     const nextRunAt = computeNextRunAt({
@@ -141,7 +163,8 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         orgId: user.orgId,
         createdById: user.id,
         name: b.name.trim(),
-        customerListId: list.id,
+        sourceType,
+        customerListId,
         zaloAccountId: nick.id,
         messageText: blockIds.length ? '' : b.messageText!,
         imageUrl: blockIds.length ? null : b.imageUrl?.trim() || null,
@@ -230,35 +253,4 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     return { job };
   });
 
-  // ── DELETE /broadcast-jobs/:id ─────────────────────────────────────────
-  app.delete<{ Params: { id: string } }>('/api/v1/broadcast-jobs/:id', async (request, reply) => {
-    if (!requireBroadcastAdmin(request, reply)) return;
-    const user = request.user!;
-    const existing = await prisma.broadcastJob.findFirst({
-      where: { id: request.params.id, orgId: user.orgId }, select: { id: true },
-    });
-    if (!existing) return reply.status(404).send({ error: 'not_found' });
-    await prisma.broadcastJob.delete({ where: { id: existing.id } });
-    return { ok: true };
-  });
-
-  // ── GET /broadcast-jobs/:id/runs/:runId/items ──────────────────────────
-  app.get<{ Params: { id: string; runId: string }; Querystring: { status?: string } }>(
-    '/api/v1/broadcast-jobs/:id/runs/:runId/items',
-    async (request, reply) => {
-      const user = request.user!;
-      const run = await prisma.broadcastRun.findFirst({
-        where: { id: request.params.runId, jobId: request.params.id, orgId: user.orgId },
-        select: { id: true },
-      });
-      if (!run) return reply.status(404).send({ error: 'not_found' });
-      const { status } = request.query;
-      const items = await prisma.broadcastRunItem.findMany({
-        where: { runId: run.id, ...(status ? { status } : {}) },
-        orderBy: { createdAt: 'asc' },
-        take: 1000,
-      });
-      return { items };
-    },
-  );
-}
+  // ── DELETE /b

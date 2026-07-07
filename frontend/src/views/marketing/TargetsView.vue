@@ -51,6 +51,9 @@
             ✅ {{ job.sentCount }} đã gửi ·
             🚫 {{ job.noZaloCount }} không có Zalo ·
             ❌ {{ job.failedCount }} lỗi
+            <template v-if="job.welcomeEnabled">
+              · 🤝 {{ job.welcomedCount }} đã chào<template v-if="job.welcomeFailedCount"> ({{ job.welcomeFailedCount }} lỗi)</template>
+            </template>
             <button class="btn-link" @click="viewItems(job)">chi tiết</button>
           </div>
         </div>
@@ -122,6 +125,39 @@
         <textarea v-model="form.requestMsg" class="f-input" rows="3"
           placeholder="Xin chào! Tôi đang phân phối dự án..., kết bạn để gửi thông tin tới anh/chị nhé."></textarea>
 
+        <!-- ===== Tin chào khi khách chấp nhận (vòng 6) ===== -->
+        <label class="f-check">
+          <input v-model="form.welcomeEnabled" type="checkbox" />
+          <span><b>Gửi tin chào khi khách chấp nhận kết bạn</b>
+            <span class="f-hint">— tự động, gửi rải trong khung 8h–21h</span></span>
+        </label>
+
+        <template v-if="form.welcomeEnabled">
+          <div class="f-tabs" style="margin-top:6px">
+            <button type="button" class="f-tab" :class="{ on: form.welcomeMode === 'text' }" @click="form.welcomeMode = 'text'">Gõ tay</button>
+            <button type="button" class="f-tab" :class="{ on: form.welcomeMode === 'blocks' }" @click="onSelectWelcomeBlocksMode">
+              <v-icon size="14">mdi-shuffle-variant</v-icon> Khối nội dung (xoay vòng)
+            </button>
+          </div>
+
+          <template v-if="form.welcomeMode === 'text'">
+            <textarea v-model="form.welcomeMsg" class="f-input" rows="3" style="margin-top:8px"
+              placeholder="Cảm ơn {{ten}} đã kết bạn! Em gửi anh/chị thông tin dự án ạ…"></textarea>
+          </template>
+          <template v-else>
+            <div v-if="contentBlocks.length === 0" class="tg-empty" style="padding:12px 0">
+              Chưa có khối nội dung nào — tạo ở <RouterLink to="/marketing/content-blocks">Khối nội dung</RouterLink>.
+            </div>
+            <div v-else class="f-block-list">
+              <label v-for="b in contentBlocks" :key="b.id" class="f-block-item">
+                <input type="checkbox" :checked="form.welcomeBlockIds.includes(b.id)" @change="toggleWelcomeBlock(b.id)" />
+                <span class="f-block-name">{{ b.name }}</span>
+                <span class="f-hint f-block-preview">{{ b.messageText }}</span>
+              </label>
+            </div>
+          </template>
+        </template>
+
         <details class="f-adv">
           <summary>Chống block (nâng cao)</summary>
           <div class="f-row">
@@ -158,17 +194,21 @@
           <button class="btn-x" @click="itemsModal.open = false"><v-icon size="18">mdi-close</v-icon></button>
         </div>
         <table class="tg-table">
-          <thead><tr><th>#</th><th>Tên</th><th>SĐT</th><th>Trạng thái</th><th>Lỗi</th><th>Lúc</th></tr></thead>
+          <thead><tr><th>#</th><th>Tên</th><th>SĐT</th><th>Trạng thái</th><th>Tin chào</th><th>Lỗi</th><th>Lúc</th></tr></thead>
           <tbody>
             <tr v-for="(it, i) in itemsModal.items" :key="it.id">
               <td class="num">{{ i + 1 }}</td>
               <td>{{ it.name ?? '—' }}</td>
               <td class="num">{{ it.phone ?? '—' }}</td>
               <td><span class="run-badge" :class="'r-' + it.status">{{ itemStatusLabel(it.status) }}</span></td>
-              <td class="err">{{ it.error ?? '' }}</td>
+              <td>
+                <span v-if="it.welcomeStatus" class="run-badge" :class="'w-' + it.welcomeStatus">{{ welcomeStatusLabel(it.welcomeStatus) }}</span>
+                <span v-else>—</span>
+              </td>
+              <td class="err">{{ it.welcomeError ?? it.error ?? '' }}</td>
               <td class="num">{{ fmtDate(it.createdAt) }}</td>
             </tr>
-            <tr v-if="itemsModal.items.length === 0"><td colspan="6" class="tg-empty">Chưa có lời mời nào được gửi.</td></tr>
+            <tr v-if="itemsModal.items.length === 0"><td colspan="7" class="tg-empty">Chưa có lời mời nào được gửi.</td></tr>
           </tbody>
         </table>
       </div>
@@ -188,6 +228,7 @@ const { confirm } = useConfirm();
 interface JobRow {
   id: string; name: string; status: string; requestMsg: string; sourceType: 'customer_list' | 'group_scan';
   maxTotal: number; sentCount: number; noZaloCount: number; failedCount: number;
+  welcomeEnabled: boolean; welcomedCount: number; welcomeFailedCount: number;
   list: { id: string; name: string; hasZaloEntries: number } | null;
   groupScan: { id: string; scannedGroups: number; memberCount: number; friendCount: number } | null;
   nick: { id: string; displayName: string | null; phone: string | null; status: string } | null;
@@ -211,11 +252,18 @@ const form = reactive({
   name: '', sourceType: 'customer_list' as 'customer_list' | 'group_scan',
   customerListId: '', groupScanId: '', zaloAccountId: '', requestMsg: '',
   maxTotal: 200, delaySecMin: 60, delaySecMax: 180,
+  welcomeEnabled: false, welcomeMode: 'text' as 'text' | 'blocks',
+  welcomeMsg: '', welcomeBlockIds: [] as string[],
 });
+
+const contentBlocks = ref<Array<{ id: string; name: string; messageText: string }>>([]);
 
 const itemsModal = reactive({
   open: false, jobName: '',
-  items: [] as Array<{ id: string; name: string | null; phone: string | null; status: string; error: string | null; createdAt: string }>,
+  items: [] as Array<{
+    id: string; name: string | null; phone: string | null; status: string; error: string | null; createdAt: string;
+    welcomeStatus: string | null; welcomeError: string | null;
+  }>,
 });
 
 async function load(): Promise<void> {
@@ -264,11 +312,31 @@ async function loadGroupScans(): Promise<void> {
   }
 }
 
+async function onSelectWelcomeBlocksMode(): Promise<void> {
+  form.welcomeMode = 'blocks';
+  if (contentBlocks.value.length === 0) {
+    const res = await api.get('/content-blocks');
+    contentBlocks.value = (res.data.blocks ?? res.data ?? []).map((b: any) => ({
+      id: b.id, name: b.name, messageText: b.messageText,
+    }));
+  }
+}
+
+function toggleWelcomeBlock(id: string): void {
+  const i = form.welcomeBlockIds.indexOf(id);
+  if (i >= 0) form.welcomeBlockIds.splice(i, 1);
+  else form.welcomeBlockIds.push(id);
+}
+
 async function createJob(): Promise<void> {
   if (!form.name.trim()) return void toast('Nhập tên mục tiêu', 'error');
   if (!form.zaloAccountId) return void toast('Chọn nick Zalo gửi', 'error');
   if (form.sourceType === 'customer_list' && !form.customerListId) return void toast('Chọn tệp khách hàng', 'error');
   if (form.sourceType === 'group_scan' && !form.groupScanId) return void toast('Chọn scan đã quét', 'error');
+  if (form.welcomeEnabled) {
+    if (form.welcomeMode === 'text' && !form.welcomeMsg.trim()) return void toast('Nhập nội dung tin chào', 'error');
+    if (form.welcomeMode === 'blocks' && form.welcomeBlockIds.length === 0) return void toast('Chọn ít nhất 1 khối nội dung cho tin chào', 'error');
+  }
 
   creating.value = true;
   try {
@@ -278,10 +346,16 @@ async function createJob(): Promise<void> {
       groupScanId: form.sourceType === 'group_scan' ? form.groupScanId : undefined,
       requestMsg: form.requestMsg || undefined,
       maxTotal: form.maxTotal, delaySecMin: form.delaySecMin, delaySecMax: form.delaySecMax,
+      welcomeEnabled: form.welcomeEnabled,
+      welcomeMsg: form.welcomeEnabled && form.welcomeMode === 'text' ? form.welcomeMsg : '',
+      welcomeBlockIds: form.welcomeEnabled && form.welcomeMode === 'blocks' ? form.welcomeBlockIds : [],
     });
     toast('Đã tạo mục tiêu', 'success');
     showCreate.value = false;
-    Object.assign(form, { name: '', requestMsg: '', sourceType: 'customer_list', groupScanId: '' });
+    Object.assign(form, {
+      name: '', requestMsg: '', sourceType: 'customer_list', groupScanId: '',
+      welcomeEnabled: false, welcomeMode: 'text', welcomeMsg: '', welcomeBlockIds: [],
+    });
     await load();
   } catch (err: any) {
     toast(`Lỗi: ${err?.response?.data?.error ?? 'không tạo được'}`, 'error');
@@ -319,63 +393,9 @@ function statusLabel(s: string): string {
 function itemStatusLabel(s: string): string {
   return s === 'sent' ? 'Đã gửi' : s === 'no_zalo' ? 'Không có Zalo' : s === 'failed' ? 'Lỗi' : 'Bỏ qua';
 }
+function welcomeStatusLabel(s: string): string {
+  return s === 'waiting' ? 'Chờ chấp nhận' : s === 'sent' ? 'Đã chào' : 'Chào lỗi';
+}
 function fmtDate(d: string | null): string {
   if (!d) return '—';
-  return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-onMounted(async () => {
-  await load();
-  pollTimer = setInterval(load, 15_000); // job đang chạy → cập nhật số liệu
-});
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
-</script>
-
-<style scoped>
-.tg-view { display: flex; flex-direction: column; height: 100%; overflow: auto; }
-.mkt-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 20px 12px; border-bottom: 1px solid var(--border, #e5e4e7); }
-.mtt { font-size: 18px; font-weight: 700; }
-.mts { font-size: 13px; color: var(--text-secondary, #666); margin-top: 2px; max-width: 720px; }
-.actions { display: flex; gap: 8px; flex-shrink: 0; }
-.tg-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
-.tg-empty { text-align: center; color: var(--text-secondary, #888); padding: 32px 0; }
-.tg-card { display: flex; justify-content: space-between; gap: 12px; border: 1px solid var(--border, #e5e4e7); border-radius: 10px; padding: 12px 14px; background: var(--surface, #fff); }
-.tg-card.st-paused { opacity: 0.75; }
-.tg-card-head { display: flex; align-items: center; gap: 8px; }
-.tg-name { font-weight: 700; }
-.tg-badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
-.b-active { background: #e1f5e9; color: #1b7a3d; }
-.b-paused { background: #fdf3d7; color: #8a6d00; }
-.b-done { background: #ececf0; color: #555; }
-.tg-meta { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--text-secondary, #666); margin-top: 4px; }
-.tg-msg { font-size: 13px; margin-top: 6px; color: var(--text, #333); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 640px; }
-.tg-run { margin-top: 6px; font-size: 12.5px; color: var(--text-secondary, #555); }
-.run-badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; font-weight: 600; margin-right: 6px; }
-.r-sent { background: #e1f5e9; color: #1b7a3d; }
-.r-no_zalo { background: #ececf0; color: #555; }
-.r-failed { background: #fde3e1; color: #a12318; }
-.r-skipped { background: #ececf0; color: #555; }
-.tg-card-actions { display: flex; gap: 4px; align-items: flex-start; flex-shrink: 0; }
-.btn-link { background: none; border: none; color: #135ba1; cursor: pointer; font-size: 12.5px; text-decoration: underline; padding: 0; }
-.danger { color: #a12318; }
-
-.tg-overlay { position: fixed; inset: 0; background: rgba(20, 20, 30, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.tg-modal { background: var(--surface, #fff); border-radius: 12px; padding: 18px 20px; width: 560px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); overflow: auto; }
-.tg-modal-wide { width: 760px; }
-.tg-modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
-.btn-x { background: none; border: none; cursor: pointer; padding: 2px; }
-.tg-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.f-label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 4px; }
-.f-hint { font-weight: 400; color: var(--text-secondary, #888); }
-.f-input { width: 100%; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 7px 10px; font-size: 13.5px; background: var(--surface, #fff); color: inherit; }
-.f-row { display: flex; gap: 10px; }
-.f-col { flex: 1; min-width: 0; }
-.f-tabs { display: flex; gap: 6px; }
-.f-tab { border: 1px solid var(--border, #d5d4d8); background: none; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-.f-tab.on { background: #0e445a; color: #fff; border-color: #0e445a; }
-.f-adv { margin-top: 12px; font-size: 13px; }
-.f-adv summary { cursor: pointer; font-weight: 600; }
-.tg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.tg-table th, .tg-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border, #eee); }
-.err { color: #a12318; font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-</style>
+  return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2

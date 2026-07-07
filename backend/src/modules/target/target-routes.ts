@@ -29,6 +29,24 @@ interface JobBody {
   delaySecMin?: number;
   delaySecMax?: number;
   status?: 'active' | 'paused';
+  // Tin chào khi khách chấp nhận kết bạn (vòng 6). welcomeBlockIds ưu tiên
+  // hơn welcomeMsg (xoay vòng chống spam). Bật mà cả 2 rỗng → 400.
+  welcomeEnabled?: boolean;
+  welcomeMsg?: string;
+  welcomeBlockIds?: string[];
+}
+
+/** Validate cấu hình tin chào. Trả error string hoặc null. Mutate b.welcomeBlockIds đã lọc. */
+async function validateWelcome(b: JobBody, orgId: string): Promise<string | null> {
+  if (!b.welcomeEnabled) return null;
+  const blockIds = (b.welcomeBlockIds ?? []).filter(Boolean);
+  b.welcomeBlockIds = blockIds;
+  if (blockIds.length === 0 && !b.welcomeMsg?.trim()) return 'welcome_content_required';
+  if (blockIds.length > 0) {
+    const count = await prisma.contentBlock.count({ where: { id: { in: blockIds }, orgId } });
+    if (count !== blockIds.length) return 'welcomeBlock_not_found';
+  }
+  return null;
 }
 
 // Chỉ owner/admin được tạo/sửa/xoá Mục tiêu — gửi lời mời hàng loạt cũng là hành
@@ -145,6 +163,9 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
       groupScanId = scan.id;
     }
 
+    const welcomeErr = await validateWelcome(b, user.orgId);
+    if (welcomeErr) return reply.status(400).send({ error: welcomeErr });
+
     const job = await prisma.targetJob.create({
       data: {
         orgId: user.orgId,
@@ -158,6 +179,9 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
         maxTotal: Math.min(2000, Math.max(1, b.maxTotal ?? 200)),
         delaySecMin: Math.max(10, b.delaySecMin ?? 60),
         delaySecMax: Math.max(10, b.delaySecMax ?? 180),
+        welcomeEnabled: b.welcomeEnabled === true,
+        welcomeMsg: b.welcomeMsg?.trim() ?? '',
+        welcomeBlockIds: b.welcomeBlockIds ?? [],
       },
     });
     logger.info(`[target] job created id=${job.id} by=${user.id} source=${sourceType}`);
@@ -188,34 +212,10 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
     if (b.delaySecMax !== undefined) data.delaySecMax = Math.max(10, b.delaySecMax);
     if (b.status === 'paused' || b.status === 'active') data.status = b.status;
 
-    const job = await prisma.targetJob.update({ where: { id: existing.id }, data });
-    return { job };
-  });
-
-  // ── DELETE /target-jobs/:id ─────────────────────────────────────────────
-  app.delete<{ Params: { id: string } }>('/api/v1/target-jobs/:id', async (request, reply) => {
-    if (!requireTargetAdmin(request, reply)) return;
-    const user = request.user!;
-    const existing = await prisma.targetJob.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
-    if (!existing) return reply.status(404).send({ error: 'not_found' });
-    await prisma.targetJob.delete({ where: { id: existing.id } });
-    return { ok: true };
-  });
-
-  // ── GET /target-jobs/:id/items ───────────────────────────────────────────
-  app.get<{ Params: { id: string }; Querystring: { status?: string } }>(
-    '/api/v1/target-jobs/:id/items',
-    async (request, reply) => {
-      const user = request.user!;
-      const job = await prisma.targetJob.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
-      if (!job) return reply.status(404).send({ error: 'not_found' });
-      const { status } = request.query;
-      const items = await prisma.targetRunItem.findMany({
-        where: { jobId: job.id, ...(status ? { status } : {}) },
-        orderBy: { createdAt: 'desc' },
-        take: 1000,
-      });
-      return { items };
-    },
-  );
-}
+    // Tin chào: cho bật/tắt/sửa nội dung cả sau khi job chạy (pass chào độc lập)
+    if (b.welcomeEnabled !== undefined) {
+      const welcomeErr = await validateWelcome(b, user.orgId);
+      if (welcomeErr) return reply.status(400).send({ error: welcomeErr });
+      data.welcomeEnabled = b.welcomeEnabled === true;
+      if (b.welcomeMsg !== undefined) data.welcomeMsg = b.welcomeMsg?.trim() ?? '';
+      
