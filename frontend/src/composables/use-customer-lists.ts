@@ -9,6 +9,20 @@
 import { ref, computed } from 'vue';
 import { api } from '@/api/index';
 
+// Ghi nhớ số dòng/trang cho trang chi tiết Tệp KH (localStorage). Chỉ nhận 50/100/200.
+const ENTRY_LIMIT_KEY = 'zcrm.listDetail.entryLimit';
+export function loadEntryLimit(): number {
+  try {
+    const v = parseInt(localStorage.getItem(ENTRY_LIMIT_KEY) || '', 10);
+    return [50, 100, 200].includes(v) ? v : 50;
+  } catch { return 50; }
+}
+export function saveEntryLimit(limit: number): void {
+  try {
+    if ([50, 100, 200].includes(limit)) localStorage.setItem(ENTRY_LIMIT_KEY, String(limit));
+  } catch { /* localStorage không khả dụng — bỏ qua */ }
+}
+
 export interface CustomerListSummary {
   id: string;
   name: string;
@@ -155,7 +169,8 @@ export function useCustomerLists() {
   const entryTab = ref<EntryStatusTab>('all');
   const entrySearch = ref('');
   const entryPage = ref(1);
-  const entryLimit = ref(50);
+  // Ghi nhớ số dòng/trang người dùng chọn (2026-07-08). Mặc định 50 để tải nhanh.
+  const entryLimit = ref(loadEntryLimit());
   // Sắp xếp bảng entries (UI 2026-06-24). Mặc định rowIndex DESC = khách mới thêm nằm trên cùng.
   const entrySort = ref<string>('rowIndex');
   const entryDir = ref<'asc' | 'desc'>('desc');

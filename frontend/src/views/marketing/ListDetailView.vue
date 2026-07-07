@@ -602,7 +602,7 @@
 <script setup lang="ts">
 import { onMounted, computed, watch, ref, nextTick, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useCustomerLists, type CustomerListSummary, type CustomerListEntry } from '@/composables/use-customer-lists';
+import { useCustomerLists, saveEntryLimit, type CustomerListSummary, type CustomerListEntry } from '@/composables/use-customer-lists';
 import { formatInOrgTz } from '@/composables/use-org-timezone';
 // Phase Multi-Source Lead Ads Phase 2 2026-05-27 — Lead detail panel
 import LeadDetailPanel from '@/components/lists/LeadDetailPanel.vue';
@@ -784,6 +784,7 @@ const entriesRangeStart = computed(() =>
 const entriesRangeEnd = computed(() => Math.min(entryPage.value * entryLimit.value, entriesTotal.value));
 
 function onLimitChange() {
+  saveEntryLimit(entryLimit.value); // nhớ lựa chọn cho lần sau
   entryPage.value = 1;
   fetchEntries(listId.value);
 }
@@ -1451,8 +1452,10 @@ function nickAvatarStyle(name: string): Record<string, string> {
 .entries-wrap {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-md); overflow: auto;
-  max-height: min(52vh, calc(100vh - 430px));
-  min-height: 260px;
+  /* 2026-07-08: nới cao lại để xem nhiều dòng hơn (thanh phân trang vẫn tới được
+     vì .ce-mkt-content tự cuộn). Header sticky pin top khi cuộn trong bảng. */
+  max-height: calc(100vh - 300px);
+  min-height: 380px;
   scrollbar-gutter: stable both-edges;
 }
 .entries-table { font-size: 12px; min-width: 2200px; }
