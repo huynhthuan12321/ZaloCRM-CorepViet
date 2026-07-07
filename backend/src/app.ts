@@ -29,9 +29,9 @@ import { fileURLToPath } from 'node:url';
 import { Prisma } from '@prisma/client';
 import { config } from './config/index.js';
 import { prisma } from './shared/database/prisma-client.js';
+import { decryptSessionData } from './shared/crypto/session-crypto.js';
 import { logger } from './shared/utils/logger.js';
 import { authRoutes } from './modules/auth/auth-routes.js';
-import { brandingRoutes } from './modules/branding/branding-routes.js';
 import { orgBrandingRoutes } from './modules/branding/org-branding-routes.js';
 import { zaloRoutes } from './modules/zalo/zalo-routes.js';
 import { customerListRoutes } from './modules/lists/list-routes.js';
@@ -259,7 +259,6 @@ async function bootstrap() {
   // ── Routes ────────────────────────────────────────────────────────────────
 
   await app.register(authRoutes);
-  await app.register(brandingRoutes);
   await app.register(orgBrandingRoutes); // public org branding cho trang /login (pre-auth)
   await app.register(zaloRoutes);
   await app.register(chatRoutes);
@@ -514,11 +513,7 @@ async function bootstrap() {
     });
     logger.info(`Attempting reconnect for ${accounts.length} Zalo account(s)`);
     for (const account of accounts) {
-      const session = account.sessionData as {
-        cookie: any;
-        imei: string;
-        userAgent: string;
-      } | null;
+      const session = decryptSessionData<{ cookie: any; imei: string; userAgent: string }>(account.sessionData);
       if (session?.imei) {
         zaloPool.reconnect(account.id, session).catch((err) => {
           logger.warn(`Auto-reconnect failed for account ${account.id}:`, err);
