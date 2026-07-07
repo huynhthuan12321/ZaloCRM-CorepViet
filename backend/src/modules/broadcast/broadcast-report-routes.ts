@@ -63,7 +63,7 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
 
       const [lists, nicks] = await Promise.all([
         prisma.customerList.findMany({
-          where: { id: { in: [...new Set(jobs.map((j) => j.customerListId))] } },
+          where: { id: { in: [...new Set(jobs.map((j) => j.customerListId).filter((x): x is string => !!x))] } },
           select: { id: true, name: true },
         }),
         prisma.zaloAccount.findMany({
@@ -100,7 +100,7 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
       const listAgg = new Map<string, { sent: number; failed: number; skipped: number }>();
       for (const r of runs) {
         const job = jobMap.get(r.jobId);
-        if (!job) continue;
+        if (!job || !job.customerListId) continue; // job nguồn Bạn bè không có tệp → bỏ khỏi nhóm theo tệp
         const acc = listAgg.get(job.customerListId) ?? { sent: 0, failed: 0, skipped: 0 };
         acc.sent += r.sentCount; acc.failed += r.failedCount; acc.skipped += r.skippedCount;
         listAgg.set(job.customerListId, acc);
@@ -119,7 +119,7 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
         const job = jobMap.get(r.jobId);
         return {
           runId: r.id, jobId: r.jobId, jobName: job?.name ?? '—',
-          listName: job ? (listMap.get(job.customerListId)?.name ?? '—') : '—',
+          listName: job ? (job.customerListId ? (listMap.get(job.customerListId)?.name ?? '—') : 'Bạn bè') : '—',
           nickName: job ? (nickMap.get(job.zaloAccountId)?.displayName ?? nickMap.get(job.zaloAccountId)?.phone ?? '—') : '—',
           status: r.status, startedAt: r.startedAt, endedAt: r.endedAt,
           sent: r.sentCount, failed: r.failedCount, skipped: r.skippedCount,
