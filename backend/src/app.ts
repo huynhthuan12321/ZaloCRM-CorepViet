@@ -406,12 +406,14 @@ async function bootstrap() {
     // native app mà friend_event listener không bắt được (xem friend-sync-cron.ts)
     const { startFriendSyncCron } = await import('./modules/zalo/friend-sync-cron.js');
     startFriendSyncCron(io);
-    // Broadcast tự động (🟢 Community extension) — worker gửi tin theo lịch, tick 30s
-    const { startBroadcastCron } = await import('./modules/broadcast/broadcast-cron.js');
-    startBroadcastCron(io);
-    // Mục tiêu — auto kết bạn (🟢 Community extension) — worker gửi lời mời, tick 30s
-    const { startTargetCron } = await import('./modules/target/target-cron.js');
-    startTargetCron();
+    // Broadcast tự động + Mục tiêu (🟢 Community) — worker tick 30s. Guard test cho nhất
+    // quán với các worker khác (không lên lịch cron trong vitest).
+    if (config.nodeEnv !== 'test') {
+      const { startBroadcastCron } = await import('./modules/broadcast/broadcast-cron.js');
+      startBroadcastCron(io);
+      const { startTargetCron } = await import('./modules/target/target-cron.js');
+      startTargetCron();
+    }
     // Group info refresh periodic (mỗi 6h) — làm tươi avatar/tên/sĩ số nhóm chống
     // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).
     const { startGroupInfoSyncCron } = await import('./modules/zalo/group-info-sync-cron.js');
@@ -434,6 +436,16 @@ async function bootstrap() {
     // orphan records sau crash. Uptime accuracy = 5p resolution.
     const { backfillStatusLog } = await import('./modules/zalo/status-log-backfill.js');
     backfillStatusLog().catch((err) => logger.error('[status-log-backfill] failed:', err));
+    // P2 (H1) — hash public API key cũ (plaintext) + redact value_plain. Idempotent.
+    const { backfillApiKeyHashes } = await import('./modules/api/api-key-backfill.js');
+    backfillApiKeyHashes().catch((err) => logger.error('[api-key-backfill] failed:', err));
+    // D2 — cảnh báo vận hành: production mà không có Redis → rate-limit đếm per-process
+    // (in-memory). Chạy >1 instance sẽ vượt trần × số instance (mỗi instance đếm riêng).
+    if (config.isProduction) {
+      const { getRedis } = await import('./shared/redis-client.js');
+      const r = await getRedis().catch(() => null);
+      if (!r) logger.warn('[startup] PRODUCTION KHÔNG kết nối Redis — rate-limit đếm per-process; KHÔNG chạy >1 instance app (sẽ vượt trần chống-block). Đặt REDIS_URL.');
+    }
     const { startStatusLogCheckpointCron } = await import('./modules/zalo/status-log-checkpoint-cron.js');
     startStatusLogCheckpointCron();
     // Phase 6 — Lead Scoring background jobs (decay hourly + stuck detection 6am daily)

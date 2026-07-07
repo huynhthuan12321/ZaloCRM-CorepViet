@@ -20,6 +20,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
+import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
 import { renderMessage, computeNextRunAt, randomDelayMs, isWithinSendWindow, type ScheduleType } from './broadcast-service.js';
 
@@ -125,6 +126,33 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
   }
   const { entryId, phone, name } = recipient;
 
+  // P5 (D1) — pre-check fail-CLOSED cho luồng gửi hàng loạt: limiter (Redis/Postgres) lỗi
+  // → HOÃN, không xả tin vượt trần lúc hạ tầng sự cố. Thao tác tay của sale đi thẳng
+  // zaloOps.exec (fail-open) nên không bị chặn oan. Pre-check KHÔNG ghi nhận (recordSend
+  // vẫn do exec làm sau khi gửi thật).
+  const gate = await zaloRateLimiter.checkLimits(job.zaloAccountId, 'message', { failClosed: true });
+  if (!gate.allowed) {
+    logger.warn(`[broadcast-cron] run=${run.id} hoãn tick: ${gate.reason ?? 'rate limited'}`);
+    return;
+  }
+
+  // P4 (C2) — CLAIM recipient TRƯỚC khi gọi Zalo: tạo item 'sending'. unique(runId, entryId)
+  // đảm bảo đúng 1 lần gửi dù tick chết giữa chừng / 2 instance chạy song song. P2002 =
+  // recipient đã được tick khác claim/gửi → bỏ, KHÔNG gửi lại (biến duplicate-window thành
+  // constraint-violation vô hại). Item 'sending' kẹt (crash sau claim) sẽ bị bỏ qua vĩnh
+  // viễn — trade-off at-most-once (thà thiếu 1 tin còn hơn gửi trùng); cần sweeper reclaim nếu muốn.
+  let itemId: string;
+  try {
+    const item = await prisma.broadcastRunItem.create({
+      data: { runId: run.id, orgId: run.orgId, entryId, phone: phone ?? '', name, status: 'sending' },
+      select: { id: true },
+    });
+    itemId = item.id;
+  } catch (err: any) {
+    if (err?.code === 'P2002') return; // đã claim ở tick khác — không gửi lại
+    throw err;
+  }
+
   try {
     // 1. Resolve UID theo nick gửi (UID Zalo là per-nick)
     let uid: string | null = recipient.uid;
@@ -133,13 +161,13 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
       uid = (user as any)?.uid ?? null;
     }
     if (!uid) {
-      await recordItem(run, entryId, phone ?? '', name, null, 'skipped', 'khong_tim_thay_uid');
+      await finalizeItem(itemId, run, 'skipped', null, 'khong_tim_thay_uid');
       return;
     }
 
     // 2. Nội dung: xoay vòng Khối nội dung (spin content) nếu job có contentBlockIds,
     //    ngược lại dùng messageText/imageUrl gõ tay như cũ.
-    const content = await resolveJobContent(job, processed);
+    const content = await resolveJobContent(job, processed, job.orgId);
 
     // 3. Gửi tin (text hoặc ảnh + caption)
     const text = renderMessage(content.messageText, { name, phone });
@@ -153,18 +181,20 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
     } else {
       await zaloOps.sendMessage(job.zaloAccountId, uid, 0, { msg: text }, io);
     }
-    await recordItem(run, entryId, phone ?? '', name, uid, 'sent', null);
+    await finalizeItem(itemId, run, 'sent', uid, null);
     if (content.blockId) {
       await prisma.contentBlock.update({ where: { id: content.blockId }, data: { usageCount: { increment: 1 } } }).catch(() => {});
     }
     logger.info(`[broadcast-cron] run=${run.id} sent → ${phone ?? uid}`);
   } catch (err: any) {
     if (err instanceof ZaloOpError && (err.code === 'RATE_LIMITED' || err.code === 'NOT_CONNECTED')) {
-      // Nick chạm trần hoặc mất kết nối — KHÔNG tính fail cho khách, chờ tick sau
+      // Nick chạm trần hoặc mất kết nối — NHẢ claim để tick sau thử lại recipient này
+      // (KHÔNG tính fail cho khách).
+      await releaseItem(itemId).catch(() => {});
       logger.warn(`[broadcast-cron] run=${run.id} paused by nick: ${err.code}`);
       return;
     }
-    await recordItem(run, entryId, phone ?? '', name, null, 'failed', String(err?.message ?? err).slice(0, 500));
+    await finalizeItem(itemId, run, 'failed', null, String(err?.message ?? err).slice(0, 500));
   }
 }
 
@@ -222,12 +252,15 @@ async function pickFriendRecipient(
 export async function resolveJobContent(
   job: { messageText: string; imageUrl: string | null; contentBlockIds: string[] },
   processedCount: number,
+  orgId: string,
 ): Promise<{ messageText: string; imageUrl: string | null; blockId: string | null }> {
   if (job.contentBlockIds.length === 0) {
     return { messageText: job.messageText, imageUrl: job.imageUrl, blockId: null };
   }
+  // Lọc orgId (defense-in-depth): dù DB có row bẩn (id khối của org khác lọt qua route),
+  // findMany trả rỗng → fallback messageText, KHÔNG bao giờ gửi nội dung ngoài org của job.
   const blocks = await prisma.contentBlock.findMany({
-    where: { id: { in: job.contentBlockIds } },
+    where: { id: { in: job.contentBlockIds }, orgId },
     select: { id: true, messageText: true, imageUrl: true },
   });
   const blockMap = new Map(blocks.map((b) => [b.id, b]));
@@ -240,20 +273,27 @@ export async function resolveJobContent(
   return { messageText: pick.messageText, imageUrl: pick.imageUrl, blockId: pick.id };
 }
 
-async function recordItem(
-  run: RunRow, entryId: string, phone: string, name: string | null,
-  zaloUid: string | null, status: 'sent' | 'failed' | 'skipped', error: string | null,
+/** P4 — chốt kết quả claim: update item 'sending' → trạng thái cuối + tăng counter (atomic). */
+async function finalizeItem(
+  itemId: string, run: RunRow,
+  status: 'sent' | 'failed' | 'skipped', zaloUid: string | null, error: string | null,
 ): Promise<void> {
   const counter = status === 'sent' ? 'sentCount' : status === 'failed' ? 'failedCount' : 'skippedCount';
   await prisma.$transaction([
-    prisma.broadcastRunItem.create({
-      data: { runId: run.id, orgId: run.orgId, entryId, phone, name, zaloUid, status, error },
+    prisma.broadcastRunItem.update({
+      where: { id: itemId },
+      data: { status, zaloUid, error },
     }),
     prisma.broadcastRun.update({
       where: { id: run.id },
       data: { [counter]: { increment: 1 }, ...(status === 'sent' ? { lastSentAt: new Date() } : {}) },
     }),
   ]);
+}
+
+/** P4 — nhả claim (xoá item 'sending') khi nick chạm trần/mất kết nối → recipient thử lại tick sau. */
+async function releaseItem(itemId: string): Promise<void> {
+  await prisma.broadcastRunItem.delete({ where: { id: itemId } });
 }
 
 async function finishRun(runId: string, job: { id: string; scheduleType: string }, status: 'done' | 'error'): Promise<void> {

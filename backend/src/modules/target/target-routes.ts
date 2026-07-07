@@ -38,14 +38,21 @@ interface JobBody {
 
 /** Validate cấu hình tin chào. Trả error string hoặc null. Mutate b.welcomeBlockIds đã lọc. */
 async function validateWelcome(b: JobBody, orgId: string): Promise<string | null> {
-  if (!b.welcomeEnabled) return null;
-  const blockIds = (b.welcomeBlockIds ?? []).filter(Boolean);
-  b.welcomeBlockIds = blockIds;
-  if (blockIds.length === 0 && !b.welcomeMsg?.trim()) return 'welcome_content_required';
-  if (blockIds.length > 0) {
-    const count = await prisma.contentBlock.count({ where: { id: { in: blockIds }, orgId } });
-    if (count !== blockIds.length) return 'welcomeBlock_not_found';
+  // LUÔN validate ownership welcomeBlockIds khi field có mặt trong body — KHÔNG return
+  // sớm chỉ vì welcomeEnabled=false. Chặn khai thác 2 bước: (a) PATCH welcomeEnabled=false
+  // kèm id khối của org khác → ghi id bẩn vào DB; (b) PATCH welcomeEnabled=true không kèm
+  // welcomeBlockIds → id bẩn cũ vẫn active. Kiểm ở đây khoá cả bước (a).
+  if (b.welcomeBlockIds !== undefined) {
+    const blockIds = b.welcomeBlockIds.filter(Boolean);
+    b.welcomeBlockIds = blockIds;
+    if (blockIds.length > 0) {
+      const count = await prisma.contentBlock.count({ where: { id: { in: blockIds }, orgId } });
+      if (count !== blockIds.length) return 'welcomeBlock_not_found';
+    }
   }
+  if (!b.welcomeEnabled) return null;
+  const blockIds = b.welcomeBlockIds ?? [];
+  if (blockIds.length === 0 && !b.welcomeMsg?.trim()) return 'welcome_content_required';
   return null;
 }
 

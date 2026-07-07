@@ -134,6 +134,16 @@ async function processWelcome(job: WelcomeJobRow, now: Date): Promise<void> {
   if (!row) return; // chưa ai chấp nhận — chờ tick sau
   const item = { id: row.id, zaloUid: row.zalo_uid, name: row.name, phone: row.phone };
 
+  // P4 (C2) — optimistic lock: waiting → sending. Chỉ tick thắng (count=1) mới gửi, tránh
+  // 2 tick sát nhau cùng đọc 1 row 'waiting' rồi cùng gửi 1 khách. Trên RATE_LIMITED/
+  // NOT_CONNECTED sẽ revert về 'waiting' để thử lại; crash sau claim → kẹt 'sending'
+  // (trade-off at-most-once, cần sweeper reclaim nếu muốn).
+  const claimed = await prisma.targetRunItem.updateMany({
+    where: { id: item.id, welcomeStatus: 'waiting' },
+    data: { welcomeStatus: 'sending' },
+  });
+  if (claimed.count !== 1) return; // tick khác đã claim row này
+
   if (!item.zaloUid) {
     // Thiếu UID (bất thường) — đánh failed để không kẹt hàng đợi
     await markWelcome(job.id, item.id, 'failed', 'thieu_zalo_uid');
@@ -145,6 +155,7 @@ async function processWelcome(job: WelcomeJobRow, now: Date): Promise<void> {
     const content = await resolveJobContent(
       { messageText: job.welcomeMsg, imageUrl: null, contentBlockIds: job.welcomeBlockIds },
       job.welcomedCount,
+      job.orgId,
     );
     const text = renderMessage(content.messageText, { name: item.name, phone: item.phone });
     if (!text.trim() && !content.imageUrl) {
@@ -170,7 +181,10 @@ async function processWelcome(job: WelcomeJobRow, now: Date): Promise<void> {
     logger.info(`[target-cron] welcome job=${job.id} sent → uid=${item.zaloUid}`);
   } catch (err: any) {
     if (err instanceof ZaloOpError && (err.code === 'RATE_LIMITED' || err.code === 'NOT_CONNECTED')) {
-      // Nick chạm trần tin/mất kết nối — giữ 'waiting', chờ tick sau
+      // Nick chạm trần tin/mất kết nối — revert claim 'sending' → 'waiting', chờ tick sau
+      await prisma.targetRunItem.updateMany({
+        where: { id: item.id, welcomeStatus: 'sending' }, data: { welcomeStatus: 'waiting' },
+      }).catch(() => {});
       logger.warn(`[target-cron] welcome job=${job.id} paused by nick: ${err.code}`);
       return;
     }
@@ -206,13 +220,20 @@ async function processJob(job: JobRow, now: Date): Promise<void> {
     return;
   }
 
-  // Pre-check trần friend_action — KHÔNG ghi nhận gì, chỉ để tránh đốt contact khi nick chạm trần.
-  const check = await zaloRateLimiter.checkLimits(job.zaloAccountId, 'friend_action');
+  // Pre-check trần — KHÔNG ghi nhận gì, chỉ tránh "đốt" contact khi nick chạm trần.
+  // failClosed (P5/D1): limiter lỗi → dừng luồng hàng loạt, không xả lời mời vượt trần.
+  const check = await zaloRateLimiter.checkLimits(job.zaloAccountId, 'friend_action', { failClosed: true });
   if (!check.allowed) return; // chờ tick sau, giữ nguyên target chưa xử lý
 
   if (job.sourceType === 'group_scan') {
+    // group_scan có UID sẵn → chỉ gọi sendFriendRequest (friend_action), không findUser.
     await processGroupScanTarget(job);
   } else {
+    // customer_list gọi findUser (friend_lookup) TRƯỚC sendFriendRequest (friend_action).
+    // Phải pre-check CẢ friend_lookup: nếu không, nick chạm trần friend_lookup vẫn tạo
+    // FriendshipAttempt rồi findUser ném RATE_LIMITED → item 'failed' vĩnh viễn (C1).
+    const lookup = await zaloRateLimiter.checkLimits(job.zaloAccountId, 'friend_lookup', { failClosed: true });
+    if (!lookup.allowed) return; // chờ quota friend_lookup hồi, chưa đụng contact nào
     await processCustomerListTarget(job);
   }
 }

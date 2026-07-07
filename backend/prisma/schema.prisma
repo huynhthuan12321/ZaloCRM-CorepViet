@@ -1505,6 +1505,10 @@ model AppSetting {
   orgId          String   @map("org_id")
   settingKey     String   @map("setting_key")
   valuePlain     String?  @map("value_plain")
+  // P2 (H1) 2026-07-07 — SHA-256 hex của secret nhạy cảm (public_api_key). Xác thực so
+  // khớp hash, KHÔNG lưu key thật ở valuePlain (chỉ giữ hint đã mask). DB leak không lộ
+  // key dùng được. Nullable cho tương thích ngược row cũ (backfill ở startup).
+  valueHash      String?  @map("value_hash")
   valueEncrypted Bytes?   @map("value_encrypted")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -1512,6 +1516,7 @@ model AppSetting {
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, settingKey])
+  @@index([settingKey, valueHash])
   @@map("app_settings")
 }
 
@@ -4160,11 +4165,14 @@ model BroadcastRunItem {
   name    String?
   zaloUid String? @map("zalo_uid")
 
-  status    String // 'sent' | 'failed' | 'skipped'
+  status    String // 'sending' (claim P4) | 'sent' | 'failed' | 'skipped'
   error     String?
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([runId, entryId])
+  // P6 (E3/C4) — unique(runId, entryId): 1 recipient chỉ ghi 1 lần/run. Nền tảng cho
+  // P4 (claim-before-send): create row 'sending' TRƯỚC khi gọi Zalo, P2002 = đã có tick
+  // khác gửi → bỏ. Chặn cả race 2 tick/2 instance. (unique đã bao gồm index cho query dedup.)
+  @@unique([runId, entryId])
   @@map("broadcast_run_items")
 }
 

@@ -208,7 +208,16 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     if (b.name !== undefined) data.name = b.name.trim();
     if (b.messageText !== undefined) data.messageText = b.messageText;
     if (b.imageUrl !== undefined) data.imageUrl = b.imageUrl?.trim() || null;
-    if (b.contentBlockIds !== undefined) data.contentBlockIds = b.contentBlockIds.filter(Boolean);
+    if (b.contentBlockIds !== undefined) {
+      // Validate ownership y như POST — chặn PATCH gán id khối nội dung của org khác
+      // (rò rỉ chéo org: cron sẽ đọc & gửi nội dung ngoài org nếu không chặn ở đây).
+      const blockIds = b.contentBlockIds.filter(Boolean);
+      if (blockIds.length) {
+        const n = await prisma.contentBlock.count({ where: { id: { in: blockIds }, orgId: user.orgId } });
+        if (n !== blockIds.length) return reply.status(400).send({ error: 'contentBlock_not_found' });
+      }
+      data.contentBlockIds = blockIds;
+    }
     if (b.maxPerRun !== undefined) data.maxPerRun = Math.min(500, Math.max(1, b.maxPerRun));
     if (b.delaySecMin !== undefined) data.delaySecMin = Math.max(5, b.delaySecMin);
     if (b.delaySecMax !== undefined) data.delaySecMax = Math.max(5, b.delaySecMax);
