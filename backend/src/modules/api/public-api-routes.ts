@@ -382,7 +382,18 @@ export async function publicApiRoutes(app: FastifyInstance): Promise<void> {
         const caption = i === 0 && typeof body.caption === 'string' ? body.caption : '';
         let media: { path: string; cleanup: () => Promise<void> } | null = null;
         try {
-          media = await downloadMediaToTemp({ url: imageUrls[i] }, 'image');
+          try {
+  media = await downloadMediaToTemp(
+    {
+      url: imageUrls[i],
+      filename: `phieu-don-hang-${Date.now()}-${i}.jpg`,
+    },
+    'image',
+  );
+
+  await zaloOps.sendImage(account.id, threadId, 0, [media.path], null, caption);
+  sent++;
+} catch (err) {
           await zaloOps.sendImage(account.id, threadId, 0, [media.path], null, caption);
           sent++;
         } catch (err) {
