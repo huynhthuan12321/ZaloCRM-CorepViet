@@ -130,7 +130,8 @@ function showSnack(text: string, color = 'success') {
 async function loadApiKey() {
   try {
     const res = await api.get('/settings/api-key');
-    apiKey.value = res.data.apiKey ?? '';
+    // Backend trả { key } — sau vá P2, GET chỉ trả hint đã che (key thật chỉ hiện 1 lần lúc tạo).
+    apiKey.value = res.data.key ?? '';
   } catch {
     apiKey.value = '';
   }
@@ -165,8 +166,9 @@ async function generateKey() {
   generatingKey.value = true;
   try {
     const res = await api.post('/settings/api-key/generate');
-    apiKey.value = res.data.apiKey ?? '';
-    showSnack('API key mới đã được tạo');
+    // Key gốc chỉ trả 1 lần ở response này — hiển thị để user copy ngay.
+    apiKey.value = res.data.key ?? '';
+    showSnack('API key mới đã tạo — hãy sao chép ngay, key chỉ hiện đầy đủ lần này', 'success');
   } catch {
     showSnack('Tạo key thất bại', 'error');
   } finally {
