@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (C) 2026 Nguyễn Tiến Lộc
+// Copyright (C) 2026 Nguyen Tien Loc
 /**
- * chat-media-helpers.ts — tiện ích tải media (URL → file tmp) + extract msgId,
- * dùng chung cho forward-media (chat-operations-routes) VÀ gửi Khối vào hội thoại
- * (chat-routes /send-block).
- *
- * 2026-06-07 — tách từ chat-operations-routes.ts (vốn private) để endpoint send-block
- * tái dùng đúng đường media đã được chứng minh: tải URL về tmp rồi đưa LOCAL PATH cho
- * zca-js (api.sendMessage attachments cần path, KHÔNG nhận URL).
+ * chat-media-helpers.ts
+ * Helpers for downloading media URLs to temporary local files before sending
+ * them through zca-js. zca-js needs local file paths for attachments.
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { config } from '../../config/index.js';
 
-/** Extract zaloMsgId từ nhiều shape trả về của zca-js (text/media/forward). */
+/** Extract zaloMsgId from different zca-js response shapes. */
 export function extractZaloMsgId(result: unknown): string {
   const sr = result as {
     msgId?: string | number;
@@ -37,8 +33,8 @@ function sameOrigin(a: string, b: string): boolean {
 }
 
 /**
- * Trả các URL ứng viên để tải media: ưu tiên URL gốc, kèm fallback dịch s3PublicUrl
- * → s3Endpoint (khi bucket nội bộ không expose public host).
+ * Return candidate URLs for downloading media. Prefer the original URL, then
+ * add an internal S3 endpoint fallback when the public URL maps to configured S3.
  */
 export function candidateDownloadUrls(url: string): string[] {
   const candidates = [url];
@@ -56,21 +52,15 @@ export function candidateDownloadUrls(url: string): string[] {
       candidates.push(original.toString());
     }
   } catch {
-    // keep original only
+    // Keep original URL only.
   }
   return [...new Set(candidates)];
 }
 
-// Ký tự bị cấm trong tên file Windows/đường dẫn: \ / : * ? " < > |
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]+/g;
-// Ký tự điều khiển 0x00–0x1f (dựng từ codepoint để source chỉ chứa ASCII in được —
-// tránh nhúng byte điều khiển thô vào file gây hỏng khi tool khác lưu lại).
 const CONTROL_CHARS = new RegExp('[' + String.fromCharCode(0) + '-' + String.fromCharCode(31) + ']+', 'g');
 
 function sanitizeFileName(value?: string): string | undefined {
-  // GIỮ chữ Unicode (tiếng Việt có dấu) + dấu cách + gạch ngang + (). KHÔNG dùng \w (chỉ ASCII)
-  // vì \w biến "BẢNG VẬT LIỆU.pdf" → "B_NG V_T LI_U.pdf" (khách nhận file thấy tên xấu).
-  // Chỉ thay ký tự CẤM trong tên file + ký tự điều khiển. Đuôi (.) luôn giữ.
   const cleaned = value
     ?.replace(ILLEGAL_FILENAME_CHARS, '_')
     .replace(CONTROL_CHARS, '')
@@ -89,22 +79,28 @@ function extensionForContentType(contentType: string): string {
   }
 }
 
+function hasExtension(name: string): boolean {
+  return /\.[a-z0-9]{2,5}$/i.test(name);
+}
+
 export function filenameFromUrl(url: string, contentType: string, fallback?: string): string {
+  const ext = extensionForContentType(contentType);
   const cleanFallback = sanitizeFileName(fallback);
-  if (cleanFallback) return cleanFallback;
+  if (cleanFallback) return hasExtension(cleanFallback) || !ext ? cleanFallback : `${cleanFallback}${ext}`;
+
   try {
     const name = new URL(url).pathname.split('/').filter(Boolean).pop();
     const cleanName = sanitizeFileName(name ? decodeURIComponent(name) : undefined);
-    if (cleanName) return cleanName;
+    if (cleanName) return hasExtension(cleanName) || !ext ? cleanName : `${cleanName}${ext}`;
   } catch {
-    // fall through
+    // Fall through to generated fallback name.
   }
-  return `forward-${contentType}${extensionForContentType(contentType)}`;
+  return `forward-${contentType}${ext}`;
 }
 
 /**
- * Tải 1 URL media về file tmp, trả { path, cleanup }. Thử lần lượt các URL ứng viên.
- * Gọi cleanup() trong finally để xoá thư mục tmp sau khi gửi xong.
+ * Download one media URL to a temporary file and return { path, cleanup }.
+ * Always call cleanup() in finally after sending.
  */
 export async function downloadMediaToTemp(
   media: { url: string; filename?: string },
@@ -126,5 +122,5 @@ export async function downloadMediaToTemp(
       lastError = err;
     }
   }
-  throw new Error(`Không tải được file media để gửi: ${(lastError as Error)?.message ?? String(lastError)}`);
+  throw new Error(`Cannot download media for sending: ${(lastError as Error)?.message ?? String(lastError)}`);
 }
