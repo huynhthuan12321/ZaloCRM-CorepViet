@@ -9,6 +9,9 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { hashApiKey } from '../../shared/crypto/api-key-hash.js';
+import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
+import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
+import { normalizePhone } from '../../shared/utils/phone.js';
 
 // ── API key auth middleware ────────────────────────────────────────────────────
 
@@ -141,6 +144,42 @@ export async function publicApiRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[public-api] PUT /contacts/:id error:', err);
       return reply.status(500).send({ error: 'Failed to update contact' });
+    }
+  });
+
+  // ── Contact lookup by phone (giúp n8n biết gửi bằng nick nào tới UID nào) ──
+
+  app.get('/api/public/contacts/by-phone/:phone', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const orgId = (request as any).orgId as string;
+      const { phone } = request.params as { phone: string };
+
+      const phoneNorm = normalizePhone(phone);
+      if (!phoneNorm) return reply.status(400).send({ error: 'invalid_phone' });
+
+      const contact = await prisma.contact.findFirst({
+        where: { orgId, phoneNormalized: phoneNorm },
+        select: { id: true, fullName: true, phone: true, status: true },
+      });
+      if (!contact) return reply.status(404).send({ error: 'Contact not found' });
+
+      // Bạn bè ĐÃ kết bạn của KH này qua từng nick — n8n dùng để chọn nick gửi + UID đích.
+      const friends = await prisma.friend.findMany({
+        where: { orgId, contactId: contact.id, friendshipStatus: 'accepted' },
+        select: { zaloAccountId: true, zaloUidInNick: true, zaloAccount: { select: { displayName: true } } },
+      });
+
+      return {
+        contact,
+        friends: friends.map((f) => ({
+          zaloAccountId: f.zaloAccountId,
+          accountName: f.zaloAccount?.displayName ?? null,
+          zaloUid: f.zaloUidInNick,
+        })),
+      };
+    } catch (err) {
+      logger.error('[public-api] GET /contacts/by-phone error:', err);
+      return reply.status(500).send({ error: 'Failed to fetch contact by phone' });
     }
   });
 
@@ -290,6 +329,89 @@ export async function publicApiRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[public-api] POST /messages/send error:', err);
       return reply.status(500).send({ error: 'Failed to send message' });
+    }
+  });
+
+  // ── Messages send image (tin giao dịch: gửi ảnh đơn hàng cho khách đã kết bạn) ──
+  // Khác /messages/send (text, gọi zca-js thẳng): đi qua zaloOps.sendImage → rate-limiter
+  // category 'message' (chống block). KHÔNG áp khung giờ 8h-21h (khách đang chờ đơn).
+  app.post('/api/public/messages/send-image', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const orgId = (request as any).orgId as string;
+      const body = request.body as Record<string, any>;
+
+      if (!body?.zaloAccountId) return reply.status(400).send({ error: 'zaloAccountId is required' });
+
+      // Gom danh sách ảnh: imageUrls[] (đơn nhiều trang) hoặc imageUrl (1 ảnh).
+      const imageUrls: string[] = Array.isArray(body.imageUrls)
+        ? body.imageUrls.filter((u: unknown): u is string => typeof u === 'string' && u.trim().length > 0)
+        : (typeof body.imageUrl === 'string' && body.imageUrl.trim() ? [body.imageUrl.trim()] : []);
+      if (imageUrls.length === 0) return reply.status(400).send({ error: 'imageUrl or imageUrls is required' });
+
+      // 1. Verify nick thuộc org + kết nối (giống endpoint text: 404 / 409 / 422).
+      const account = await prisma.zaloAccount.findFirst({
+        where: { id: body.zaloAccountId, orgId },
+        select: { id: true, status: true, archivedAt: true },
+      });
+      if (!account) return reply.status(404).send({ error: 'Zalo account not found' });
+      if (account.archivedAt) {
+        return reply.status(409).send({ error: 'Nick này đã bị xóa — không gửi được. Kết nối lại nick để tiếp tục.', code: 'NICK_ARCHIVED' });
+      }
+      if (account.status !== 'connected') {
+        return reply.status(422).send({ error: 'Zalo account is not connected' });
+      }
+
+      // 2. Xác định threadId: dùng thẳng nếu có; nếu chỉ có phone → tra Friend đã kết bạn
+      //    của ĐÚNG nick này khớp SĐT khách (join Contact.phoneNormalized).
+      let threadId = typeof body.threadId === 'string' ? body.threadId.trim() : '';
+      if (!threadId) {
+        const phoneNorm = normalizePhone(body.phone);
+        if (!phoneNorm) return reply.status(400).send({ error: 'threadId or valid phone is required' });
+        const friend = await prisma.friend.findFirst({
+          where: { orgId, zaloAccountId: account.id, friendshipStatus: 'accepted', contact: { phoneNormalized: phoneNorm } },
+          select: { zaloUidInNick: true },
+        });
+        if (!friend) return reply.status(404).send({ error: 'friend_not_found', hint: 'Khách chưa kết bạn với nick này' });
+        threadId = friend.zaloUidInNick;
+      }
+
+      // 3. Tải + gửi từng ảnh. Caption chỉ gắn ảnh ĐẦU. Dọn tmp trong finally kể cả khi lỗi.
+      const failed: Array<{ index: number; error: string }> = [];
+      let sent = 0;
+      for (let i = 0; i < imageUrls.length; i++) {
+        const caption = i === 0 && typeof body.caption === 'string' ? body.caption : '';
+        let media: { path: string; cleanup: () => Promise<void> } | null = null;
+        try {
+          media = await downloadMediaToTemp({ url: imageUrls[i] }, 'image');
+          await zaloOps.sendImage(account.id, threadId, 0, [media.path], null, caption);
+          sent++;
+        } catch (err) {
+          // Nick chạm trần / mất kết nối → dừng cả loạt, trả mã tương ứng (không thử ảnh sau).
+          if (err instanceof ZaloOpError && err.code === 'RATE_LIMITED') {
+            return reply.status(429).send({ error: 'rate_limited', sent, threadId });
+          }
+          if (err instanceof ZaloOpError && err.code === 'NOT_CONNECTED') {
+            return reply.status(422).send({ error: 'Zalo account is not connected', sent, threadId });
+          }
+          // Lỗi tải/gửi 1 ảnh → ghi nhận, KHÔNG nuốt lỗi âm thầm; tiếp tục ảnh còn lại.
+          failed.push({ index: i, error: String((err as Error)?.message ?? err).slice(0, 300) });
+          logger.warn(`[public-api] send-image ảnh #${i} lỗi: ${(err as Error)?.message ?? err}`);
+        } finally {
+          if (media) await media.cleanup().catch(() => {});
+        }
+      }
+
+      // 4. Kết quả: toàn bộ lỗi → 500; một phần lỗi → 207; tất cả OK → 200.
+      if (sent === 0) {
+        return reply.status(500).send({ error: 'send_image_failed', sent: 0, threadId, failed });
+      }
+      if (failed.length > 0) {
+        return reply.status(207).send({ success: false, sent, threadId, failed });
+      }
+      return { success: true, sent, threadId };
+    } catch (err) {
+      logger.error('[public-api] POST /messages/send-image error:', err);
+      return reply.status(500).send({ error: 'Failed to send image' });
     }
   });
 }
