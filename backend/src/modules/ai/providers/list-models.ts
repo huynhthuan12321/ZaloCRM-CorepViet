@@ -80,6 +80,10 @@ export async function listProviderModels(
     case 'kimi':
       models = await listOpenaiCompat(baseUrl, apiKey, '/v1/models');
       break;
+    case 'deepseek':
+      // DeepSeek list-models ở /models (không có tiền tố /v1).
+      models = await listOpenaiCompat(baseUrl, apiKey, '/models');
+      break;
     case 'qwen':
       models = await listOpenaiCompat(baseUrl, apiKey, '/compatible-mode/v1/models');
       break;

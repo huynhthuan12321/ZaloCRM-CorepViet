@@ -33,7 +33,7 @@ export type ProviderInfo = {
   keyMask: string;
 };
 
-const PROVIDER_IDS = ['anthropic', 'gemini', 'openai', 'qwen', 'kimi'] as const;
+const PROVIDER_IDS = ['anthropic', 'gemini', 'openai', 'qwen', 'kimi', 'deepseek'] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 /** Build catalog tĩnh từ config (env) */
@@ -44,6 +44,7 @@ function buildCatalog(): ProviderDef[] {
     { id: 'openai', name: 'OpenAI', baseUrl: config.openaiBaseUrl, authToken: config.openaiAuthToken },
     { id: 'qwen', name: 'Qwen', baseUrl: config.qwenBaseUrl, authToken: config.qwenAuthToken },
     { id: 'kimi', name: 'Kimi', baseUrl: config.kimiBaseUrl, authToken: config.kimiAuthToken },
+    { id: 'deepseek', name: 'DeepSeek', baseUrl: config.deepseekBaseUrl, authToken: config.deepseekAuthToken },
   ];
 }
 

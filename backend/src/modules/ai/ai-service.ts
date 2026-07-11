@@ -111,10 +111,12 @@ export async function generateText(provider: string, apiKey: string, model: stri
   if (provider === 'anthropic') return generateWithAnthropic(baseUrl, apiKey, model, system, prompt, maxTokens);
   if (provider === 'gemini') return generateWithGemini(baseUrl, apiKey, model, system, prompt, maxTokens);
 
-  /* OpenAI, Qwen, Kimi all use OpenAI-compatible chat/completions API */
+  /* OpenAI, Qwen, Kimi, DeepSeek all use OpenAI-compatible chat/completions API */
   if (provider === 'openai') return generateWithOpenaiCompat(`${baseUrl}/v1/chat/completions`, apiKey, model, system, prompt, maxTokens, 'max_completion_tokens');
   if (provider === 'qwen') return generateWithOpenaiCompat(`${baseUrl}/compatible-mode/v1/chat/completions`, apiKey, model, system, prompt, maxTokens);
   if (provider === 'kimi') return generateWithOpenaiCompat(`${baseUrl}/v1/chat/completions`, apiKey, model, system, prompt, maxTokens);
+  // DeepSeek: base https://api.deepseek.com → /chat/completions (max_tokens chuẩn OpenAI).
+  if (provider === 'deepseek') return generateWithOpenaiCompat(`${baseUrl}/chat/completions`, apiKey, model, system, prompt, maxTokens);
 
   throw new Error(`Unsupported AI provider: ${provider}`);
 }
