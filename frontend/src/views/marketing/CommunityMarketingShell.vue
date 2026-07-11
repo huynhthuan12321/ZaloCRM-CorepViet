@@ -49,6 +49,7 @@ const navItems = [
   { to: '/marketing/content-blocks', label: 'Khối nội dung', icon: 'mdi-view-grid-plus-outline' },
   // Community 2026-07-08 — Mẫu tin nhắn nhanh (template gõ "/" trong chat).
   { to: '/marketing/message-templates', label: 'Mẫu tin nhắn', icon: 'mdi-message-flash-outline' },
+  { to: '/marketing/sequences', label: 'Luồng kịch bản', icon: 'mdi-target-variant' },
 ];
 
 function isActive(to: string): boolean {

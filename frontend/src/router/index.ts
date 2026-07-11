@@ -231,6 +231,8 @@ const routes: RouteRecordRaw[] = [
           { path: 'content-blocks', name: 'CE.ContentBlocks', component: () => import('@/views/marketing/ContentBlocksView.vue'), meta: { requiresAuth: true } },
           // Mẫu tin nhắn nhanh — quản lý template gõ "/" trong chat (Community 2026-07-08).
           { path: 'message-templates', name: 'CE.MessageTemplates', component: () => import('@/views/marketing/MessageTemplatesView.vue'), meta: { requiresAuth: true } },
+          // Luồng kịch bản bám đuổi thủ công cho tab Follow-up.
+          { path: 'sequences', name: 'Marketing.Sequences', component: () => import('@/views/marketing/SequencesView.vue'), meta: { requiresAuth: true } },
           // Mục tiêu (auto kết bạn) — Community extension 2026-07-07.
           { path: 'targets', name: 'CE.Targets', component: () => import('@/views/marketing/TargetsView.vue'), meta: { requiresAuth: true } },
         ],

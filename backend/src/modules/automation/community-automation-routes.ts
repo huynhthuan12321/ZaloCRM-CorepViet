@@ -27,6 +27,67 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+type SequenceDraftStep = {
+  text: string;
+  delayMinutes: number;
+  styles: unknown[];
+};
+
+function textFromUnknown(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  const row = value as Record<string, unknown>;
+  return String(row.text ?? row.content ?? row.messageText ?? row.message ?? '');
+}
+
+function normalizeSequenceSteps(value: unknown, fallbackText = ''): SequenceDraftStep[] {
+  const raw = asArray(value);
+  const rows = raw.length ? raw : (fallbackText.trim() ? [{ text: fallbackText }] : []);
+  const steps = rows
+    .map((row, index) => {
+      const obj = row && typeof row === 'object' ? row as Record<string, unknown> : {};
+      const text = textFromUnknown(row).trim();
+      const delay = Number(obj.delayMinutes ?? obj.delay ?? (index === 0 ? 0 : 1440));
+      return {
+        text,
+        delayMinutes: Number.isFinite(delay) && delay >= 0 ? Math.round(delay) : (index === 0 ? 0 : 1440),
+        styles: Array.isArray(obj.styles) ? obj.styles : [],
+      };
+    })
+    .filter((row) => row.text);
+  return steps.length ? steps : [{ text: 'Tin nhan cham soc khach hang', delayMinutes: 0, styles: [] }];
+}
+
+function stepText(step: unknown): string {
+  const text = textFromUnknown(step).trim();
+  return text || '(buoc nay chua co noi dung)';
+}
+
+function sequenceDto(sequence: {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  steps: unknown;
+  runtimeRules: unknown;
+  createdAt?: Date;
+  updatedAt?: Date;
+  sequenceSteps?: unknown[];
+}) {
+  const steps = asArray(sequence.steps);
+  return {
+    id: sequence.id,
+    name: sequence.name,
+    description: sequence.description,
+    enabled: sequence.enabled,
+    steps,
+    runtimeRules: sequence.runtimeRules ?? {},
+    stepCount: stepCountOf(sequence),
+    createdAt: sequence.createdAt?.toISOString(),
+    updatedAt: sequence.updatedAt?.toISOString(),
+  };
+}
+
 function stepCountOf(sequence: { steps: unknown; sequenceSteps?: unknown[] }): number {
   const relational = Array.isArray(sequence.sequenceSteps) ? sequence.sequenceSteps.length : 0;
   return relational || asArray(sequence.steps).length;
@@ -83,15 +144,132 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
       include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
     });
     return {
-      sequences: sequences.map((s) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        enabled: s.enabled,
-        steps: asArray(s.steps),
-        runtimeRules: s.runtimeRules ?? {},
-        stepCount: stepCountOf(s),
-      })),
+      sequences: sequences.map(sequenceDto),
+    };
+  });
+
+  app.post('/api/v1/automation/sequences', async (
+    request: FastifyRequest<{ Body: { name?: string; description?: string; enabled?: boolean; steps?: unknown; messageText?: string; runtimeRules?: unknown } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const name = (request.body.name ?? '').trim();
+    if (!name) return reply.status(400).send({ error: 'name is required' });
+    const steps = normalizeSequenceSteps(request.body.steps, request.body.messageText ?? '');
+    const created = await prisma.automationSequence.create({
+      data: {
+        orgId: user.orgId,
+        name,
+        description: (request.body.description ?? '').trim() || null,
+        enabled: request.body.enabled !== false,
+        createdById: user.id,
+        steps,
+        runtimeRules: request.body.runtimeRules && typeof request.body.runtimeRules === 'object'
+          ? request.body.runtimeRules as object
+          : { allowedHourRange: [8, 21], sendGap: { value: 30, unit: 'minute' } },
+      },
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    return { sequence: sequenceDto(created) };
+  });
+
+  app.patch('/api/v1/automation/sequences/:id', async (
+    request: FastifyRequest<{ Params: { id: string }; Body: { name?: string; description?: string | null; enabled?: boolean; steps?: unknown; messageText?: string; runtimeRules?: unknown } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const existing = await prisma.automationSequence.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: 'Sequence not found' });
+
+    const data: Record<string, unknown> = {};
+    if (typeof request.body.name === 'string') {
+      const name = request.body.name.trim();
+      if (!name) return reply.status(400).send({ error: 'name is required' });
+      data.name = name;
+    }
+    if ('description' in request.body) data.description = (request.body.description ?? '').trim() || null;
+    if (typeof request.body.enabled === 'boolean') data.enabled = request.body.enabled;
+    if ('steps' in request.body || typeof request.body.messageText === 'string') {
+      data.steps = normalizeSequenceSteps(request.body.steps, request.body.messageText ?? '');
+    }
+    if (request.body.runtimeRules && typeof request.body.runtimeRules === 'object') data.runtimeRules = request.body.runtimeRules as object;
+
+    const updated = await prisma.automationSequence.update({
+      where: { id: request.params.id },
+      data,
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    return { sequence: sequenceDto(updated) };
+  });
+
+  app.delete('/api/v1/automation/sequences/:id', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const existing = await prisma.automationSequence.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: 'Sequence not found' });
+    const activeSessions = await prisma.careSession.count({ where: { orgId: user.orgId, sourceSequenceId: request.params.id, state: 'active' } });
+    if (activeSessions > 0) {
+      await prisma.automationSequence.update({ where: { id: request.params.id }, data: { enabled: false } });
+      return { ok: true, disabled: true, reason: 'sequence_has_active_sessions' };
+    }
+    await prisma.automationSequence.delete({ where: { id: request.params.id } });
+    return { ok: true };
+  });
+
+  app.post('/api/v1/automation/sequences/:id/preview', async (
+    request: FastifyRequest<{ Params: { id: string }; Body: { contactIds?: string[]; nickId?: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const sequence = await prisma.automationSequence.findFirst({
+      where: { id: request.params.id, orgId: user.orgId },
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    if (!sequence) return reply.status(404).send({ error: 'Sequence not found' });
+
+    const contactIds = asArray(request.body.contactIds).map(String).slice(0, 2);
+    const contacts = contactIds.length
+      ? await prisma.contact.findMany({
+          where: { orgId: user.orgId, id: { in: contactIds } },
+          select: { id: true, fullName: true, crmName: true, zaloUsername: true, phone: true },
+        })
+      : [];
+    const contactMap = new Map(contacts.map((c) => [c.id, c]));
+    const now = Date.now();
+    const steps = normalizeSequenceSteps(sequence.steps);
+
+    return {
+      sequence: {
+        id: sequence.id,
+        name: sequence.name,
+        totalSteps: steps.length,
+        windowLabel: '08:00-21:00',
+        gapLabel: 'theo thoi gian tung buoc',
+      },
+      contacts: contactIds
+        .filter((id) => contactMap.has(id))
+        .map((id) => {
+          const contact = contactMap.get(id)!;
+          let offsetMinutes = 0;
+          const previewSteps = steps.map((step, idx) => {
+            offsetMinutes += idx === 0 ? 0 : step.delayMinutes;
+            return {
+              stepIdx: idx,
+              delayMinutes: step.delayMinutes,
+              sendAt: new Date(now + offsetMinutes * 60 * 1000).toISOString(),
+              blockName: null,
+              bubbles: [{ type: 'text', text: stepText(step), styles: step.styles }],
+            };
+          });
+          return {
+            contactId: id,
+            name: contact.crmName ?? contact.fullName ?? contact.zaloUsername ?? contact.phone ?? 'Khach hang',
+            steps: previewSteps,
+            etaCompleteAt: previewSteps.at(-1)?.sendAt ?? null,
+          };
+        }),
     };
   });
 
