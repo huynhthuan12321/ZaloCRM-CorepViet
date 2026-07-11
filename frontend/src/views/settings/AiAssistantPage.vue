@@ -93,6 +93,54 @@
       </div>
 
       <div v-if="saveMessage" class="save-msg" :class="saveOk ? 'ok' : 'err'">{{ saveMessage }}</div>
+
+      <!-- ── Knowledge base BĐS (RAG — Trợ lý AI Bất động sản) ── -->
+      <div class="kb-section">
+        <h2 class="kb-title">📚 Knowledge base Bất động sản</h2>
+        <p class="kb-desc">Tài liệu (bảng giá, chính sách, tiến độ...) để Trợ lý AI trả lời bám dữ liệu công ty — dùng ở tab <b>AI</b> trong màn Chat.</p>
+
+        <!-- Cấu hình embedding -->
+        <div class="field-group">
+          <label class="field-label">Model embedding <span class="field-meta">(để tìm đoạn tài liệu liên quan)</span></label>
+          <div class="kb-embed-row">
+            <select v-model="kbProvider" class="regex-input kb-embed-sel">
+              <option value="">— chọn provider —</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="qwen">Qwen</option>
+            </select>
+            <input v-model="kbModel" class="regex-input" placeholder="vd: text-embedding-004 / text-embedding-3-small" />
+            <button class="btn-primary" :disabled="kbSaving" @click="saveKbConfig">Lưu</button>
+          </div>
+          <div class="field-hint">Gemini: <code>text-embedding-004</code> · OpenAI: <code>text-embedding-3-small</code> · Qwen: <code>text-embedding-v3</code>. Provider phải đã nhập API key ở Cấu hình AI.</div>
+        </div>
+
+        <!-- Thêm tài liệu -->
+        <div class="field-group">
+          <label class="field-label">Thêm tài liệu (dán nội dung)</label>
+          <input v-model="kbDocTitle" class="regex-input" placeholder="Tên tài liệu (vd: Bảng giá Emerald T7/2026)" />
+          <textarea v-model="kbDocText" class="prompt-editor kb-doc-text" rows="8" placeholder="Dán nội dung tài liệu (bảng giá, chính sách, tiến độ...)"></textarea>
+          <div class="kb-add-row">
+            <span class="field-hint">Nội dung sẽ được cắt nhỏ + tạo embedding để AI tra cứu.</span>
+            <button class="btn-primary" :disabled="kbSaving || !kbDocText.trim()" @click="addKbDoc">{{ kbSaving ? 'Đang xử lý…' : '+ Thêm tài liệu' }}</button>
+          </div>
+        </div>
+
+        <!-- Danh sách tài liệu -->
+        <div class="field-group">
+          <label class="field-label">Tài liệu đã có ({{ kbDocs.length }})</label>
+          <div v-if="kbDocs.length === 0" class="field-hint">Chưa có tài liệu nào.</div>
+          <div v-for="d in kbDocs" :key="d.id" class="kb-doc">
+            <div class="kb-doc-main">
+              <div class="kb-doc-title">{{ d.title }}</div>
+              <div class="kb-doc-meta">{{ d.chunkCount }} đoạn · {{ d.charCount.toLocaleString('vi-VN') }} ký tự · {{ fmtDate(d.createdAt) }}</div>
+            </div>
+            <button class="kb-doc-del" @click="removeKbDoc(d)">Xoá</button>
+          </div>
+        </div>
+
+        <div v-if="kbMsg" class="save-msg" :class="kbOk ? 'ok' : 'err'">{{ kbMsg }}</div>
+      </div>
     </div>
 
     <!-- Test prompt modal -->
@@ -117,6 +165,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { api } from '@/api/index';
+import { useAiKnowledge } from '@/composables/use-ai-knowledge';
 
 interface AiAssistantConfig {
   aiAssistantEnabled: boolean;
@@ -202,7 +251,45 @@ function restoreDefault() {
   config.value.aiAssistantPromptTemplate = config.value.defaultPrompt;
 }
 
-onMounted(load);
+// ── Knowledge base BĐS (RAG) ──────────────────────────────────────────────
+const { docs: kbDocs, config: kbCfg, saving: kbSaving, fetchDocs, fetchConfig, saveConfig, addDoc, removeDoc } = useAiKnowledge();
+const kbProvider = ref('');
+const kbModel = ref('');
+const kbDocTitle = ref('');
+const kbDocText = ref('');
+const kbMsg = ref('');
+const kbOk = ref(false);
+
+async function loadKb() {
+  await Promise.all([fetchConfig().catch(() => {}), fetchDocs().catch(() => {})]);
+  kbProvider.value = kbCfg.value.embedProvider ?? '';
+  kbModel.value = kbCfg.value.embedModel ?? '';
+}
+async function saveKbConfig() {
+  kbMsg.value = '';
+  try {
+    await saveConfig({ embedProvider: kbProvider.value || null, embedModel: kbModel.value || null });
+    kbMsg.value = '✓ Đã lưu cấu hình embedding'; kbOk.value = true;
+    setTimeout(() => (kbMsg.value = ''), 3000);
+  } catch (e: any) { kbMsg.value = e?.response?.data?.error || 'Lỗi lưu cấu hình'; kbOk.value = false; }
+}
+async function addKbDoc() {
+  if (!kbDocText.value.trim()) return;
+  kbMsg.value = '';
+  try {
+    const r = await addDoc(kbDocTitle.value || 'Tài liệu', kbDocText.value);
+    kbMsg.value = `✓ Đã thêm tài liệu (${r.chunkCount} đoạn)`; kbOk.value = true;
+    kbDocTitle.value = ''; kbDocText.value = '';
+    setTimeout(() => (kbMsg.value = ''), 3000);
+  } catch (e: any) { kbMsg.value = e?.response?.data?.error || 'Lỗi thêm tài liệu'; kbOk.value = false; }
+}
+async function removeKbDoc(d: { id: string; title: string }) {
+  if (!confirm(`Xoá tài liệu "${d.title}"? Không thể hoàn tác.`)) return;
+  await removeDoc(d.id);
+}
+function fmtDate(s: string) { return new Date(s).toLocaleDateString('vi-VN'); }
+
+onMounted(() => { load(); loadKb(); });
 </script>
 
 <style scoped>
@@ -396,4 +483,21 @@ onMounted(load);
 }
 .modal-content { padding: 16px; }
 .modal-hint { font-size: 13px; color: #64748b; line-height: 1.6; }
+
+/* ── Knowledge base section ── */
+.kb-section { border-top: 2px solid #e2e8f0; padding-top: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 12px; }
+.kb-title { font-size: 15px; font-weight: 700; margin: 0; }
+.kb-desc { font-size: 12.5px; color: #64748b; margin: 0; line-height: 1.5; }
+.kb-desc code, .field-hint code { background: #f1f5f9; padding: 0 5px; border-radius: 4px; font-size: 11px; }
+.kb-embed-row { display: flex; gap: 8px; align-items: center; }
+.kb-embed-sel { max-width: 200px; flex: 0 0 auto; }
+.kb-embed-row .regex-input { flex: 1; }
+.kb-doc-text { min-height: 160px; color: #1f2937; font-family: inherit; }
+.kb-add-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 12px; }
+.kb-doc { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 6px; }
+.kb-doc-main { min-width: 0; }
+.kb-doc-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-doc-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
+.kb-doc-del { flex: 0 0 auto; padding: 5px 12px; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.kb-doc-del:hover { background: #fef2f2; }
 </style>
