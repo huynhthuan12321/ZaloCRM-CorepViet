@@ -103,16 +103,16 @@
         <div class="field-group">
           <label class="field-label">Model embedding <span class="field-meta">(để tìm đoạn tài liệu liên quan)</span></label>
           <div class="kb-embed-row">
-            <select v-model="kbProvider" class="regex-input kb-embed-sel">
+            <select v-model="kbProvider" class="regex-input kb-embed-sel" @change="onKbProviderChange">
               <option value="">— chọn provider —</option>
               <option value="gemini">Gemini</option>
               <option value="openai">OpenAI</option>
               <option value="qwen">Qwen</option>
             </select>
-            <input v-model="kbModel" class="regex-input" placeholder="vd: text-embedding-004 / text-embedding-3-small" />
+            <input v-model="kbModel" class="regex-input" placeholder="vd: gemini-embedding-001 / text-embedding-3-small" />
             <button class="btn-primary" :disabled="kbSaving" @click="saveKbConfig">Lưu</button>
           </div>
-          <div class="field-hint">Gemini: <code>text-embedding-004</code> · OpenAI: <code>text-embedding-3-small</code> · Qwen: <code>text-embedding-v3</code>. Provider phải đã nhập API key ở Cấu hình AI.</div>
+          <div class="field-hint">Gemini: <code>gemini-embedding-001</code> · OpenAI: <code>text-embedding-3-small</code> · Qwen: <code>text-embedding-v3</code>. Provider phải đã nhập API key ở Cấu hình AI.</div>
         </div>
 
         <!-- Thêm tài liệu -->
@@ -259,19 +259,36 @@ const kbDocTitle = ref('');
 const kbDocText = ref('');
 const kbMsg = ref('');
 const kbOk = ref(false);
+const kbDefaultModels: Record<string, string> = {
+  gemini: 'gemini-embedding-001',
+  openai: 'text-embedding-3-small',
+  qwen: 'text-embedding-v3',
+};
+
+function normalizeKbModel(provider: string, model: string | null | undefined): string {
+  const clean = (model ?? '').trim().replace(/^models\//, '');
+  if (provider === 'gemini' && (!clean || clean === 'text' || clean === 'embedding' || clean === 'text-embedding')) {
+    return kbDefaultModels.gemini;
+  }
+  return clean || kbDefaultModels[provider] || '';
+}
 
 async function loadKb() {
   await Promise.all([fetchConfig().catch(() => {}), fetchDocs().catch(() => {})]);
   kbProvider.value = kbCfg.value.embedProvider ?? '';
-  kbModel.value = kbCfg.value.embedModel ?? '';
+  kbModel.value = normalizeKbModel(kbProvider.value, kbCfg.value.embedModel);
 }
 async function saveKbConfig() {
   kbMsg.value = '';
   try {
+    kbModel.value = normalizeKbModel(kbProvider.value, kbModel.value);
     await saveConfig({ embedProvider: kbProvider.value || null, embedModel: kbModel.value || null });
     kbMsg.value = '✓ Đã lưu cấu hình embedding'; kbOk.value = true;
     setTimeout(() => (kbMsg.value = ''), 3000);
   } catch (e: any) { kbMsg.value = e?.response?.data?.error || 'Lỗi lưu cấu hình'; kbOk.value = false; }
+}
+function onKbProviderChange() {
+  kbModel.value = kbDefaultModels[kbProvider.value] ?? '';
 }
 async function addKbDoc() {
   if (!kbDocText.value.trim()) return;

@@ -12,11 +12,21 @@ import { resolveProviderApiKey, getProviderBaseUrl } from '../provider-registry.
 
 export interface EmbedConfig { provider: string; model: string; apiKey: string; baseUrl: string; }
 
+function normalizeEmbedModel(provider: string, model: string): string {
+  const clean = model.trim().replace(/^models\//, '');
+  if (provider === 'gemini') {
+    if (!clean || clean === 'text' || clean === 'embedding' || clean === 'text-embedding') {
+      return 'gemini-embedding-001';
+    }
+  }
+  return clean;
+}
+
 /** Lấy cấu hình embedding per-org. Throw mã lỗi rõ ràng nếu chưa cấu hình. */
 export async function resolveEmbedConfig(orgId: string): Promise<EmbedConfig> {
   const cfg = await getAiConfig(orgId);
   const provider = cfg.embedProvider ?? '';
-  const model = cfg.embedModel ?? '';
+  const model = normalizeEmbedModel(provider, cfg.embedModel ?? '');
   if (!provider || !model) throw new Error('EMBED_NOT_CONFIGURED');
   const [apiKey, baseUrl] = await Promise.all([
     resolveProviderApiKey(orgId, provider),
