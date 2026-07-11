@@ -1312,6 +1312,18 @@ function nickAvatarStyle(name: string): Record<string, string> {
   /* 2026-06-06 — HS Holding Atlas theme */
   padding: 22px 24px;
   max-width: 100%;
+  /* 2026-07-11 FIX "không xuống được dòng": bound view theo viewport (dưới topnav) +
+     flex column → bảng cuộn NỘI BỘ và thanh phân trang .pag luôn ghim đáy màn hình.
+     Bỏ bẫy double-scroll cũ (.entries-wrap cap max-height:100vh-300px trong khi CẢ
+     trang cũng cuộn vì v-main dùng min-height → hàng cuối + .pag rớt khỏi viewport,
+     wheel bị bảng nuốt nên không cuộn tới được). Dùng 100vh (không phụ thuộc chuỗi
+     height:100% mong manh của v-main/shell). */
+  box-sizing: border-box;
+  height: calc(100vh - var(--smax-topnav-h, 48px));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .breadcrumb {
@@ -1452,10 +1464,13 @@ function nickAvatarStyle(name: string): Record<string, string> {
 .entries-wrap {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-md); overflow: auto;
-  /* 2026-07-08: nới cao lại để xem nhiều dòng hơn (thanh phân trang vẫn tới được
-     vì .ce-mkt-content tự cuộn). Header sticky pin top khi cuộn trong bảng. */
-  max-height: calc(100vh - 300px);
-  min-height: 380px;
+  /* 2026-07-11: flex-fill khoảng trống còn lại (parent .list-detail-view đã bound theo
+     viewport) → cuộn NỘI BỘ mượt đủ mọi dòng, KHÔNG dùng magic 100vh-300px nữa.
+     min-height:0 BẮT BUỘC để flex child co lại được mà bật overflow (nếu thiếu, flex
+     child không co dưới content-size → overflow không kích hoạt). Header sticky pin top,
+     thanh phân trang .pag ghim ngay dưới (flex item không co). */
+  flex: 1 1 auto;
+  min-height: 0;
   scrollbar-gutter: stable both-edges;
 }
 .entries-table { font-size: 12px; min-width: 2200px; }
@@ -1847,6 +1862,8 @@ function nickAvatarStyle(name: string): Record<string, string> {
   border: 1px solid var(--line); border-top: none;
   border-radius: 0 0 var(--r-md) var(--r-md);
   font-size: 11.5px; color: var(--ink-3);
+  /* 2026-07-11: flex item KHÔNG co — luôn ghim đáy dưới bảng (bảng flex:1 cuộn nội bộ). */
+  flex: 0 0 auto;
 }
 .pag .ctrls { display: flex; gap: 4px; align-items: center; }
 .pag button {
