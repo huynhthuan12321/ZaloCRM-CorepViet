@@ -490,13 +490,28 @@
       </div>
     </div>
 
-    <!-- ════════ TAB AI (placeholder) ════════ -->
-    <div v-if="mainTab === 'ai'" class="main-tab-body">
-      <div class="main-tab-placeholder">
-        <div class="mtp-icon">✨</div>
-        <h3>Trợ lý AI Bất động sản</h3>
-        <p>Hỏi đáp về sản phẩm, dự án BĐS, giá, ưu đãi để tư vấn KH.</p>
-        <div class="mtp-coming">🚧 Đang phát triển — kết nối knowledge base BĐS HS Holding</div>
+    <!-- ════════ TAB AI — Trợ lý AI Bất động sản (RAG knowledge base) ════════ -->
+    <div v-if="mainTab === 'ai'" class="main-tab-body ai-kb">
+      <div class="ai-kb-head">
+        <span class="ai-kb-ico">✨</span>
+        <div>
+          <div class="ai-kb-title">Trợ lý AI Bất động sản</div>
+          <div class="ai-kb-sub">Hỏi về dự án, giá, chính sách — trả lời theo tài liệu công ty.</div>
+        </div>
+      </div>
+      <div ref="aiKbMsgsEl" class="ai-kb-msgs">
+        <div v-if="aiKbMsgs.length === 0" class="ai-kb-empty">
+          Ví dụ: "Dự án Emerald giá 2PN bao nhiêu?", "Chính sách chiết khấu hiện tại?", "Tiến độ bàn giao?"
+          <div class="ai-kb-hint">Tài liệu quản lý ở Cài đặt → Trợ lý AI.</div>
+        </div>
+        <div v-for="(m, i) in aiKbMsgs" :key="i" class="ai-kb-msg" :class="m.role">
+          <div class="ai-kb-bubble">{{ m.text }}</div>
+        </div>
+        <div v-if="aiKbLoading" class="ai-kb-msg ai"><div class="ai-kb-bubble ai-kb-typing">Đang tra tài liệu…</div></div>
+      </div>
+      <div class="ai-kb-input">
+        <textarea v-model="aiKbInput" rows="2" placeholder="Hỏi trợ lý AI về dự án…" @keydown.enter.exact.prevent="askKb"></textarea>
+        <button class="ai-kb-send" :disabled="aiKbLoading || !aiKbInput.trim()" @click="askKb">Hỏi</button>
       </div>
     </div>
 
@@ -596,6 +611,7 @@ import ContactDealStageSelector from '@/components/chat/ContactDealStageSelector
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
 import { api } from '@/api';
+import { useAiKnowledge } from '@/composables/use-ai-knowledge';
 // Icon top-tab — Lucide line (anh chốt 2026-06-08, đồng bộ bottom-tab SVG).
 import {
   User as UserIcon,
@@ -692,6 +708,31 @@ async function saveAlias() {
 // 2026-06-12 (anh chốt): tab 'automation' → 'media' (gộp Picker Media + Automation:
 //   Ảnh/Video/Tệp/Khối trong MediaTabPanel). `activeTab` (sub-tab) chỉ active scope 'profile'.
 const mainTab = ref<'profile' | 'media' | 'ai' | 'followup'>('profile');
+
+// ── Trợ lý AI Bất động sản (RAG knowledge base) — Đợt 1 ──────────────────
+const { ask: kbAsk } = useAiKnowledge();
+const aiKbMsgs = ref<Array<{ role: 'user' | 'ai'; text: string }>>([]);
+const aiKbInput = ref('');
+const aiKbLoading = ref(false);
+const aiKbMsgsEl = ref<HTMLElement | null>(null);
+function scrollKb(): void { const el = aiKbMsgsEl.value; if (el) el.scrollTop = el.scrollHeight; }
+async function askKb(): Promise<void> {
+  const q = aiKbInput.value.trim();
+  if (!q || aiKbLoading.value) return;
+  aiKbMsgs.value.push({ role: 'user', text: q });
+  aiKbInput.value = '';
+  aiKbLoading.value = true;
+  setTimeout(scrollKb, 0);
+  try {
+    const res = await kbAsk(q);
+    aiKbMsgs.value.push({ role: 'ai', text: res.answer || '(không có trả lời)' });
+  } catch (err: any) {
+    aiKbMsgs.value.push({ role: 'ai', text: `Lỗi: ${err?.response?.data?.error ?? 'không hỏi được'}` });
+  } finally {
+    aiKbLoading.value = false;
+    setTimeout(scrollKb, 0);
+  }
+}
 const activeTab = ref<'profile' | 'crm' | 'activity' | 'score'>('profile');
 
 // Cho phép cha (ChatView) mở tab Media từ nút "Chèn từ kho" ở composer cột 3.
@@ -2244,6 +2285,28 @@ async function onRegenerateHandoff() {
   font-weight: 500;
   margin-bottom: 12px;
 }
+
+/* ── Trợ lý AI Bất động sản (RAG) ── */
+.ai-kb { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 0; }
+.ai-kb-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #eef0f3; }
+.ai-kb-ico { font-size: 22px; }
+.ai-kb-title { font-size: 14px; font-weight: 700; color: #181d26; }
+.ai-kb-sub { font-size: 11.5px; color: #6b7280; margin-top: 1px; }
+.ai-kb-msgs { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.ai-kb-empty { color: #9ca3af; font-size: 12.5px; text-align: center; margin: auto 0; line-height: 1.6; }
+.ai-kb-hint { font-size: 11px; margin-top: 6px; color: #b6bcc6; }
+.ai-kb-msg { display: flex; }
+.ai-kb-msg.user { justify-content: flex-end; }
+.ai-kb-msg.ai { justify-content: flex-start; }
+.ai-kb-bubble { max-width: 88%; padding: 8px 11px; border-radius: 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.ai-kb-msg.user .ai-kb-bubble { background: #1786be; color: #fff; border-bottom-right-radius: 4px; }
+.ai-kb-msg.ai .ai-kb-bubble { background: #f2f4f7; color: #1f2937; border-bottom-left-radius: 4px; }
+.ai-kb-typing { color: #6b7280; font-style: italic; }
+.ai-kb-input { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #eef0f3; align-items: flex-end; }
+.ai-kb-input textarea { flex: 1; border: 1px solid #d5d4d8; border-radius: 10px; padding: 8px 10px; font-size: 13px; font-family: inherit; resize: none; outline: none; line-height: 1.4; }
+.ai-kb-input textarea:focus { border-color: #1786be; }
+.ai-kb-send { flex: 0 0 auto; height: 36px; padding: 0 16px; border: none; border-radius: 10px; background: #1786be; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
+.ai-kb-send:disabled { opacity: 0.5; cursor: not-allowed; }
 .mtp-link {
   display: inline-block;
   margin-top: 8px;

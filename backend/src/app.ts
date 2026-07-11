@@ -325,6 +325,9 @@ async function bootstrap() {
   // lists/friend-invite + bull-board/stats/manual-control) → extension bundle.
   await app.register(telegramBridgeRoutes); // Telegram bridge (Zalo↔Telegram) — core
   await app.register(aiRoutes);
+  // Knowledge base RAG (Trợ lý AI Bất động sản) — Đợt 1 2026-07-11.
+  const { knowledgeRoutes } = await import('./modules/ai/knowledge/knowledge-routes.js');
+  await app.register(knowledgeRoutes);
   await app.register(chatOperationsRoutes);
   await app.register(groupRoutes);
   await app.register(groupScanRoutes); // E1 Quét group (🟢 Community)

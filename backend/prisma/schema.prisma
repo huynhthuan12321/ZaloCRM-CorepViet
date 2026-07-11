@@ -1678,12 +1678,57 @@ model AiConfig {
   aiAssistantEnabled          Boolean  @default(true) @map("ai_assistant_enabled")
   aiAssistantPromptTemplate   String?  @map("ai_assistant_prompt_template") @db.Text
   aiAssistantSkipNoisePattern String   @default("^(ok|oke|okay|uhm|um|ờ|à|ừ|a|o|yes|no|y|n|\\.|\\.\\.|\\.\\.\\.)\\s*$") @map("ai_assistant_skip_noise_pattern")
+  // Đợt 1 RAG 2026-07-11 — provider/model cho EMBEDDING (knowledge base BĐS). Tách khỏi
+  // chat provider để chọn model embedding riêng (vd Gemini text-embedding-004). Dùng lại
+  // key per-org của provider tương ứng. NULL = chưa cấu hình → knowledge search tắt.
+  embedProvider               String?  @map("embed_provider")
+  embedModel                  String?  @map("embed_model")
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@map("ai_configs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Knowledge base RAG (Trợ lý AI Bất động sản) — Đợt 1 2026-07-11.
+// Tài liệu BĐS → chunk → embedding (float[] lưu Json) → in-JS cosine search →
+// nhồi vào prompt AI. KHÔNG pgvector (không đụng Postgres image). orgId cột thường
+// (pattern extension, không FK core Organization qua Prisma; FK cascade ở migration).
+// ═══════════════════════════════════════════════════════════════════════════
+model KnowledgeDoc {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  title       String
+  sourceType  String   @default("text") @map("source_type") // 'text' | 'file'
+  charCount   Int      @default(0) @map("char_count")
+  chunkCount  Int      @default(0) @map("chunk_count")
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  chunks KnowledgeChunk[]
+
+  @@index([orgId, createdAt])
+  @@map("knowledge_docs")
+}
+
+model KnowledgeChunk {
+  id         String       @id @default(uuid())
+  orgId      String       @map("org_id")
+  docId      String       @map("doc_id")
+  doc        KnowledgeDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+  chunkIndex Int          @map("chunk_index")
+  content    String       @db.Text
+  // Vector embedding dạng mảng số (float[]) — in-JS cosine, không pgvector.
+  embedding  Json         @default("[]")
+  embedModel String?      @map("embed_model")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  @@index([orgId])
+  @@index([docId, chunkIndex])
+  @@map("knowledge_chunks")
 }
 
 // M53 (2026-05-30): Audit log mỗi lần sale click "Áp dụng" trên AiSuggestionCard.
