@@ -572,7 +572,7 @@ export async function systemNotifyRoutes(app: FastifyInstance): Promise<void> {
         fullName: 'Nguyễn Văn A',
         email: 'nguyenvana@example.com',
         phone: '0901000001',
-        password: 'a3k7p9',
+        password: '••••••', // dữ liệu mẫu preview — KHÔNG phải mật khẩu thật
         loginUrl: process.env.CRM_LOGIN_URL || process.env.APP_URL || 'http://localhost:3080',
         orgName: org?.name ?? 'Tổ chức',
         departmentName: 'Phòng Kinh Doanh',

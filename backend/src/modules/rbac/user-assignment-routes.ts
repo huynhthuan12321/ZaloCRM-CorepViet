@@ -11,6 +11,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { seedDefaultPermissionGroups, migrateLegacyUsersToPermissionGroups } from './seed-default-groups.js';
 import { requireGrant } from './rbac-middleware.js';
+import { config } from '../../config/index.js';
 
 export async function registerUserAssignmentRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v1/rbac/users — list users với filter dept/group
@@ -163,6 +164,12 @@ export async function registerUserAssignmentRoutes(app: FastifyInstance): Promis
   app.post('/api/v1/admin/rbac/create-test-users', {
     preHandler: [authMiddleware, requireGrant('user', 'create')],
   }, async (request, reply) => {
+    // Bảo mật (review 2026-07-11): endpoint tạo test-user với password mặc định YẾU
+    // 'Test@1234' + isActive=true → CHẶN ở production để tránh tạo tài khoản backdoor.
+    // Vẫn dùng được ở dev/staging cho e2e RBAC scenario.
+    if (config.isProduction) {
+      return reply.status(403).send({ error: 'create_test_users_disabled_in_production' });
+    }
     const user = (request as any).user;
     try {
       // Đảm bảo default groups đã seed
