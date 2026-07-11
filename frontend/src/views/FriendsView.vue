@@ -160,6 +160,52 @@
       initial-tab="nicks"
     />
 
+    <div v-if="bulkModal.mode" class="bulk-modal-overlay" @click.self="closeBulkModal">
+      <form class="bulk-modal" @submit.prevent="submitBulkAction">
+        <div class="bulk-modal-head">
+          <div>
+            <strong>{{ bulkTitle }}</strong>
+            <p>Dang chon {{ selected.size }} khach tren danh sach hien tai.</p>
+          </div>
+          <button type="button" class="bulk-x" @click="closeBulkModal">×</button>
+        </div>
+
+        <label v-if="bulkModal.mode === 'message'" class="bulk-field">
+          <span>Noi dung tin nhan</span>
+          <textarea
+            v-model="bulkModal.message"
+            rows="5"
+            placeholder="Nhap noi dung can gui hang loat..."
+            :disabled="bulkModal.busy"
+          />
+        </label>
+
+        <label v-else-if="bulkModal.mode === 'tag'" class="bulk-field">
+          <span>Tag CRM can gan</span>
+          <input
+            v-model="bulkModal.tagName"
+            placeholder="VD: Khach hang, Quan tam, VIP..."
+            :disabled="bulkModal.busy"
+          />
+        </label>
+
+        <label v-else-if="bulkModal.mode === 'status'" class="bulk-field">
+          <span>Trang thai KH</span>
+          <select v-model="bulkModal.statusId" :disabled="bulkModal.busy">
+            <option value="">Bo trang thai</option>
+            <option v-for="s in allStatuses" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+        </label>
+
+        <div class="bulk-modal-foot">
+          <button type="button" class="btn" :disabled="bulkModal.busy" @click="closeBulkModal">Huy</button>
+          <button type="submit" class="btn primary" :disabled="bulkModal.busy">
+            {{ bulkModal.busy ? 'Dang xu ly...' : bulkSubmitLabel }}
+          </button>
+        </div>
+      </form>
+    </div>
+
     <!-- 2026-06-17 (anh chốt): bỏ toast khôi phục — vẫn nhớ view gần nhất qua localStorage/URL,
          chỉ không thông báo ra UI. -->
   </div>
@@ -180,6 +226,7 @@ import FriendsBulkBar from '@/components/friends/FriendsBulkBar.vue';
 import FriendDetailPanel from '@/components/friends/FriendDetailPanel.vue';
 import CustomerProfileDialog from '@/components/contacts/CustomerProfileDialog.vue';
 import { useToast } from '@/composables/use-toast';
+import { api } from '@/api/index';
 import type { SmartHint } from '@/components/friends/FriendsSmartHints.vue';
 
 const router = useRouter();
@@ -257,14 +304,38 @@ function toggleColumn(key: OptionalColKey) {
 }
 
 function onExportCsv() {
-  // Placeholder: chưa làm. Defer phase sau, tránh button placeholder không phản hồi.
-  console.warn('[FriendsView] CSV export chưa implement');
+  exportFriendsCsv(friendsDb.value, `ban-be-${new Date().toISOString().slice(0, 10)}.csv`);
+  toast.success(`Da xuat ${friendsDb.value.length} khach ra CSV.`);
 }
 
 const searchInput = ref('');
 const pagination = reactive({ page: 1, limit: 25 });
 const selected = ref<Set<string>>(new Set());
 const detailFriend = ref<DbFriend | null>(null);
+
+type StatusLite = { id: string; name: string; color?: string | null; order?: number };
+type BulkMode = 'message' | 'tag' | 'status' | null;
+const allStatuses = ref<StatusLite[]>([]);
+const bulkModal = reactive({
+  mode: null as BulkMode,
+  message: '',
+  tagName: '',
+  statusId: '',
+  busy: false,
+});
+const selectedFriends = computed(() => friendsDb.value.filter((f) => selected.value.has(f.id)));
+const bulkTitle = computed(() => {
+  if (bulkModal.mode === 'message') return 'Nhan hang loat';
+  if (bulkModal.mode === 'tag') return 'Gan tag CRM';
+  if (bulkModal.mode === 'status') return 'Doi trang thai KH';
+  return '';
+});
+const bulkSubmitLabel = computed(() => {
+  if (bulkModal.mode === 'message') return `Gui cho ${selected.value.size} khach`;
+  if (bulkModal.mode === 'tag') return `Gan tag cho ${selected.value.size} khach`;
+  if (bulkModal.mode === 'status') return `Doi trang thai cho ${selected.value.size} khach`;
+  return 'Ap dung';
+});
 
 // ─── Active nick resolution ───
 // effectiveNickId: 'all' | account.id | null (loading)
@@ -407,7 +478,6 @@ async function onOpenChat(f: DbFriend) {
   // Best-effort: ensure conversation tồn tại trước, rồi điều hướng tới Chat.
   // Reuse logic của FriendsView cũ — backend đảm bảo idempotent.
   try {
-    const { api } = await import('@/api/index');
     const res = await api.post<{ conversationId: string }>(`/friends/${f.id}/ensure-conversation`, {});
     if (res.data?.conversationId) {
       router.push({ name: 'Chat', params: { convId: res.data.conversationId } });
@@ -442,16 +512,165 @@ function onCall(f: DbFriend) {
 
 // ─── Bulk actions (stubs — backend wiring lần kế) ───
 function onBulkMessage() {
-  console.log('[bulk] message to', [...selected.value]);
+  if (!requireSelected()) return;
+  bulkModal.mode = 'message';
 }
 function onBulkTag() {
-  console.log('[bulk] tag', [...selected.value]);
+  if (!requireSelected()) return;
+  bulkModal.mode = 'tag';
 }
-function onBulkChangeStatus() {
-  console.log('[bulk] change status', [...selected.value]);
+async function onBulkChangeStatus() {
+  if (!requireSelected()) return;
+  await fetchAllStatuses();
+  bulkModal.mode = 'status';
 }
 function onBulkExport() {
-  console.log('[bulk] export', [...selected.value]);
+  if (!requireSelected()) return;
+  exportFriendsCsv(selectedFriends.value, `ban-be-da-chon-${new Date().toISOString().slice(0, 10)}.csv`);
+  toast.success(`Da xuat ${selectedFriends.value.length} khach ra CSV.`);
+}
+
+function requireSelected(): boolean {
+  if (selected.value.size > 0) return true;
+  toast.warning('Chon it nhat 1 khach de thao tac.');
+  return false;
+}
+
+function closeBulkModal() {
+  if (bulkModal.busy) return;
+  bulkModal.mode = null;
+}
+
+async function fetchAllStatuses() {
+  if (allStatuses.value.length > 0) return;
+  try {
+    const res = await api.get<{ statuses: StatusLite[] }>('/settings/statuses');
+    allStatuses.value = res.data.statuses || [];
+  } catch (err) {
+    console.error('[FriendsView] load statuses failed:', err);
+    toast.error('Khong tai duoc danh sach trang thai.');
+  }
+}
+
+async function submitBulkAction() {
+  if (bulkModal.mode === 'message') return submitBulkMessage();
+  if (bulkModal.mode === 'tag') return submitBulkTag();
+  if (bulkModal.mode === 'status') return submitBulkStatus();
+}
+
+async function submitBulkMessage() {
+  const content = bulkModal.message.trim();
+  if (!content) {
+    toast.warning('Nhap noi dung tin nhan truoc khi gui.');
+    return;
+  }
+  if (selected.value.size > 50 && !window.confirm(`Ban dang gui cho ${selected.value.size} khach. Tiep tuc?`)) return;
+
+  bulkModal.busy = true;
+  let sent = 0;
+  let failed = 0;
+  for (const friend of selectedFriends.value) {
+    try {
+      const res = await api.post<{ conversationId: string }>(`/friends/${friend.id}/ensure-conversation`, {});
+      const conversationId = res.data?.conversationId;
+      if (!conversationId) throw new Error('Cannot create conversation');
+      await api.post(`/conversations/${conversationId}/messages`, { content });
+      sent++;
+    } catch (err) {
+      failed++;
+      console.error('[FriendsView] bulk message failed:', friend.id, err);
+    }
+  }
+  bulkModal.busy = false;
+  bulkModal.mode = null;
+  bulkModal.message = '';
+  await fetch();
+  if (failed) toast.warning(`Da gui ${sent}, loi ${failed}. Mo console/API log de xem chi tiet.`, 5000);
+  else toast.success(`Da gui tin cho ${sent} khach.`);
+}
+
+async function submitBulkTag() {
+  const tag = bulkModal.tagName.trim();
+  if (!tag) {
+    toast.warning('Nhap ten tag can gan.');
+    return;
+  }
+  bulkModal.busy = true;
+  let ok = 0;
+  let failed = 0;
+  for (const friend of selectedFriends.value) {
+    try {
+      const current = Array.isArray(friend.crmTagsPerNick) ? friend.crmTagsPerNick : [];
+      const next = [...new Set([...current, tag])];
+      await api.patch(`/friends/${friend.id}`, { crmTagsPerNick: next });
+      ok++;
+    } catch (err) {
+      failed++;
+      console.error('[FriendsView] bulk tag failed:', friend.id, err);
+    }
+  }
+  bulkModal.busy = false;
+  bulkModal.mode = null;
+  bulkModal.tagName = '';
+  await fetch();
+  if (failed) toast.warning(`Da gan tag ${ok}, loi ${failed}.`, 5000);
+  else toast.success(`Da gan tag cho ${ok} khach.`);
+}
+
+async function submitBulkStatus() {
+  bulkModal.busy = true;
+  const statusId = bulkModal.statusId || null;
+  let ok = 0;
+  let failed = 0;
+  for (const friend of selectedFriends.value) {
+    try {
+      await api.patch(`/friends/${friend.id}`, { statusId });
+      ok++;
+    } catch (err) {
+      failed++;
+      console.error('[FriendsView] bulk status failed:', friend.id, err);
+    }
+  }
+  bulkModal.busy = false;
+  bulkModal.mode = null;
+  await fetch();
+  if (failed) toast.warning(`Da doi trang thai ${ok}, loi ${failed}.`, 5000);
+  else toast.success(`Da doi trang thai cho ${ok} khach.`);
+}
+
+function exportFriendsCsv(rows: DbFriend[], filename: string) {
+  const headers = [
+    'Khach hang', 'So dien thoai', 'Nick cham', 'Trang thai KB', 'Trang thai KH',
+    'Tag CRM', 'Tag Zalo', 'UID', 'Tuong tac cuoi',
+  ];
+  const csvRows = rows.map((f) => [
+    f.contact?.crmName || f.contact?.fullName || f.zaloDisplayName || '',
+    f.contact?.phone || '',
+    f.zaloAccount?.displayName || '',
+    f.relationshipKind || f.friendshipStatus || '',
+    f.statusRef?.name || '',
+    (f.crmTagsPerNick || []).join(', '),
+    (f.zaloLabels || []).map((x) => x.name).filter(Boolean).join(', '),
+    f.zaloUidInNick || '',
+    f.lastInteractionAt || '',
+  ]);
+  const csv = [headers, ...csvRows]
+    .map((row) => row.map(csvCell).join(','))
+    .join('\r\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(value: unknown): string {
+  const text = String(value ?? '');
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
 // ─── Smart hints ───
@@ -675,6 +894,85 @@ onMounted(async () => {
 @keyframes slideUp {
   from { transform: translateY(20px); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
+}
+
+.bulk-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .38);
+  display: grid;
+  place-items: center;
+  z-index: 80;
+  padding: 20px;
+}
+.bulk-modal {
+  width: min(560px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(15, 23, 42, .28);
+  padding: 18px;
+}
+.bulk-modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.bulk-modal-head strong {
+  font-size: 18px;
+  color: var(--ink);
+}
+.bulk-modal-head p {
+  margin: 4px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.bulk-x {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 20px;
+}
+.bulk-field {
+  display: grid;
+  gap: 8px;
+  color: var(--ink-2);
+  font-weight: 700;
+  font-size: 13px;
+}
+.bulk-field input,
+.bulk-field textarea,
+.bulk-field select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 14px;
+}
+.bulk-field textarea {
+  resize: vertical;
+  min-height: 130px;
+}
+.bulk-field input:focus,
+.bulk-field textarea:focus,
+.bulk-field select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.bulk-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
 }
 
 .av-c1 { background: linear-gradient(135deg, #2f6ee5, #1d4ed8); }
