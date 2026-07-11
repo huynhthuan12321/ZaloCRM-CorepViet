@@ -108,6 +108,11 @@ export const config = {
   kimiAuthToken: envValue('KIMI_AUTH_TOKEN') || '',
   kimiDefaultMoonshotV1Model: envValue('KIMI_DEFAULT_MOONSHOT_V1_MODEL') || '',
 
+  // DeepSeek — OpenAI-compatible (chat /chat/completions, models /models).
+  // Model: deepseek-chat (V3), deepseek-reasoner (R1). Key nhập trên UI hoặc env.
+  deepseekBaseUrl: envValue('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com',
+  deepseekAuthToken: envValue('DEEPSEEK_AUTH_TOKEN') || envValue('DEEPSEEK_API_KEY') || '',
+
   isProduction: process.env.NODE_ENV === 'production',
 
   /**
