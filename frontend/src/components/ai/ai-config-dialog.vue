@@ -110,6 +110,14 @@ const local = reactive({ provider: 'openai', model: '', maxDaily: 500, enabled: 
 
 const providerItems = computed(() => providers.value.map((p) => ({ title: p.name, value: p.id })));
 const currentProvider = computed(() => providers.value.find((p) => p.id === local.provider));
+const fallbackModels: Record<string, string> = {
+  anthropic: 'claude-sonnet-4-6',
+  gemini: 'gemini-2.5-flash',
+  openai: 'gpt-4o-mini',
+  qwen: 'qwen-plus',
+  kimi: 'moonshot-v1-8k',
+  deepseek: 'deepseek-v4-flash',
+};
 const modelHint = computed(() => {
   if (loadingModels.value) return 'Đang tải danh sách model…';
   if (modelsError.value) return `Không lấy được danh sách (${modelsError.value}) — gõ tay tên model.`;
@@ -139,6 +147,9 @@ async function fetchModels() {
     const res = await api.get(`/ai/providers/${local.provider}/models`);
     modelOptions.value = res.data?.models ?? [];
     modelsError.value = res.data?.error ?? '';
+    if (modelOptions.value.length && !modelOptions.value.some((m) => m.value === local.model)) {
+      local.model = modelOptions.value[0].value;
+    }
   } catch (e: any) {
     modelOptions.value = [];
     modelsError.value = e?.response?.data?.error || 'lỗi tải model';
@@ -164,6 +175,11 @@ async function applyProvider() {
   if (local.apiKey) payload.apiKey = local.apiKey;
   await putProvider(payload);
   local.apiKey = '';
+  if (!currentProvider.value?.hasKey) {
+    modelsError.value = 'Key chưa được lưu. Kiểm tra quyền settings:edit hoặc TOKEN_ENCRYPTION_KEY trên server.';
+    modelOptions.value = [];
+    return;
+  }
   await fetchModels();
 }
 
@@ -175,6 +191,7 @@ async function clearKey() {
 
 function onProviderChange() {
   local.baseUrl = currentProvider.value?.baseUrl ?? '';
+  local.model = fallbackModels[local.provider] ?? '';
   local.apiKey = '';
   modelOptions.value = [];
   modelsError.value = '';
