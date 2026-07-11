@@ -6,7 +6,7 @@
  * Match với CEO review design 2026-05-15:
  *   Weights:   E 35% · I 30% · F 15% · V 20%
  *   Decay:     -1/-3/-5/-8 per ngày (3-7/7-14/14-30/30-60)
- *   Stages:    8 stages BĐS pipeline (Mới → Tiếp cận → ... → Chốt)
+ *   Stages:    8 stages sales pipeline (Mới → Tiếp cận → ... → Chốt)
  *   Bottleneck: Stage 1-2-3 (Mới/Tiếp cận/Hẹn gặp)
  *
  * Tất cả tunable từ Settings UI sau khi seed. Đây chỉ là defaults.
@@ -95,8 +95,8 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     dimension: 'intent',
     ruleType: 'keyword',
     delta: 10,
-    keywords: ['vị trí', 'view', 'hướng', 'diện tích', 'mặt tiền', 'tầng', 'số phòng'],
-    label: 'KH hỏi chi tiết dự án',
+    keywords: ['sản phẩm', 'mã hàng', 'quy cách', 'đóng gói', 'hạn dùng', 'số lượng', 'bảng giá'],
+    label: 'KH hỏi chi tiết sản phẩm',
   },
   {
     signalKey: 'ask_documents',
@@ -178,14 +178,14 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     label: 'Ký hợp đồng mua bán',
   },
 
-  // ── FIT (15% weight) — Phù hợp dự án (profile-based) ────────────────────
+  // ── FIT (15% weight) — Phù hợp sản phẩm (profile-based) ─────────────────
   {
     signalKey: 'budget_match',
     dimension: 'fit',
     ruleType: 'profile',
     delta: 20,
     capTotal: 20,
-    label: 'Ngân sách khớp dự án',
+    label: 'Ngân sách khớp sản phẩm',
   },
   {
     signalKey: 'location_match',
@@ -193,7 +193,7 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     ruleType: 'profile',
     delta: 10,
     capTotal: 10,
-    label: 'Vị trí mong muốn khớp dự án',
+    label: 'Khu vực giao hàng phù hợp',
   },
   {
     signalKey: 'type_match',
@@ -201,7 +201,7 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     ruleType: 'profile',
     delta: 8,
     capTotal: 8,
-    label: 'Loại hình (gia đình/căn hộ) khớp dự án',
+    label: 'Nhu cầu sử dụng khớp sản phẩm',
   },
   {
     signalKey: 'referral_link',
@@ -209,7 +209,7 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     ruleType: 'profile',
     delta: 15,
     capTotal: 15,
-    label: 'Người thân/bạn đã mua dự án cùng',
+    label: 'Người thân/bạn đã mua sản phẩm cùng',
   },
 
   // ── VELOCITY (20% weight) — Đà tăng nhiệt ───────────────────────────────
@@ -266,7 +266,7 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     dimension: 'intent',
     ruleType: 'keyword',
     delta: -8,
-    keywords: ['bên kia giá', 'dự án khác giá', 'so sánh với'],
+    keywords: ['bên kia giá', 'sản phẩm khác giá', 'so sánh với'],
     label: 'KH hỏi giá competitor',
   },
   {
@@ -374,10 +374,10 @@ export const DEFAULT_STUCK_THRESHOLDS: StuckThresholdSeed[] = [
 export const DEFAULT_NBA_TEMPLATES: NbaTemplateSeed[] = [
   {
     key: 'stuck_stage_new_greeting',
-    label: 'Lời chào + dự án highlight (KH stuck stage Mới)',
+    label: 'Lời chào + sản phẩm highlight (KH stuck stage Mới)',
     contentTemplate:
-      'Chào anh/chị {{customerName}}! Em là sale của dự án {{projectName}}. ' +
-      'Tháng này dự án có ưu đãi đặc biệt: {{promoMonth}}. ' +
+      'Chào anh/chị {{customerName}}! Em là sale Cờ Rếp Việt. ' +
+      'Tháng này sản phẩm {{projectName}} có ưu đãi đặc biệt: {{promoMonth}}. ' +
       'Anh/chị có muốn em gửi thông tin chi tiết không ạ?',
     category: 'stuck',
   },
@@ -385,7 +385,7 @@ export const DEFAULT_NBA_TEMPLATES: NbaTemplateSeed[] = [
     key: 'stuck_stage_approach_tour',
     label: 'Video tour + brochure (KH stuck stage Tiếp cận)',
     contentTemplate:
-      'Anh/chị {{customerName}}, em gửi video giới thiệu nhanh dự án {{projectName}} ' +
+      'Anh/chị {{customerName}}, em gửi thông tin giới thiệu nhanh sản phẩm {{projectName}} ' +
       '({{viewingLink}}) và bảng giá chi tiết. Nếu thuận tiện, em sắp xếp ' +
       'gọi video tour trực tiếp giúp anh/chị xem rõ hơn ạ.',
     category: 'stuck',
@@ -422,7 +422,7 @@ export const DEFAULT_NBA_TEMPLATES: NbaTemplateSeed[] = [
     label: 'Re-engage KH lâu không tương tác',
     contentTemplate:
       'Anh/chị {{customerName}}, lâu rồi mình chưa trao đổi! Em gửi update ' +
-      'tiến độ dự án {{projectName}}: {{progressUpdate}}. ' +
+      'thông tin mới về sản phẩm {{projectName}}: {{progressUpdate}}. ' +
       'Anh/chị còn quan tâm thì em hỗ trợ tiếp ạ.',
     category: 'cold_reengage',
   },

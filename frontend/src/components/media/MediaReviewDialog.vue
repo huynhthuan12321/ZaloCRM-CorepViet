@@ -36,7 +36,7 @@
         <!-- 2. THANH TAG: tháo (✕) + thêm (autocomplete) — LƯU NGAY. Dropdown bung LÊN TRÊN
              (mr-addrow position:relative + mr-ac bottom) để không bị preview phía dưới đè. -->
         <div class="mr-tags">
-          <div class="mr-tlabel"><TagIcon :size="12" :stroke-width="2" /> Tag / dự án của ảnh</div>
+          <div class="mr-tlabel"><TagIcon :size="12" :stroke-width="2" /> Tag / sản phẩm của ảnh</div>
           <div class="mr-chips">
             <span v-for="tag in tagIds" :key="tag" class="mr-chip">
               #{{ tag }}

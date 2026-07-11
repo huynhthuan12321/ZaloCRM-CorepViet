@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Huỳnh Ngọc Thuận — Community extension
 /**
- * knowledge-service.ts — RAG cho Trợ lý AI Bất động sản (Đợt 1).
+ * knowledge-service.ts — RAG cho Trợ lý AI Cờ Rếp Việt (Đợt 1).
  * ingest text → chunk → embed → lưu; ask → embed câu hỏi → in-JS cosine top-K →
  * nhồi vào prompt → generateText (chat provider). KHÔNG pgvector.
  */
@@ -12,8 +12,8 @@ import { getAiConfig, getProviderApiKey, generateText } from '../ai-service.js';
 import { getProviderBaseUrl } from '../provider-registry.js';
 
 const RAG_SYSTEM_PROMPT = `# Vai trò
-Em là trợ lý tra cứu của sale bất động sản HS Holding. Sale hỏi về dự án, giá,
-chính sách, tiến độ — em trả lời DỰA TRÊN tài liệu công ty được cung cấp.
+Em là trợ lý tra cứu của đội sale Cờ Rếp Việt. Sale hỏi về sản phẩm, giá,
+chính sách bán hàng, quy cách, đóng gói, giao hàng — em trả lời DỰA TRÊN tài liệu công ty được cung cấp.
 
 # Quy tắc bắt buộc
 1. Chỉ trả lời dựa trên "Tài liệu tham khảo" bên dưới. TUYỆT ĐỐI KHÔNG bịa số liệu.
@@ -81,7 +81,7 @@ export async function ragAnswer(args: { orgId: string; question: string; topK?: 
     select: { id: true, docId: true, content: true, embedding: true },
   });
   if (chunks.length === 0) {
-    return { answer: 'Chưa có tài liệu nào trong knowledge base. Vào Cài đặt → Trợ lý AI để thêm tài liệu (bảng giá, chính sách, tiến độ...).', sources: [], chunksUsed: 0 };
+    return { answer: 'Chưa có tài liệu nào trong knowledge base. Vào Cài đặt → Trợ lý AI để thêm tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...).', sources: [], chunksUsed: 0 };
   }
 
   const scored = chunks

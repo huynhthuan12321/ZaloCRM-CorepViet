@@ -290,11 +290,11 @@ const sinceBy = ref<'' | '7d' | '30d' | '90d'>('');
 const sizeBy = ref<'' | 'small' | 'medium' | 'large'>('');
 const tagFilter = ref('');
 
-// Thư mục (gom theo dự án) — load 1 lần, lọc theo kind đang xem.
+// Thư mục (gom theo sản phẩm) — load 1 lần, lọc theo kind đang xem.
 const allFolders = ref<MediaFolder[]>([]);
 const folderId = ref('');
 const folders = computed(() => allFolders.value.filter((f) => f.kind === subTab.value));
-// Tag dự án — gom từ tagIds của các mục đang hiện (chip lọc nhanh).
+// Tag sản phẩm — gom từ tagIds của các mục đang hiện (chip lọc nhanh).
 const availableTags = computed(() => {
   const set = new Set<string>();
   for (const a of items.value) for (const t of a.tagIds || []) set.add(t);
@@ -443,7 +443,7 @@ async function sendAlbum() {
 }
 
 onMounted(async () => {
-  // Load thư mục 1 lần (để dựng chip gom theo dự án); lỗi thì bỏ qua, không chặn kho.
+  // Load thư mục 1 lần (để dựng chip gom theo sản phẩm); lỗi thì bỏ qua, không chặn kho.
   listMediaFolders().then((f) => { allFolders.value = f; }).catch(() => { allFolders.value = []; });
   await reload();
 });

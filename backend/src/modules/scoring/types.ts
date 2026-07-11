@@ -69,7 +69,7 @@ export interface SignalRuleSeed {
 
 // ─── Stage transition types ───────────────────────────────────────────────
 
-/** Stage names — match với Status seed (8 stages BĐS pipeline) */
+/** Stage names — match với Status seed (8 stages sales pipeline) */
 export type StageName =
   | 'Mới'
   | 'Tiếp cận'

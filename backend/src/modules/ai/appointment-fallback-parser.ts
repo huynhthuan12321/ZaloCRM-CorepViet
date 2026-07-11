@@ -215,8 +215,8 @@ export function parseAppointmentRuleBased(text: string, now: Date = new Date()):
       const m = lower.match(/\bvp\s*\d+\b/i);
       location = m![0].toUpperCase();
       confidence += 0.1;
-    } else if (/\b(showroom|văn phòng|nhà mẫu|nha mau|dự án|du an)\b/i.test(lower)) {
-      const m = lower.match(/\b(showroom|văn phòng|nhà mẫu|nha mau|dự án|du an)\b\s*([^\.\,\;\n]*)/i);
+    } else if (/\b(showroom|văn phòng|cửa hàng|cua hang|kho|xưởng|xuong|nhà máy|nha may|sản phẩm|san pham)\b/i.test(lower)) {
+      const m = lower.match(/\b(showroom|văn phòng|cửa hàng|cua hang|kho|xưởng|xuong|nhà máy|nha may|sản phẩm|san pham)\b\s*([^\.\,\;\n]*)/i);
       location = m![0].trim().slice(0, 100);
       confidence += 0.1;
     }

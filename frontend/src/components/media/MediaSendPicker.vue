@@ -51,9 +51,9 @@
             <i v-if="pendingConv.zaloAccount?.displayName">· nick {{ pendingConv.zaloAccount.displayName }}</i>
           </span>
         </div>
-        <!-- Gắn dự án/tag cho ảnh này — chip 1 chạm (sale lười gắn tag riêng nên gắn ngay lúc gửi). -->
+        <!-- Gắn sản phẩm/tag cho ảnh này — chip 1 chạm (sale lười gắn tag riêng nên gắn ngay lúc gửi). -->
         <div class="spc-tags">
-          <div class="spc-tlabel"><TagIcon :size="12" :stroke-width="2" /> Gắn dự án / tag cho ảnh này</div>
+          <div class="spc-tlabel"><TagIcon :size="12" :stroke-width="2" /> Gắn sản phẩm / tag cho ảnh này</div>
           <div class="spc-chips">
             <button
               v-for="tag in suggestTags" :key="tag"
@@ -105,7 +105,7 @@ const sending = ref<string | null>(null);
 
 // ── Ô xác nhận "xem lại trước khi gửi" + gắn tag (2026-06-15) ────────────────
 // Bấm chọn 1 hội thoại → KHÔNG gửi ngay; mở ô xác nhận có chip tag gợi ý. Bấm "Gửi ảnh"
-// mới gửi (kèm tag đã chọn). Chip = tag dự án/tag của KHÁCH đang chat (contactTags), khách
+// mới gửi (kèm tag đã chọn). Chip = tag sản phẩm/tag của KHÁCH đang chat (contactTags), khách
 // chưa có tag → fallback "tag hay dùng" của sale (listMediaTags) để không trống trơn.
 const pendingConv = ref<ConvRow | null>(null);
 const suggestTags = ref<string[]>([]);   // chip gợi ý (contactTags hoặc tag hay dùng)

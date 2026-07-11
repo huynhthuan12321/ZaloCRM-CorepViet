@@ -251,7 +251,7 @@ function sendNbaTemplate(friend: StuckFriend, group: StuckStageGroup) {
   // Fill placeholders
   let content = group.nbaTemplate.contentTemplate;
   content = content.replace(/\{\{customerName\}\}/g, friend.contactName);
-  content = content.replace(/\{\{projectName\}\}/g, 'dự án');
+  content = content.replace(/\{\{projectName\}\}/g, 'sản phẩm Cờ Rếp Việt');
   content = content.replace(/\{\{promoMonth\}\}/g, 'ưu đãi tháng này');
   content = content.replace(/\{\{viewingLink\}\}/g, '');
   content = content.replace(/\{\{callTime\}\}/g, '');

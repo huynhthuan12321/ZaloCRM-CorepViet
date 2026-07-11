@@ -100,9 +100,9 @@ const authStore = useAuthStore();
 const DEFAULT_LOGO = '/brand/hs-monogram.png';
 const DEFAULT_PLACEHOLDER = `admin@hs.com hoặc ${SAMPLE_PHONE}`;
 const brandLogo = ref(DEFAULT_LOGO);
-const brandName = ref('HS Holding');
+const brandName = ref('Cờ Rếp Việt');
 const brandSlogan = ref('Bền vững · Trường tồn');
-const brandCopyright = ref(`© ${new Date().getFullYear()} HS Holding`);
+const brandCopyright = ref(`© ${new Date().getFullYear()} Cờ Rếp Việt`);
 const emailPlaceholder = ref(DEFAULT_PLACEHOLDER);
 
 // Phase Onboarding v1 — sau khi force change password thành công, redirect về /login?password-changed=1
@@ -123,7 +123,7 @@ onMounted(() => {
       // Org tồn tại → hiển thị ĐÚNG cấu hình: trường trống thì ẩn (banner v-if),
       // KHÔNG giữ chữ mặc định (fix slogan vẫn ra "Bền vững · Trường tồn").
       brandLogo.value = b.logoUrl || DEFAULT_LOGO;
-      brandName.value = b.name || 'HS Holding';
+      brandName.value = b.name || 'Cờ Rếp Việt';
       brandSlogan.value = b.slogan || '';
       brandCopyright.value = b.copyright || '';
       emailPlaceholder.value = b.emailDomain

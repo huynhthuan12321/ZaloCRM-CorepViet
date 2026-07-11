@@ -4,7 +4,7 @@
   <Teleport to="body">
     <div v-if="visible" class="quick-template-popup" :style="popupStyle" @keydown="onKey">
     <div class="qtp-card">
-      <!-- Header: tiêu đề + filter chip dự án -->
+      <!-- Header: tiêu đề + filter chip sản phẩm -->
       <div class="qtp-head">
         <div class="qtp-title">
           <v-icon size="14">mdi-message-flash-outline</v-icon>

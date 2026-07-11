@@ -8,7 +8,7 @@
       <div class="m-tools">
         <div class="m-search">
           <span class="i">🔍</span>
-          <input v-model="search" placeholder="Tìm ảnh, tag dự án…" @input="debouncedReload" />
+          <input v-model="search" placeholder="Tìm ảnh, tag sản phẩm…" @input="debouncedReload" />
         </div>
         <button class="btn-dark" @click="triggerUpload">+ Tải lên</button>
         <button v-if="!trashMode" class="btn-multi" :class="{ on: multiMode }" :title="multiMode ? 'Tắt chọn nhiều' : 'Chọn nhiều ảnh'" @click="toggleMultiMode">

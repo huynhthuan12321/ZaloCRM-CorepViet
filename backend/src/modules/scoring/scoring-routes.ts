@@ -672,7 +672,7 @@ async function getOrgPromoContext(orgId: string): Promise<OrgPromoContext> {
   const year = now.getFullYear();
   return {
     orgName: org?.name ?? 'Công ty',
-    projectName: 'dự án', // TODO: bind Org.promoSettings.currentProject khi có table
+    projectName: 'sản phẩm Cờ Rếp Việt', // TODO: bind Org.promoSettings.currentProduct khi có table
     promoMonth: `ưu đãi tháng ${month}/${year}`,
     viewingLink: '',
     callTime: '',

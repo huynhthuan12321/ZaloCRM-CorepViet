@@ -123,7 +123,7 @@
 
         <label class="f-label">Lời nhắn kèm lời mời kết bạn <span class="f-hint">— biến: <code v-pre>{{ten}}</code> tên khách, <code v-pre>{{sdt}}</code> SĐT</span></label>
         <textarea v-model="form.requestMsg" class="f-input" rows="3"
-          placeholder="Xin chào! Tôi đang phân phối dự án..., kết bạn để gửi thông tin tới anh/chị nhé."></textarea>
+          placeholder="Xin chào! Tôi là sale Cờ Rếp Việt, kết bạn để gửi thông tin sản phẩm tới anh/chị nhé."></textarea>
 
         <!-- ===== Tin chào khi khách chấp nhận (vòng 6) ===== -->
         <label class="f-check">
@@ -142,7 +142,7 @@
 
           <template v-if="form.welcomeMode === 'text'">
             <textarea v-model="form.welcomeMsg" class="f-input" rows="3" style="margin-top:8px"
-              placeholder="Cảm ơn {{ten}} đã kết bạn! Em gửi anh/chị thông tin dự án ạ…"></textarea>
+              placeholder="Cảm ơn {{ten}} đã kết bạn! Em gửi anh/chị thông tin sản phẩm Cờ Rếp Việt ạ…"></textarea>
           </template>
           <template v-else>
             <div v-if="contentBlocks.length === 0" class="tg-empty" style="padding:12px 0">

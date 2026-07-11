@@ -490,13 +490,13 @@
       </div>
     </div>
 
-    <!-- ════════ TAB AI — Trợ lý AI Bất động sản (RAG knowledge base) ════════ -->
+    <!-- ════════ TAB AI — Trợ lý AI Cờ Rếp Việt (RAG knowledge base) ════════ -->
     <div v-if="mainTab === 'ai'" class="main-tab-body ai-kb">
       <div class="ai-kb-head">
         <span class="ai-kb-ico">✨</span>
         <div>
-          <div class="ai-kb-title">Trợ lý AI Bất động sản</div>
-          <div class="ai-kb-sub">Hỏi về dự án, giá, chính sách — trả lời theo tài liệu công ty.</div>
+          <div class="ai-kb-title">Trợ lý AI Cờ Rếp Việt</div>
+          <div class="ai-kb-sub">Hỏi về sản phẩm, giá, chính sách — trả lời theo tài liệu công ty.</div>
         </div>
       </div>
       <div ref="aiKbMsgsEl" class="ai-kb-msgs">
@@ -510,7 +510,7 @@
         <div v-if="aiKbLoading" class="ai-kb-msg ai"><div class="ai-kb-bubble ai-kb-typing">Đang tra tài liệu…</div></div>
       </div>
       <div class="ai-kb-input">
-        <textarea v-model="aiKbInput" rows="2" placeholder="Hỏi trợ lý AI về dự án…" @keydown.enter.exact.prevent="askKb"></textarea>
+        <textarea v-model="aiKbInput" rows="2" placeholder="Hỏi trợ lý AI về sản phẩm Cờ Rếp Việt…" @keydown.enter.exact.prevent="askKb"></textarea>
         <button class="ai-kb-send" :disabled="aiKbLoading || !aiKbInput.trim()" @click="askKb">Hỏi</button>
       </div>
     </div>
@@ -572,7 +572,7 @@
         :class="{ active: mainTab === 'ai' }"
         role="tab"
         :aria-selected="mainTab === 'ai'"
-        title="AI — Trợ lý hỏi đáp sản phẩm BĐS"
+        title="AI — Trợ lý hỏi đáp Cờ Rếp Việt"
         @click="mainTab = 'ai'"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
@@ -709,7 +709,7 @@ async function saveAlias() {
 //   Ảnh/Video/Tệp/Khối trong MediaTabPanel). `activeTab` (sub-tab) chỉ active scope 'profile'.
 const mainTab = ref<'profile' | 'media' | 'ai' | 'followup'>('profile');
 
-// ── Trợ lý AI Bất động sản (RAG knowledge base) — Đợt 1 ──────────────────
+// ── Trợ lý AI Cờ Rếp Việt (RAG knowledge base) — Đợt 1 ───────────────────
 const { ask: kbAsk } = useAiKnowledge();
 const aiKbMsgs = ref<Array<{ role: 'user' | 'ai'; text: string }>>([]);
 const aiKbInput = ref('');
@@ -2286,7 +2286,7 @@ async function onRegenerateHandoff() {
   margin-bottom: 12px;
 }
 
-/* ── Trợ lý AI Bất động sản (RAG) ── */
+/* ── Trợ lý AI Cờ Rếp Việt (RAG) ── */
 .ai-kb { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 0; }
 .ai-kb-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #eef0f3; }
 .ai-kb-ico { font-size: 22px; }

@@ -911,7 +911,7 @@ function randomTime(period: 'morning' | 'noon' | 'afternoon' | 'evening') {
 }
 
 // ───────── Duration ─────────
-// 2026-05-21 chốt: bỏ "3 ngày" — chỉ tới "1 ngày" là đủ cho domain BĐS sale.
+// 2026-05-21 chốt: bỏ "3 ngày" — chỉ tới "1 ngày" là đủ cho sale.
 const DURATIONS = [
   { label: '5p',     value: 5 },
   { label: '10p',    value: 10 },
@@ -956,14 +956,9 @@ const computedEndLabel = computed(() => {
 
 // ───────── Smart location detection (regex từ title) ─────────
 const SMART_LOCATION_REGEX = [
-  // Tên dự án BĐS phổ biến
-  /(Vinhomes [A-Za-zÀ-ỹ ]+)/i,
-  /(Masteri [A-Za-zÀ-ỹ ]+)/i,
-  /(Sunshine [A-Za-zÀ-ỹ ]+)/i,
-  /(Eco [A-Za-zÀ-ỹ ]+(?:City|Park|Smart))/i,
-  /(Saigon [A-Za-zÀ-ỹ ]+)/i,
-  /(The [A-Za-zÀ-ỹ ]+(?:Origin|Heights|Manor|Garden))/i,
-  /(Glory [A-Za-zÀ-ỹ ]+)/i,
+  // Tên điểm hẹn / khu vực Cờ Rếp Việt phổ biến
+  /(Cờ Rếp Việt [A-Za-zÀ-ỹ ]*)/i,
+  /(Corep Viet [A-Za-zÀ-ỹ ]*)/i,
   // Generic địa danh sau "tại" / "ở"
   /(?:tại|ở)\s+([A-ZÀ-Ỹ][A-Za-zÀ-ỹ0-9 ,]{3,40}?)(?:\s+(?:vào|lúc|cho|với|—|-)|$)/u,
 ];

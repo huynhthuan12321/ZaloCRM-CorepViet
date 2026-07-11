@@ -2,7 +2,7 @@
 <!-- Copyright (C) 2026 Huỳnh Ngọc Thuận — Community extension -->
 <!--
   MessageTemplatesView — Quản lý Mẫu tin nhắn nhanh (gõ "/" trong chat để chèn).
-  CRUD template + folder + tag dự án + biến động. Backend: /automation/templates
+  CRUD template + folder + tag sản phẩm + biến động. Backend: /automation/templates
   + /automation/template-folders (qua composable use-message-templates).
 -->
 <template>
@@ -12,7 +12,7 @@
         <div class="mtt">Mẫu tin nhắn nhanh</div>
         <div class="mts">
           Kho mẫu tin để sale gõ <code>/</code> trong khung chat chèn nhanh. Hỗ trợ gõ tắt
-          (shortcut), phân nhóm (folder), gắn dự án (tag) và biến động
+          (shortcut), phân nhóm (folder), gắn sản phẩm (tag) và biến động
           <code v-pre>{name} {gender} {sale}…</code>
         </div>
       </div>
@@ -129,7 +129,7 @@
           </div>
         </div>
 
-        <label class="f-label">Tag dự án</label>
+        <label class="f-label">Tag sản phẩm</label>
         <div class="f-tags">
           <button v-for="t in PROJECT_TAGS" :key="t" type="button" class="mt-tag" :class="{ on: form.tagIds.includes(t) }" @click="toggleTag(t)">
             {{ shortTag(t) }}
@@ -174,7 +174,7 @@ const {
   createFolder, updateFolder, deleteFolder,
 } = useMessageTemplates();
 
-// Tag dự án — khớp PROJECT_TAGS của quick-template-popup (chip lọc trong chat).
+// Tag sản phẩm — khớp PROJECT_TAGS của quick-template-popup (chip lọc trong chat).
 const PROJECT_TAGS = ['Emerald Garden View', 'Emerald Boulevard', 'Emerald River Park', 'Monrei Sài Gòn'];
 // 8 biến động — KHỚP backend render-template.ts + quick-template-popup.
 const VARS = [

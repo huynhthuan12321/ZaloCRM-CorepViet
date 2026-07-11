@@ -94,10 +94,10 @@
 
       <div v-if="saveMessage" class="save-msg" :class="saveOk ? 'ok' : 'err'">{{ saveMessage }}</div>
 
-      <!-- ── Knowledge base BĐS (RAG — Trợ lý AI Bất động sản) ── -->
+      <!-- ── Knowledge base Cờ Rếp Việt (RAG) ── -->
       <div class="kb-section">
-        <h2 class="kb-title">📚 Knowledge base Bất động sản</h2>
-        <p class="kb-desc">Tài liệu (bảng giá, chính sách, tiến độ...) để Trợ lý AI trả lời bám dữ liệu công ty — dùng ở tab <b>AI</b> trong màn Chat.</p>
+        <h2 class="kb-title">📚 Knowledge base Cờ Rếp Việt</h2>
+        <p class="kb-desc">Tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...) để Trợ lý AI trả lời bám dữ liệu công ty — dùng ở tab <b>AI</b> trong màn Chat.</p>
 
         <!-- Cấu hình embedding -->
         <div class="field-group">
@@ -118,8 +118,8 @@
         <!-- Thêm tài liệu -->
         <div class="field-group">
           <label class="field-label">Thêm tài liệu (dán nội dung)</label>
-          <input v-model="kbDocTitle" class="regex-input" placeholder="Tên tài liệu (vd: Bảng giá Emerald T7/2026)" />
-          <textarea v-model="kbDocText" class="prompt-editor kb-doc-text" rows="8" placeholder="Dán nội dung tài liệu (bảng giá, chính sách, tiến độ...)"></textarea>
+          <input v-model="kbDocTitle" class="regex-input" placeholder="Tên tài liệu (vd: Bảng giá Cờ Rếp Việt T7/2026)" />
+          <textarea v-model="kbDocText" class="prompt-editor kb-doc-text" rows="8" placeholder="Dán nội dung tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...)"></textarea>
           <div class="kb-add-row">
             <span class="field-hint">Nội dung sẽ được cắt nhỏ + tạo embedding để AI tra cứu.</span>
             <button class="btn-primary" :disabled="kbSaving || !kbDocText.trim()" @click="addKbDoc">{{ kbSaving ? 'Đang xử lý…' : '+ Thêm tài liệu' }}</button>
@@ -251,7 +251,7 @@ function restoreDefault() {
   config.value.aiAssistantPromptTemplate = config.value.defaultPrompt;
 }
 
-// ── Knowledge base BĐS (RAG) ──────────────────────────────────────────────
+// ── Knowledge base Cờ Rếp Việt (RAG) ──────────────────────────────────────
 const { docs: kbDocs, config: kbCfg, saving: kbSaving, fetchDocs, fetchConfig, saveConfig, addDoc, removeDoc } = useAiKnowledge();
 const kbProvider = ref('');
 const kbModel = ref('');

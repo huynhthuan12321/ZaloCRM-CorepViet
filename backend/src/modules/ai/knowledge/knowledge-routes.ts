@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Huỳnh Ngọc Thuận — Community extension
 /**
- * knowledge-routes.ts — API knowledge base RAG (Trợ lý AI Bất động sản, Đợt 1).
+ * knowledge-routes.ts — API knowledge base RAG (Trợ lý AI Cờ Rếp Việt, Đợt 1).
  *   GET/PUT /api/v1/ai/knowledge/config   — provider/model embedding (admin)
  *   GET     /api/v1/ai/knowledge/docs      — danh sách tài liệu
  *   POST    /api/v1/ai/knowledge/docs      — nạp tài liệu (dán text) (admin)

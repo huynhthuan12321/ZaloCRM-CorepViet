@@ -138,7 +138,7 @@ const auth = useAuthStore();
 // Branding lockup — đồng bộ logo + tên tổ chức với trang /login.
 const DEFAULT_LOGO = '/brand/hs-monogram.png';
 const brandLogo = ref(DEFAULT_LOGO);
-const brandName = ref('HS Holding');
+const brandName = ref('Cờ Rếp Việt');
 function onLogoError() {
   if (brandLogo.value !== DEFAULT_LOGO) brandLogo.value = DEFAULT_LOGO;
 }
@@ -147,7 +147,7 @@ onMounted(() => {
     .then((b) => {
       if (!b) return;
       brandLogo.value = b.logoUrl || DEFAULT_LOGO;
-      brandName.value = b.name || 'HS Holding';
+      brandName.value = b.name || 'Cờ Rếp Việt';
     })
     .catch(() => {});
 });

@@ -459,7 +459,7 @@ export async function aiRoutes(app: FastifyInstance) {
             if (pn.area) parts.push(`tại ${pn.area}`);
             if (pn.decisionTimeline) parts.push(`quyết định ${pn.decisionTimeline}`);
             if (parts.length > 0) {
-              const summary = `[AI ${new Date().toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}] Nhu cầu BĐS: ${parts.join(' · ')}`;
+              const summary = `[AI ${new Date().toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}] Nhu cầu sản phẩm: ${parts.join(' · ')}`;
               const oldNotes = (contact.notes || '').trim();
               update.notes = oldNotes ? `${oldNotes}\n\n${summary}` : summary;
             }
