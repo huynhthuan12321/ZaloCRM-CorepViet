@@ -27,17 +27,7 @@ import { randomUUID } from 'node:crypto';
 import { getOwnerScope, applyOwnerScope } from '../rbac/owner-scope.js';
 import { onPhoneUidResolved } from './list-event-handlers.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
-
-type EntryStatusTab =
-  | 'all'
-  | 'valid'
-  | 'invalid'
-  | 'dup'
-  | 'dup_in_list'
-  | 'dup_cross_list'
-  | 'dup_with_crm'
-  | 'has_zalo'
-  | 'no_zalo';
+import { buildEntryWhere, csvCell, type EntryStatusTab } from './list-entry-filters.js';
 
 export async function customerListEntryRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
@@ -66,47 +56,8 @@ export async function customerListEntryRoutes(app: FastifyInstance): Promise<voi
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
 
-    const where: any = { customerListId: id };
-
-    // Tab filter — 2026-05-20 refactor: dup filter dùng dup_*_id fields (KHÔNG
-    // còn status='dup_*'). Advisory model: entries trùng vẫn được enrich.
-    if (tab === 'valid') {
-      where.phoneValid = true;
-    } else if (tab === 'invalid') {
-      where.status = 'invalid';
-    } else if (tab === 'dup') {
-      where.OR = [
-        { dupInListWithEntryId: { not: null } },
-        { dupWithListId: { not: null } },
-        { dupWithContactId: { not: null } },
-      ];
-    } else if (tab === 'dup_in_list') {
-      where.dupInListWithEntryId = { not: null };
-    } else if (tab === 'dup_cross_list') {
-      where.dupWithListId = { not: null };
-    } else if (tab === 'dup_with_crm') {
-      where.dupWithContactId = { not: null };
-    } else if (tab === 'has_zalo') {
-      where.hasZalo = true;
-    } else if (tab === 'no_zalo') {
-      // "Đang chờ Quét" tab = đã check Friend (status='enriched') nhưng hasZalo=null.
-      // Tab name vẫn 'no_zalo' để compat URL, UI label đã đổi "Đang chờ Quét".
-      where.hasZalo = null;
-      where.status = 'enriched';
-    }
-    // tab === 'all' → no filter
-
-    if (search.trim()) {
-      const q = search.trim();
-      where.OR = [
-        { phoneRaw: { contains: q, mode: 'insensitive' } },
-        { phoneE164: { contains: q } },
-        { phoneLocal: { contains: q } },
-        { nameRaw: { contains: q, mode: 'insensitive' } },
-        { zaloName: { contains: q, mode: 'insensitive' } },
-        { zaloUid: { equals: q } },
-      ];
-    }
+    // Where lọc tab + search — DÙNG CHUNG với Export CSV (list-entry-filters.ts).
+    const where = buildEntryWhere(id, tab, search);
 
     // ─── Sắp xếp (UI 2026-06-24) ───
     // Whitelist cột sort (chỉ field DB thật, tránh inject). Mặc định rowIndex DESC
@@ -200,6 +151,82 @@ export async function customerListEntryRoutes(app: FastifyInstance): Promise<voi
       logger.error({ err, id }, '[list-entries] list failed');
       return reply.status(500).send({ error: 'internal_error' });
     }
+  });
+
+  // ─── GET /customer-lists/:id/export.csv ───
+  // Export CSV theo ĐÚNG filter hiện tại (tab + search) — khớp bảng chi tiết user đang xem.
+  // Trước 2026-07-12 nút "Export CSV" ở ListDetailView là nút CHẾT (không handler) → nay nối.
+  // BOM UTF-8 để Excel đọc đúng tiếng Việt. Owner-scope + org-scope như GET entries.
+  app.get<{
+    Params: { id: string };
+    Querystring: { tab?: EntryStatusTab; search?: string };
+  }>('/api/v1/customer-lists/:id/export.csv', async (request, reply) => {
+    const user = request.user!;
+    const { id } = request.params;
+    const { tab = 'all', search = '' } = request.query;
+
+    const ownerScope = await getOwnerScope({
+      userId: user.id, orgId: user.orgId, legacyRole: user.role, resource: 'customer_list',
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lWhere: any = { id, orgId: user.orgId };
+    Object.assign(lWhere, applyOwnerScope(ownerScope));
+    const list = await prisma.customerList.findFirst({
+      where: lWhere,
+      select: { id: true, name: true },
+    });
+    if (!list) return reply.status(404).send({ error: 'list_not_found' });
+
+    const where = buildEntryWhere(id, tab, search);
+    const entries = await prisma.customerListEntry.findMany({
+      where,
+      orderBy: { rowIndex: 'asc' },
+      take: 50000, // trần an toàn — tệp thực tế hàng nghìn dòng
+      select: {
+        rowIndex: true, phoneLocal: true, phoneE164: true, phoneRaw: true,
+        nameRaw: true, zaloName: true, zaloUid: true, hasZalo: true,
+        phoneValid: true, status: true,
+        dupInListWithEntryId: true, dupWithListId: true, dupWithContactId: true,
+      },
+    });
+
+    const header = ['STT', 'SĐT', 'SĐT (+84)', 'Tên', 'Tên Zalo', 'Zalo UID', 'Có Zalo', 'Hợp lệ', 'Trạng thái', 'Trùng'];
+    const dupLabel = (e: { dupInListWithEntryId: string | null; dupWithListId: string | null; dupWithContactId: string | null }): string => {
+      const parts: string[] = [];
+      if (e.dupInListWithEntryId) parts.push('trong tệp');
+      if (e.dupWithListId) parts.push('tệp khác');
+      if (e.dupWithContactId) parts.push('CRM');
+      return parts.join(' + ');
+    };
+    const zaloLabel = (v: boolean | null): string => (v === true ? 'Có' : v === false ? 'Không' : 'Chưa quét');
+
+    const lines = [header.map(csvCell).join(',')];
+    for (const e of entries) {
+      lines.push([
+        e.rowIndex,
+        e.phoneLocal ?? e.phoneRaw ?? '',
+        e.phoneE164 ?? '',
+        e.nameRaw ?? '',
+        e.zaloName ?? '',
+        e.zaloUid ?? '',
+        zaloLabel(e.hasZalo),
+        e.phoneValid ? 'Hợp lệ' : 'Lỗi',
+        e.status ?? '',
+        dupLabel(e),
+      ].map(csvCell).join(','));
+    }
+    // BOM để Excel nhận UTF-8; CRLF theo chuẩn CSV.
+    const csv = '﻿' + lines.join('\r\n') + '\r\n';
+
+    // Filename ASCII-safe (fallback) + filename* UTF-8 cho tên tệp có dấu.
+    const safeName = (list.name || 'tep-khach-hang').normalize('NFKD').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'tep-khach-hang';
+    const stamp = new Date().toISOString().slice(0, 10);
+    const filename = `${safeName}-${stamp}.csv`;
+    const filenameUtf8 = encodeURIComponent(`${list.name || 'tep-khach-hang'}-${stamp}.csv`);
+
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${filenameUtf8}`);
+    return reply.send(csv);
   });
 
   // ─── POST /customer-lists/:id/entries/bulk ───

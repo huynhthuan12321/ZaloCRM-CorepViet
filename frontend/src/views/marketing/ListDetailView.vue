@@ -64,9 +64,9 @@
             <v-icon size="16">mdi-refresh</v-icon>
             Quét lại Zalo
           </button>
-          <button class="btn btn-ghost btn-sm">
+          <button class="btn btn-ghost btn-sm" :disabled="exporting" title="Tải CSV theo bộ lọc/tab hiện tại" @click="onExport">
             <v-icon size="16">mdi-download</v-icon>
-            Export CSV
+            {{ exporting ? 'Đang xuất…' : 'Export CSV' }}
           </button>
           <v-menu :close-on-content-click="true">
             <template #activator="{ props: act }">
@@ -735,6 +735,7 @@ const {
   updateEntry,
   addEntries,
   deleteEntry,
+  exportEntriesCsv,
   bulkResolveEntries,
   selectedCount,
   toggleSelect,
@@ -879,6 +880,19 @@ async function onRescan() {
       await fetchListById(listId.value);
       await fetchEntries(listId.value);
     }, 2000);
+  }
+}
+
+const exporting = ref(false);
+async function onExport() {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    const ok = await exportEntriesCsv(listId.value);
+    if (ok) toast.success('Đã tải CSV theo bộ lọc hiện tại');
+    else toast.error('Export CSV thất bại, thử lại');
+  } finally {
+    exporting.value = false;
   }
 }
 

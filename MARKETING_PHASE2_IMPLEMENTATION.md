@@ -14,16 +14,29 @@ Phase 2 khoa lai Tep khach hang thanh nguon du lieu goc cho Muc tieu va Broadcas
 - [x] BroadcastsView nhan va watch query `createFromList`, tu mo wizard va chon san tep.
 - [x] Bo khoa Phase 0 con sot lai tren nut tao Muc tieu tu chi tiet tep.
 
-## Checklist tiep theo
+## Da trien khai them (12/07/2026 — dot Export CSV)
 
-- [ ] Kiem tra lai CreateListModal: Paste, Excel, CSV cung di qua 1 parser va co loading/error ro rang.
-- [ ] Chuan hoa trang chi tiet tep: filter, search, chon cot, pagination, scrollbar doc/ngang.
-- [ ] Dong bo counter Tong/Valid/Duplicate/Co Zalo/Dang cho quet theo backend source of truth.
-- [ ] Them test frontend cho deep-link `/marketing/targets?createFromList=...` va `/marketing/broadcasts?createFromList=...`.
-- [ ] Them API integration test cho create target/broadcast tu list co data rong, data dang quet, data done.
+- [x] **Export CSV** — nut "Export CSV" o ListDetailView TRUOC day la nut CHET (khong handler) → nay noi that.
+  - Backend: `GET /api/v1/customer-lists/:id/export.csv` (`list-entry-routes.ts`), export theo DUNG filter tab+search hien tai, BOM UTF-8 cho Excel doc tieng Viet, owner-scope + org-scope nhu GET entries.
+  - Tach `buildEntryWhere` + `csvCell` sang `list-entry-filters.ts` DUNG CHUNG voi GET entries → export khop y het bang dang xem.
+  - Frontend: `exportEntriesCsv()` trong `use-customer-lists` (tai blob qua api Bearer roi tu tao link download); nut co trang thai "Dang xuat…".
+  - Test: `backend/tests/list-entry-filters.test.ts` (17/17 pass) — filter tab/search + CSV escaping RFC 4180.
+
+## Da xac minh san co (khong can lam them)
+
+- [x] CreateListModal: Paste/Excel/CSV/Lead Ads cung di qua 1 dry-run preview chung (`dryRun` + `createList`); file parse client-side qua ExcelJS (thay `xlsx` co CVE).
+- [x] Chi tiet tep co filter (tab all/valid/invalid/dup*/has_zalo/no_zalo), search da cot, sort whitelist, pagination — backend `GET entries` + UI hero-stats/subtabs.
+- [x] Counter Tong/Valid/Duplicate/Co Zalo/Cho quet doc THANG tu `currentList.*` (cot counter backend = source of truth).
+- [x] Quet lai Zalo: `POST /customer-lists/:id/rescan-zalo` + nut "Quet lai Zalo".
+
+## Con lai (chua lam trong dot nay)
+
+- [ ] Test frontend cho deep-link (`?createFromList=...`) — can harness component test.
+- [ ] API integration test create target/broadcast tu list (data rong/dang quet/done) — can DB/integration harness.
 
 ## QA can chay
 
-- `npm run build` trong `frontend`
-- Vao chi tiet tep -> Tao Muc tieu tu tep nay -> modal mo va tep duoc chon san.
-- Vao chi tiet tep -> Tao Broadcast tu tep nay -> wizard mo va tep duoc chon san.
+- `npm run build` frontend + backend (da pass 12/07).
+- Vao chi tiet tep -> Export CSV -> tai ve dung so dong theo tab/search dang chon, mo Excel khong loi font tieng Viet.
+- Doi tab (vd "Co Zalo") roi Export -> CSV chi gom dong cua tab do.
+- Vao chi tiet tep -> Tao Muc tieu / Tao Broadcast tu tep nay -> modal/wizard mo va tep duoc chon san.

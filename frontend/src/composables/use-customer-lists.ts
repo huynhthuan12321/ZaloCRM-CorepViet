@@ -330,6 +330,37 @@ export function useCustomerLists() {
     }
   }
 
+  // Export CSV theo ĐÚNG filter hiện tại (tab + search) — khớp bảng đang xem.
+  // Auth qua Bearer header nên PHẢI tải blob qua api rồi tự tạo link download
+  // (không thể dùng <a href> trực tiếp vì thiếu header xác thực).
+  async function exportEntriesCsv(listId: string): Promise<boolean> {
+    try {
+      const res = await api.get(`/customer-lists/${listId}/export.csv`, {
+        params: { tab: entryTab.value, search: entrySearch.value || undefined },
+        responseType: 'blob',
+      });
+      let filename = 'tep-khach-hang.csv';
+      const cd = (res.headers?.['content-disposition'] as string | undefined) ?? '';
+      const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      const plain = cd.match(/filename="?([^";]+)"?/i);
+      if (star) filename = decodeURIComponent(star[1]);
+      else if (plain) filename = plain[1];
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      return true;
+    } catch (err) {
+      console.error('[customer-lists] exportEntriesCsv failed:', err);
+      return false;
+    }
+  }
+
   async function updateEntry(
     listId: string,
     entryId: string,
@@ -435,6 +466,7 @@ export function useCustomerLists() {
     updateEntry,
     addEntries,
     deleteEntry,
+    exportEntriesCsv,
     // entries
     entries,
     entriesTotal,

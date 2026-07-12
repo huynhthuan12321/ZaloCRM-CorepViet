@@ -135,29 +135,29 @@ Muc tieu: Tep KH la nguon du lieu goc cho Muc tieu va Broadcast, nen can lam cha
 
 Chuc nang can co:
 
-- [ ] Danh sach tep KH hien dung so lieu that.
-- [ ] Tao tep bang paste SĐT.
-- [ ] Upload Excel.
-- [ ] Upload CSV.
-- [ ] Lead Ads co cho phep placeholder neu chua tich hop that.
-- [ ] Dedup trong tep va dedup cross-list.
-- [ ] Normalize phone ve local va +84.
-- [ ] Lookup Zalo async qua zalo-pool.
-- [ ] Chi tiet tep co filter, search, chon cot, pagination, scrollbar doc/ngang ro rang.
-- [ ] Export CSV dung filter hien tai.
+- [x] Danh sach tep KH hien dung so lieu that (counter backend source-of-truth).
+- [x] Tao tep bang paste SĐT.
+- [x] Upload Excel (parse client-side ExcelJS → dry-run chung).
+- [x] Upload CSV.
+- [x] Lead Ads co cho phep placeholder (tab Lead Ads).
+- [x] Dedup trong tep va dedup cross-list (+ dedup CRM).
+- [x] Normalize phone ve local va +84.
+- [x] Lookup Zalo async qua zalo-pool (enrichment worker).
+- [x] Chi tiet tep co filter, search, sort, pagination.
+- [x] Export CSV dung filter hien tai (12/07 — noi nut chet, xem `MARKETING_PHASE2_IMPLEMENTATION.md`).
 - [x] Tao Muc tieu tu tep nay.
 - [x] Tao Broadcast tu tep nay.
 - [x] Deep-link createFromList/listId mo dung wizard va chon san tep.
-- [ ] Quet lai Zalo.
+- [x] Quet lai Zalo.
 
-API de xuat:
+API (route legacy thuc te `/api/v1/customer-lists/*` — theo ADR-001 giu legacy lam contract ghi):
 
-- [ ] `POST /api/marketing/lists`
-- [ ] `POST /api/marketing/lists/import`
-- [ ] `GET /api/marketing/lists/:id`
-- [ ] `GET /api/marketing/lists/:id/items`
-- [ ] `POST /api/marketing/lists/:id/rescan-zalo`
-- [ ] `GET /api/marketing/lists/:id/export.csv`
+- [x] `POST /api/v1/customer-lists` (create) + `POST .../dry-run` (preview paste/file).
+- [x] `POST .../entries` (append) — import qua dry-run+create.
+- [x] `GET /api/v1/customer-lists/:id`.
+- [x] `GET /api/v1/customer-lists/:id/entries` (filter/search/sort/pagination).
+- [x] `POST /api/v1/customer-lists/:id/rescan-zalo`.
+- [x] `GET /api/v1/customer-lists/:id/export.csv` (MOI 12/07).
 
 QA checklist:
 
