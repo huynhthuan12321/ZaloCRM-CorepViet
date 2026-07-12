@@ -34,6 +34,23 @@ interface JobBody {
   welcomeEnabled?: boolean;
   welcomeMsg?: string;
   welcomeBlockIds?: string[];
+  // Luồng bám đuổi sau chấp nhận (Phase 4): care-session-listener enroll CareSession
+  // khi friendship_accepted; care-session-cron gửi các bước. null/'' = tắt.
+  followupSequenceId?: string | null;
+}
+
+/** Validate luồng bám đuổi thuộc org. Trả error string hoặc null. Mutate b thành id sạch/null. */
+async function validateFollowupSequence(b: JobBody, orgId: string): Promise<string | null> {
+  if (b.followupSequenceId === undefined) return null;
+  const id = (b.followupSequenceId ?? '').trim();
+  if (!id) {
+    b.followupSequenceId = null;
+    return null;
+  }
+  const seq = await prisma.automationSequence.findFirst({ where: { id, orgId }, select: { id: true } });
+  if (!seq) return 'followupSequence_not_found';
+  b.followupSequenceId = seq.id;
+  return null;
 }
 
 /** Validate cấu hình tin chào. Trả error string hoặc null. Mutate b.welcomeBlockIds đã lọc. */
@@ -172,6 +189,8 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
 
     const welcomeErr = await validateWelcome(b, user.orgId);
     if (welcomeErr) return reply.status(400).send({ error: welcomeErr });
+    const followupErr = await validateFollowupSequence(b, user.orgId);
+    if (followupErr) return reply.status(400).send({ error: followupErr });
 
     const job = await prisma.targetJob.create({
       data: {
@@ -189,6 +208,7 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
         welcomeEnabled: b.welcomeEnabled === true,
         welcomeMsg: b.welcomeMsg?.trim() ?? '',
         welcomeBlockIds: b.welcomeBlockIds ?? [],
+        followupSequenceId: b.followupSequenceId ?? null,
       },
     });
     logger.info(`[target] job created id=${job.id} by=${user.id} source=${sourceType}`);
@@ -246,6 +266,14 @@ export async function targetRoutes(app: FastifyInstance): Promise<void> {
           data: { welcomeStatus: 'waiting' },
         });
       }
+    }
+
+    // Luồng bám đuổi: cho gắn/tháo cả sau khi job chạy (listener chỉ enroll KH
+    // chấp nhận SAU khi gắn; KH đã accept trước đó không enroll hồi tố).
+    if (b.followupSequenceId !== undefined) {
+      const followupErr = await validateFollowupSequence(b, user.orgId);
+      if (followupErr) return reply.status(400).send({ error: followupErr });
+      data.followupSequenceId = b.followupSequenceId ?? null;
     }
 
     const job = await prisma.targetJob.update({ where: { id: existing.id }, data });

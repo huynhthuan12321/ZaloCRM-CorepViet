@@ -72,8 +72,6 @@ interface Template {
 // Dùng cho {crm_*}. Trống → fallback fullName (khớp BE render-template.ts).
 interface ContactCtx { fullName?: string | null; gender?: string | null; crmAlias?: string | null }
 
-const PROJECT_TAGS = ['Emerald Garden View', 'Emerald Boulevard', 'Emerald River Park', 'Monrei Sài Gòn'];
-
 const props = defineProps<{
   visible: boolean;
   query: string;
@@ -91,6 +89,19 @@ const emit = defineEmits<{
 
 const selectedIndex = ref(0);
 const tagFilter = ref('');
+
+// Tag dự án lấy ĐỘNG từ chính các mẫu đã nạp của org — KHÔNG hard-code branding.
+// Phân tích Phase 1 (ADR-001): bỏ mảng bất động sản cố định.
+const PROJECT_TAGS = computed<string[]>(() => {
+  const set = new Set<string>();
+  for (const t of props.templates) {
+    for (const tag of t.tagIds || []) {
+      const v = (tag || '').trim();
+      if (v) set.add(v);
+    }
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'));
+});
 
 // ── Định vị popup (fixed) ngay TRÊN ô nhập. Teleport ra body nên tự tính toạ độ
 // từ anchor (.editor-wrap) để thoát overflow:hidden của .input-area. ──

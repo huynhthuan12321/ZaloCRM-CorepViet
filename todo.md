@@ -1,4 +1,4 @@
-# TODO / Nhat ky phien lam viec ZaloCRM-CorepViet
+﻿# TODO / Nhat ky phien lam viec ZaloCRM-CorepViet
 
 Cap nhat: 2026-07-11
 
@@ -156,7 +156,7 @@ docker compose up -d --build app
 - Da cap nhat mot phan giao dien/noi dung.
 - Can QA lai toan app bang tu khoa:
   - `Bat dong san`
-  - `BĐS`
+  - `BÄS`
   - `du an`
   - `gia`
   - `chinh sach`
@@ -320,3 +320,42 @@ git add frontend/src/views/FriendsView.vue todo.md
 git commit -m "fix(friends): enable bulk actions"
 git push origin main
 ```
+
+## Marketing Phase 0 - 12/07/2026
+
+- [x] HoÃ n thiá»‡n Phase 0: khÃ³a pháº¡m vi Marketing báº±ng feature gates vÃ  router guard.
+- [x] Cáº­p nháº­t `MARKETING_IMPLEMENTATION_ROADMAP.md`: tráº¡ng thÃ¡i Phase 0 Ä‘Ã£ hoÃ n táº¥t, checklist Ä‘Ã£ tick cÃ¡c má»¥c Ä‘áº¡t.
+- [x] Cáº­p nháº­t `MARKETING_PHASE0_AUDIT.md`: bá»• sung route matrix, feature flags, checklist kiá»ƒm thá»­ vÃ  pháº§n cÃ²n thiáº¿u chuyá»ƒn sang Phase 1-4.
+- [x] XÃ¡c nháº­n cÃ¡c module EE/automation máº·c Ä‘á»‹nh khÃ´ng má»Ÿ khi flag táº¯t: Goals/Targets, Care Sessions, Manual Follow-up, Sequences, Blocks, Broadcasts.
+- [ ] Tiáº¿p tá»¥c Phase 1: ná»‘i API tháº­t vÃ  bá» dá»¯ liá»‡u demo cho cÃ¡c mÃ n Enterprise trÆ°á»›c khi báº­t flag production.
+- [ ] Tiáº¿p tá»¥c Phase 2: hoÃ n thiá»‡n flow tá»« Tá»‡p khÃ¡ch hÃ ng sang Má»¥c tiÃªu/Broadcast khi báº­t flag.
+- [ ] Tiáº¿p tá»¥c Phase 3: hoÃ n thiá»‡n Sequence/Block composer vÃ  API lÆ°u tháº­t.
+- [ ] Tiáº¿p tá»¥c Phase 4: hoÃ n thiá»‡n Broadcast wizard, queue gá»­i, chi tiáº¿t broadcast vÃ  kiá»ƒm thá»­ gá»­i an toÃ n.
+<!-- TODO_PHASE1_START -->
+## 2026-07-12 - Phase 1 Marketing foundation
+
+Muc tieu: khoa nen tang du lieu/API Marketing truoc khi sua lon UI va worker.
+
+Da xong:
+
+- [x] Tao `MARKETING_PHASE1_AUDIT.md` de ghi ro hien trang schema/API/frontend.
+- [x] Mapping cac model legacy dang co sang domain Marketing trong roadmap.
+- [x] Ghi nhan route legacy va de xuat facade `/api/marketing/*`.
+- [x] Ghi nhan hard-code `PROJECT_TAGS` can go.
+
+Con lai:
+
+- [ ] Viet ADR: facade canonical hay migrate schema.
+- [ ] Tao `/api/marketing/summary`.
+- [ ] Tao `/api/marketing/lists` facade cho `CustomerList`/`CustomerListEntry`.
+- [ ] Tao `/api/marketing/templates` facade cho `MessageTemplate`.
+- [ ] Tao `/api/marketing/blocks` facade cho `ContentBlock`.
+- [ ] Tao `/api/marketing/sequences` facade cho `AutomationSequence`/`SequenceStep`.
+- [ ] Tao `/api/marketing/goals` facade cho `AutomationCampaign`/`TargetJob`.
+- [ ] Tao `/api/marketing/care-sessions` facade cho `CareSession`.
+- [ ] Tao `/api/marketing/broadcasts` facade cho `BroadcastJob`/`BroadcastRun`.
+- [ ] Xoa hard-code project tags trong template UI.
+- [ ] Them test org isolation cho cac route Marketing.
+- [ ] Chay prisma validate, backend build, frontend build.
+<!-- TODO_PHASE1_END -->
+

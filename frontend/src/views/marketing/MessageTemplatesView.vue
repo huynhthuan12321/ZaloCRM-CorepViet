@@ -161,6 +161,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useMessageTemplates, type MessageTemplate } from '@/composables/use-message-templates';
+import { useProjectTags } from '@/composables/use-project-tags';
 import { useToast } from '@/composables/use-toast';
 import { useConfirm } from '@/composables/use-confirm';
 
@@ -174,8 +175,9 @@ const {
   createFolder, updateFolder, deleteFolder,
 } = useMessageTemplates();
 
-// Tag sản phẩm — khớp PROJECT_TAGS của quick-template-popup (chip lọc trong chat).
-const PROJECT_TAGS = ['Emerald Garden View', 'Emerald Boulevard', 'Emerald River Park', 'Monrei Sài Gòn'];
+// Tag dự án lấy ĐỘNG theo org (facade /marketing/project-tags) + merge tag đang có
+// trong mẫu đã nạp — KHÔNG hard-code branding bất động sản (ADR-001 Phase 1).
+const { projectTags, fetchProjectTags } = useProjectTags();
 // 8 biến động — KHỚP backend render-template.ts + quick-template-popup.
 const VARS = [
   { token: '{gender}', desc: 'Anh/Chị theo giới tính KH' },
@@ -200,6 +202,13 @@ const form = reactive<{ name: string; shortcut: string; folderId: string; visibi
 
 function shortTag(tag: string): string { return tag.replace(/^Emerald\s+/, '').replace('Sài Gòn', 'SG'); }
 function plainOf(t: MessageTemplate): string { return t.contentRich?.text ?? t.content ?? ''; }
+
+// Danh sách tag để lọc/gán: hợp nhất tag org (facade) + tag đang có trong mẫu đã nạp.
+const PROJECT_TAGS = computed<string[]>(() => {
+  const set = new Set<string>(projectTags.value);
+  for (const t of templates.value) for (const tag of t.tagIds || []) { const v = (tag || '').trim(); if (v) set.add(v); }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'));
+});
 
 const visibleTemplates = computed(() => {
   let list = templates.value;
@@ -325,7 +334,7 @@ async function removeFolder(f: { id: string; name: string; _count?: { templates:
 }
 
 async function reload(): Promise<void> {
-  await Promise.all([fetchTemplates(), fetchFolders()]);
+  await Promise.all([fetchTemplates(), fetchFolders(), fetchProjectTags()]);
 }
 
 onMounted(reload);

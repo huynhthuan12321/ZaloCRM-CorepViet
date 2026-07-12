@@ -3,6 +3,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
+import { getMarketingFallbackPath, getMarketingFeatureForPath, isMarketingPathEnabled } from '@/utils/marketingFeatureFlags';
 // Open-core: extension route injection (empty in Community edition via @ee stub).
 import { eeSettingsChildren, eeReportsChildren, eeTopRoutes } from '@ee/routes';
 // Edition flag (open-core): EE=true, Community=false. Dùng để chỉ đăng ký menu
@@ -280,6 +281,13 @@ router.beforeEach(async (to, _from, next) => {
     if (target) return next(target);
   }
 
+  const lockedMarketingFeature = getMarketingFeatureForPath(to.path);
+  if (lockedMarketingFeature && !isMarketingPathEnabled(to.path)) {
+    return next({
+      path: getMarketingFallbackPath(),
+      query: { locked: lockedMarketingFeature, from: to.fullPath },
+    });
+  }
   // Skip guard for setup and login pages
   if (to.name === 'Setup' || to.name === 'Login') {
     return next();

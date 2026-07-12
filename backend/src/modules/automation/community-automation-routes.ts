@@ -12,6 +12,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { assertContactVisible } from '../contacts/contact-scope.js';
 import { logger } from '../../shared/utils/logger.js';
+import { normalizeSequenceSteps } from './sequence-snapshot.js';
 
 type UserCtx = { id: string; orgId: string; role: string };
 
@@ -27,35 +28,14 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-type SequenceDraftStep = {
-  text: string;
-  delayMinutes: number;
-  styles: unknown[];
-};
+// normalizeSequenceSteps chuyển sang ./sequence-snapshot.ts (2026-07-12) — dùng chung
+// với care-session-cron (worker gửi bước) + care-session-listener (enroll bám đuổi).
 
 function textFromUnknown(value: unknown): string {
   if (typeof value === 'string') return value;
   if (!value || typeof value !== 'object') return '';
   const row = value as Record<string, unknown>;
   return String(row.text ?? row.content ?? row.messageText ?? row.message ?? '');
-}
-
-function normalizeSequenceSteps(value: unknown, fallbackText = ''): SequenceDraftStep[] {
-  const raw = asArray(value);
-  const rows = raw.length ? raw : (fallbackText.trim() ? [{ text: fallbackText }] : []);
-  const steps = rows
-    .map((row, index) => {
-      const obj = row && typeof row === 'object' ? row as Record<string, unknown> : {};
-      const text = textFromUnknown(row).trim();
-      const delay = Number(obj.delayMinutes ?? obj.delay ?? (index === 0 ? 0 : 1440));
-      return {
-        text,
-        delayMinutes: Number.isFinite(delay) && delay >= 0 ? Math.round(delay) : (index === 0 ? 0 : 1440),
-        styles: Array.isArray(obj.styles) ? obj.styles : [],
-      };
-    })
-    .filter((row) => row.text);
-  return steps.length ? steps : [{ text: 'Tin nhan cham soc khach hang', delayMinutes: 0, styles: [] }];
 }
 
 function stepText(step: unknown): string {
@@ -301,7 +281,9 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
         .filter((s) => s.sourceType === 'sequence_manual' || s.sourceSequenceId)
         .map((s) => {
           const seq = s.sourceSequenceId ? seqMap.get(s.sourceSequenceId) : null;
-          const totalSteps = seq ? stepCountOf(seq) : null;
+          // Ưu tiên stepsSnapshot của phiên (worker gửi theo snapshot) — fallback định nghĩa live.
+          const snapshotSteps = asArray(s.stepsSnapshot);
+          const totalSteps = snapshotSteps.length || (seq ? stepCountOf(seq) : null);
           const state = stateOf(s);
           return {
             triggerId: s.id,
@@ -310,13 +292,14 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
             sequenceName: seq?.name ?? 'Luồng bám đuổi',
             enrollmentId: s.id,
             enrollSeq: s.enrollEpoch ?? 1,
-            currentStep: state === 'completed' && totalSteps ? totalSteps : 0,
+            currentStep: state === 'completed' && totalSteps ? totalSteps : (s.currentStepIdx ?? 0),
             totalSteps,
-            latestEvent: s.closedReason ?? (s.lastReplyAt ? 'customer_reply' : 'manual_enroll'),
-            latestAt: (s.closedAt ?? s.lastReplyAt ?? s.openedAt).toISOString(),
+            latestEvent: s.closedReason
+              ?? (s.lastReplyAt ? 'customer_reply' : s.lastSentAt ? 'step_sent' : 'manual_enroll'),
+            latestAt: (s.closedAt ?? s.lastReplyAt ?? s.lastSentAt ?? s.openedAt).toISOString(),
             enrolledAt: s.openedAt.toISOString(),
-            lastSentAt: null,
-            nextRunAt: null,
+            lastSentAt: s.lastSentAt?.toISOString() ?? null,
+            nextRunAt: state === 'active' ? s.nextRunAt?.toISOString() ?? null : null,
             pausedUntilMs: s.pausedUntil ? Math.max(0, s.pausedUntil.getTime() - Date.now()) : 0,
             pausedUntil: s.pausedUntil?.toISOString() ?? null,
             stopped: state === 'stopped',
@@ -324,6 +307,7 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
             etaCompleteAt: null,
             holdReason: state === 'paused' ? 'waiting_reply' : state,
             allowedHourRange: null,
+            lastError: s.lastError ?? null,
           };
         }),
     };
@@ -431,6 +415,9 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
     const previous = await prisma.careSession.count({
       where: { orgId: user.orgId, contactId, sourceSequenceId: sequenceId },
     });
+    // Snapshot steps LÚC ENROLL (Phase 3 fix): sửa luồng sau đó KHÔNG đổi nội dung
+    // phiên đang chạy. nextRunAt = now → care-session-cron gửi bước 1 trong khung giờ.
+    const stepsSnapshot = normalizeSequenceSteps(sequence.steps);
     const created = await prisma.careSession.create({
       data: {
         orgId: user.orgId,
@@ -444,10 +431,17 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
         interestWindowUntil: plusDays(30),
         enrollEpoch: previous + 1,
         rulesSnapshot: sequence.runtimeRules ?? {},
+        stepsSnapshot,
+        currentStepIdx: 0,
+        nextRunAt: new Date(),
         closeConditions: { reason },
       },
       select: { id: true },
     });
+    await prisma.automationSequence.update({
+      where: { id: sequenceId },
+      data: { enrolledCount: { increment: 1 } },
+    }).catch((err) => logger.warn('[community-automation] bump enrolledCount failed:', err));
 
     await prisma.careSessionEvent.create({
       data: {
@@ -490,12 +484,27 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
     const user = request.user as UserCtx;
     await prisma.careSession.updateMany({
       where: { id: request.params.triggerId, orgId: user.orgId, contactId: request.params.contactId },
-      data: { state: 'closed', closedReason: request.body.reason || 'sale_resolved', closedAt: new Date() },
+      data: { state: 'closed', closedReason: request.body.reason || 'sale_resolved', closedAt: new Date(), nextRunAt: null },
     });
     return { ok: true };
   });
 
-  app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/advance', async () => {
-    return { ok: true, promoted: 0, deferred: true, deferReason: 'community_fallback' };
+  // "Gửi bước tiếp theo ngay" — kéo nextRunAt về hiện tại + bỏ pause; care-session-cron
+  // gửi ở tick kế (vẫn tôn trọng khung giờ + rate limit, KHÔNG bypass luật an toàn).
+  app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/advance', async (
+    request: FastifyRequest<{ Params: { triggerId: string; contactId: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    const res = await prisma.careSession.updateMany({
+      where: {
+        id: request.params.triggerId,
+        orgId: user.orgId,
+        contactId: request.params.contactId,
+        state: 'active',
+        nextRunAt: { not: null },
+      },
+      data: { nextRunAt: new Date(), pausedUntil: null },
+    });
+    return { ok: true, promoted: res.count };
   });
 }

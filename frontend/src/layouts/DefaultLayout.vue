@@ -291,12 +291,8 @@ const primaryTabs: NavTab[] = [
 // quyền BẤT KỲ chức năng nào, và trỏ tới chức năng ĐẦU TIÊN user có quyền (vd Sale
 // chỉ có Khối → tab Marketing trỏ thẳng /marketing/blocks). Thứ tự = thứ tự sidebar.
 const MARKETING_FUNCTIONS: Array<{ path: string; resource: string }> = [
-  { path: '/marketing/triggers',     resource: 'trigger' },
-  { path: '/marketing/care-sessions',resource: 'care_session' },
-  { path: '/marketing/sequences',    resource: 'sequence' },
-  { path: '/marketing/blocks',       resource: 'block' },
-  { path: '/marketing/broadcasts',   resource: 'broadcast' },
-  { path: '/marketing/lists',        resource: 'customer_list' },
+  { path: '/marketing/lists', resource: 'customer_list' },
+  { path: '/marketing/group-scan', resource: 'friend' },
 ];
 const marketingEntry = computed(() =>
   MARKETING_FUNCTIONS.find((f) => authStore.canAccess(f.resource))?.path ?? null,

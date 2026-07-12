@@ -2538,6 +2538,8 @@ model AutomationSequence {
   sequenceSteps SequenceStep[] // 2026-06-04 — replace JSON `steps` (dual-read 2 weeks)
 
   @@index([orgId, channel, enabled])
+  // Phase 1 Marketing facade (2026-07-12) — ordering list theo org + createdAt desc.
+  @@index([orgId, createdAt(sort: Desc)])
   @@map("automation_sequences")
 }
 
@@ -3060,6 +3062,9 @@ model CustomerListEntry {
   @@index([phoneLocal])
   @@index([customerListId, fbCampaignId])
   @@index([customerListId, fbFormId])
+  // Phase 1 Marketing facade (2026-07-12) — lookup/dedup theo UID + đối chiếu contact.
+  @@index([zaloUid])
+  @@index([contactId])
   @@map("customer_list_entries")
 }
 
@@ -3190,6 +3195,19 @@ model CareSession {
   // KHÔNG ảnh hưởng KH đang chạy (Codex #10). NULL = dùng rules live của sequence (fallback).
   rulesSnapshot   Json? @map("rules_snapshot")
 
+  // ── Community sequence worker (2026-07-12, khép kín Phase 3-4 Marketing) ──
+  // stepsSnapshot: chụp steps của sequence LÚC ENROLL — sửa luồng sau đó KHÔNG đổi
+  // nội dung phiên đang chạy. Format: [{text, delayMinutes, styles}] (normalizeSequenceSteps).
+  // NULL = phiên cũ trước cột này → worker fallback đọc steps live của sequence.
+  stepsSnapshot  Json?     @map("steps_snapshot")
+  // currentStepIdx/nextRunAt: con trỏ bước + lịch gửi bước kế cho care-session-cron.
+  // nextRunAt NULL = phiên KHÔNG do worker Community gửi (manual_listen / EE engine).
+  currentStepIdx Int       @default(0) @map("current_step_idx")
+  nextRunAt      DateTime? @map("next_run_at")
+  lastSentAt     DateTime? @map("last_sent_at")
+  lastError      String?   @map("last_error")
+  attemptCount   Int       @default(0) @map("attempt_count")
+
   openedAt DateTime  @default(now()) @map("opened_at")
   closedAt DateTime? @map("closed_at")
 
@@ -3207,6 +3225,8 @@ model CareSession {
   @@index([sourceTriggerId, state])
   // List "Phiên chăm sóc" theo sale (RBAC scope, D-frontend).
   @@index([orgId, ownerUserId, state])
+  // Worker Community quét phiên đến hạn gửi bước kế (care-session-cron).
+  @@index([state, nextRunAt])
   @@map("care_sessions")
 }
 
@@ -4120,6 +4140,8 @@ model ContentBlock {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([orgId])
+  // Phase 1 Marketing facade (2026-07-12) — ordering list theo org + createdAt desc.
+  @@index([orgId, createdAt(sort: Desc)])
   @@map("content_blocks")
 }
 
@@ -4183,6 +4205,14 @@ model BroadcastRun {
   job   BroadcastJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   orgId String       @map("org_id")
 
+  // ── Snapshot audience (Phase 2 Marketing, 2026-07-12) ──
+  // audienceSnapshotAt: người nhận được MATERIALIZE thành BroadcastRunItem 'queued'
+  // lúc run bắt đầu — sửa tệp/quét lại Zalo giữa chừng KHÔNG đổi danh sách đang gửi
+  // (mục 14.3 tài liệu). NULL = run cũ trước snapshot → cron fallback live-pick.
+  // queuedCount: tổng snapshot, cho UI hiển thị tiến độ x/N.
+  audienceSnapshotAt DateTime? @map("audience_snapshot_at")
+  queuedCount        Int       @default(0) @map("queued_count")
+
   status       String    @default("running") // 'running' | 'done' | 'error'
   startedAt    DateTime  @default(now()) @map("started_at")
   endedAt      DateTime? @map("ended_at")
@@ -4210,7 +4240,8 @@ model BroadcastRunItem {
   name    String?
   zaloUid String? @map("zalo_uid")
 
-  status    String // 'sending' (claim P4) | 'sent' | 'failed' | 'skipped'
+  // 'queued' (snapshot Phase 2 — chờ gửi) | 'sending' (claim P4) | 'sent' | 'failed' | 'skipped'
+  status    String
   error     String?
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -4268,6 +4299,12 @@ model TargetJob {
   welcomedCount      Int       @default(0) @map("welcomed_count")
   welcomeFailedCount Int       @default(0) @map("welcome_failed_count")
   lastWelcomeAt      DateTime? @map("last_welcome_at")
+
+  // Bám đuổi sau chấp nhận (2026-07-12, khép kín Phase 4): khi friendship_accepted,
+  // care-session-listener enroll CareSession(sourceType='target_followup') với luồng
+  // này — worker care-session-cron gửi các bước. NULL = không bám đuổi tự động.
+  followupSequenceId    String? @map("followup_sequence_id")
+  followupEnrolledCount Int     @default(0) @map("followup_enrolled_count")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

@@ -54,6 +54,9 @@
             <span class="run-badge" :class="'r-' + job.latestRun.status">
               {{ job.latestRun.status === 'running' ? 'Đang gửi' : 'Lần gần nhất' }}
             </span>
+            <template v-if="job.latestRun.queuedCount">
+              📋 {{ job.latestRun.sentCount + job.latestRun.failedCount + job.latestRun.skippedCount }}/{{ job.latestRun.queuedCount }} ·
+            </template>
             ✅ {{ job.latestRun.sentCount }} gửi ·
             ❌ {{ job.latestRun.failedCount }} lỗi ·
             ⏭ {{ job.latestRun.skippedCount }} bỏ qua
@@ -130,6 +133,32 @@
             Nên chạy <RouterLink to="/marketing/targets">Mục tiêu</RouterLink> kết bạn trước, hoặc dùng nguồn Bạn bè.
           </div>
         </template>
+
+        <!-- ===== Đếm KH trước khi gửi (dry-run Phase 2) ===== -->
+        <div style="margin-top:8px">
+          <button type="button" class="btn btn-ghost btn-sm" :disabled="counting || !form.zaloAccountId" @click="countAudience">
+            <v-icon size="16">mdi-calculator-variant-outline</v-icon>
+            {{ counting ? 'Đang đếm…' : 'Đếm KH sẽ nhận tin' }}
+          </button>
+        </div>
+        <div v-if="audience" class="f-note" style="margin-top:6px">
+          <div>
+            📋 Tổng <b>{{ audience.total.toLocaleString('vi-VN') }}</b> ·
+            sẽ gửi lần chạy này <b>{{ audience.willSend.toLocaleString('vi-VN') }}</b>
+            <template v-if="audience.breakdown.skipNoZalo !== undefined">
+              · bỏ qua: {{ audience.breakdown.skipNoZalo }} không Zalo, {{ audience.breakdown.skipUnknown }} chưa quét
+            </template>
+          </div>
+          <div v-if="audience.breakdown.needLookup" class="f-hint">
+            {{ audience.breakdown.uidReady }} UID sẵn theo nick này · {{ audience.breakdown.needLookup }} cần tra UID lúc gửi (tốn quota tra cứu)
+          </div>
+          <div :class="audience.quota.enough ? '' : 'warn'">
+            Quota tin hôm nay của nick: đã dùng {{ audience.quota.usedToday }}/{{ audience.quota.dailyLimit }}
+            — còn <b>{{ audience.quota.remaining }}</b>
+            <b v-if="!audience.quota.enough" style="color:#c0392b"> (KHÔNG đủ cho {{ audience.willSend }} tin — sẽ tự ngắt khi chạm trần)</b>
+          </div>
+          <div v-if="!audience.nickOnline" style="color:#c0392b">⚠ Nick đang mất kết nối — worker sẽ chờ tới khi nick online.</div>
+        </div>
 
         <label class="f-label">Nội dung</label>
         <div class="f-tabs">
@@ -237,6 +266,21 @@
           <b>Log gửi — {{ itemsModal.jobName }}</b>
           <button class="btn-x" @click="itemsModal.open = false"><v-icon size="18">mdi-close</v-icon></button>
         </div>
+        <div class="bc-log-toolbar">
+          <select v-model="itemsModal.statusFilter" class="f-input" style="max-width:180px" @change="reloadItems">
+            <option value="">Tất cả trạng thái</option>
+            <option value="queued">Chờ gửi</option>
+            <option value="sent">Đã gửi</option>
+            <option value="failed">Lỗi</option>
+            <option value="skipped">Bỏ qua</option>
+          </select>
+          <button
+            v-if="itemsModal.runStatus !== 'running' && itemsModal.failedCount > 0"
+            class="btn btn-primary btn-sm" :disabled="retrying" @click="retryFailed">
+            <v-icon size="16">mdi-restart</v-icon>
+            {{ retrying ? 'Đang tạo…' : `Gửi lại ${itemsModal.failedCount} tin lỗi` }}
+          </button>
+        </div>
         <table class="bc-table">
           <thead><tr><th>#</th><th>Tên</th><th>SĐT</th><th>Trạng thái</th><th>Lỗi</th><th>Lúc</th></tr></thead>
           <tbody>
@@ -274,7 +318,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { api } from '@/api/index';
 import { listMedia, type MediaAssetItem } from '@/api/media';
 import { useToast } from '@/composables/use-toast';
@@ -282,6 +327,7 @@ import { useConfirm } from '@/composables/use-confirm';
 
 const { push: toast } = useToast();
 const { confirm } = useConfirm();
+const route = useRoute();
 
 interface JobRow {
   id: string; name: string; status: string; messageText: string; imageUrl: string | null;
@@ -291,7 +337,7 @@ interface JobRow {
   list: { id: string; name: string; hasZaloEntries: number } | null;
   nick: { id: string; displayName: string | null; phone: string | null; status: string } | null;
   contentBlocks?: Array<{ id: string; name: string }>;
-  latestRun: { id: string; status: string; sentCount: number; failedCount: number; skippedCount: number } | null;
+  latestRun: { id: string; status: string; sentCount: number; failedCount: number; skippedCount: number; queuedCount: number } | null;
 }
 interface ContentBlockRow {
   id: string; name: string; messageText: string; imageUrl: string | null;
@@ -329,6 +375,7 @@ const friendCount = ref<number | null>(null);
 
 async function onNickChange(): Promise<void> {
   friendCount.value = null;
+  audience.value = null; // nick đổi → kết quả đếm cũ không còn đúng
   if (!form.zaloAccountId) return;
   try {
     const res = await api.get(`/broadcast-jobs/friend-count/${form.zaloAccountId}`);
@@ -336,10 +383,66 @@ async function onNickChange(): Promise<void> {
   } catch { friendCount.value = 0; }
 }
 
+// ===== Đếm KH trước khi gửi (dry-run Phase 2) =====
+interface AudienceCount {
+  total: number; willSend: number;
+  breakdown: { friendsAccepted?: number; hasZalo?: number; skipNoZalo?: number; skipUnknown?: number; uidReady?: number; needLookup?: number };
+  quota: { usedToday: number; dailyLimit: number; remaining: number; enough: boolean };
+  nickOnline: boolean;
+}
+const audience = ref<AudienceCount | null>(null);
+const counting = ref(false);
+
+async function countAudience(): Promise<void> {
+  if (!form.zaloAccountId) return void toast('Chọn nick Zalo gửi trước', 'error');
+  if (form.sourceType === 'customer_list' && !form.customerListId) return void toast('Chọn tệp khách hàng trước', 'error');
+  counting.value = true;
+  try {
+    const res = await api.post('/broadcast-jobs/audience-count', {
+      sourceType: form.sourceType,
+      customerListId: form.sourceType === 'customer_list' ? form.customerListId : undefined,
+      zaloAccountId: form.zaloAccountId,
+      maxPerRun: form.maxPerRun,
+    });
+    audience.value = res.data;
+  } catch (err: any) {
+    toast(`Lỗi đếm: ${err?.response?.data?.error ?? 'không đếm được'}`, 'error');
+  } finally {
+    counting.value = false;
+  }
+}
+
 const itemsModal = reactive({
-  open: false, jobName: '',
+  open: false, jobName: '', jobId: '', runId: '', runStatus: '', failedCount: 0, statusFilter: '',
   items: [] as Array<{ id: string; name: string | null; phone: string | null; status: string; error: string | null; createdAt: string }>,
 });
+const retrying = ref(false);
+
+async function reloadItems(): Promise<void> {
+  const res = await api.get(`/broadcast-jobs/${itemsModal.jobId}/runs/${itemsModal.runId}/items`, {
+    params: itemsModal.statusFilter ? { status: itemsModal.statusFilter } : {},
+  });
+  itemsModal.items = res.data.items;
+}
+
+async function retryFailed(): Promise<void> {
+  if (!(await confirm({
+    title: 'Gửi lại tin lỗi?',
+    message: `Tạo lần chạy mới gửi lại ${itemsModal.failedCount} tin lỗi của "${itemsModal.jobName}" (worker bắt đầu trong ~30 giây, vẫn qua giãn cách + trần tin/ngày).`,
+    confirmText: 'Gửi lại',
+  }))) return;
+  retrying.value = true;
+  try {
+    await api.post(`/broadcast-jobs/${itemsModal.jobId}/runs/${itemsModal.runId}/retry-failed`);
+    toast('Đã tạo lần chạy gửi lại tin lỗi', 'success');
+    itemsModal.open = false;
+    await load();
+  } catch (err: any) {
+    toast(`Lỗi: ${err?.response?.data?.error ?? 'không tạo được'}`, 'error');
+  } finally {
+    retrying.value = false;
+  }
+}
 
 const mediaPicker = reactive({ open: false, loading: false, items: [] as MediaAssetItem[] });
 
@@ -381,6 +484,23 @@ async function openCreate(): Promise<void> {
       id: n.id, displayName: n.displayName, phone: n.phone, status: n.status,
     }));
   }
+}
+
+function firstQueryString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return '';
+}
+
+let appliedCreateFromList = '';
+
+async function applyCreateFromListQuery(): Promise<void> {
+  const fromList = firstQueryString(route.query.createFromList);
+  if (!fromList || fromList === appliedCreateFromList) return;
+  appliedCreateFromList = fromList;
+  await openCreate();
+  form.sourceType = 'customer_list';
+  form.customerListId = fromList;
 }
 
 async function onSelectBlocksMode(): Promise<void> {
@@ -466,10 +586,14 @@ async function removeJob(job: JobRow): Promise<void> {
   await load();
 }
 
-async function viewItems(job: JobRow, run: { id: string }): Promise<void> {
-  const res = await api.get(`/broadcast-jobs/${job.id}/runs/${run.id}/items`);
-  itemsModal.items = res.data.items;
+async function viewItems(job: JobRow, run: { id: string; status?: string; failedCount?: number }): Promise<void> {
+  itemsModal.jobId = job.id;
+  itemsModal.runId = run.id;
   itemsModal.jobName = job.name;
+  itemsModal.runStatus = run.status ?? '';
+  itemsModal.failedCount = run.failedCount ?? 0;
+  itemsModal.statusFilter = '';
+  await reloadItems();
   itemsModal.open = true;
 }
 
@@ -477,7 +601,7 @@ function statusLabel(s: string): string {
   return s === 'active' ? 'Đang hoạt động' : s === 'paused' ? 'Tạm dừng' : 'Đã xong';
 }
 function itemStatusLabel(s: string): string {
-  return s === 'sent' ? 'Đã gửi' : s === 'failed' ? 'Lỗi' : 'Bỏ qua';
+  return s === 'queued' ? 'Chờ gửi' : s === 'sending' ? 'Đang gửi' : s === 'sent' ? 'Đã gửi' : s === 'failed' ? 'Lỗi' : 'Bỏ qua';
 }
 function scheduleLabel(job: JobRow): string {
   if (job.scheduleType === 'once') return `1 lần — ${fmtDate(job.scheduledAt)}`;
@@ -492,13 +616,21 @@ function fmtDate(d: string | null): string {
 
 onMounted(async () => {
   await load();
-  pollTimer = setInterval(load, 15_000); // run đang chạy → cập nhật số liệu
+  pollTimer = setInterval(load, 15_000); // running jobs -> refresh stats
+  await applyCreateFromListQuery();
 });
+
+watch(
+  () => firstQueryString(route.query.createFromList),
+  () => { void applyCreateFromListQuery(); },
+);
+
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 </script>
 
 <style scoped>
 .bc-view { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+.bc-log-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 0 10px; }
 .mkt-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 20px 12px; border-bottom: 1px solid var(--border, #e5e4e7); }
 .mtt { font-size: 18px; font-weight: 700; }
 .mts { font-size: 13px; color: var(--text-secondary, #666); margin-top: 2px; max-width: 720px; }

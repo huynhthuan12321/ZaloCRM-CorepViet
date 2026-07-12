@@ -290,7 +290,11 @@ async function parseSheetToRows(buf: ArrayBuffer, filename: string): Promise<unk
   return out;
 }
 
-const props = defineProps<{ modelValue: boolean }>();
+const props = defineProps<{
+  modelValue: boolean;
+  // Tab mở sẵn khi modal hiện (Phase 2: nút "Import CSV" ở ListsView mở thẳng tab csv)
+  initialTab?: 'paste' | 'excel' | 'csv' | 'leadads';
+}>();
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void;
   (e: 'created', payload: { id: string }): void;
@@ -563,11 +567,13 @@ function resetAll() {
   resetFile();
 }
 
-// Reset trên đóng modal
+// Reset trên đóng modal; mở modal → nhảy tới tab yêu cầu (nếu có)
 watch(() => props.modelValue, (v) => {
   if (!v) {
     if (dryRunTimer) clearTimeout(dryRunTimer);
     if (fileDryRunTimer) clearTimeout(fileDryRunTimer);
+  } else if (props.initialTab && props.initialTab !== activeTab.value) {
+    activeTab.value = props.initialTab;
   }
 });
 
