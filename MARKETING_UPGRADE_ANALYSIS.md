@@ -738,9 +738,10 @@ Mục tiêu: tạo nội dung một lần, dùng được cho chat và automatio
 
 Việc làm (trạng thái cập nhật 12/07/2026 — chi tiết mục 15):
 
-- Block versioning/snapshot. — ⏳ một phần: snapshot đã làm ở mức CareSession (`stepsSnapshot` chụp lúc enroll — sửa luồng không đổi phiên đang chạy); versioning riêng cho Block chưa làm.
-- Sequence builder nhiều bước. — ⬜ chưa (UI hiện là drawer cơ bản).
-- Preview biến. — 🔧 đã có route `POST /automation/sequences/:id/preview` render theo contact.
+- **Mẫu tin nhắn backend Community. — ✅ MỚI 12/07: bản Community trước KHÔNG có route `/automation/templates` (EE-only) → màn Mẫu tin nhắn + chèn `//` trong Chat CHẾT (404). Nối lại `message-template-routes.ts` (CRUD + folder + track-use, map về MessageTemplate) + helpers org-scope (test 12/12 pass).**
+- Block versioning/snapshot. — ⏳ một phần: snapshot đã làm ở mức CareSession (`stepsSnapshot` chụp lúc enroll); versioning riêng cho Block chưa. BỔ SUNG 12/07: validate biến `{{...}}` lạ khi lưu Block (chặn gửi token literal cho khách).
+- Sequence builder nhiều bước. — ✅ builder thêm/xóa/sửa step + delay + text ĐÃ có; BỔ SUNG 12/07: reorder step (lên/xuống) — thứ tự = thứ tự gửi.
+- Preview biến. — 🔧 đã có route `POST /automation/sequences/:id/preview` render theo contact (dùng ở `SequencePreviewDialog` trong Chat).
 - Manual attach sequence ổn định. — ✅ enroll ghi `stepsSnapshot` + `currentStepIdx` + `nextRunAt`, tăng enrolledCount (12/07/2026).
 - CareSession từ manual sequence chạy worker thật. — ✅ worker `care-session-cron.ts` gửi bước theo `nextRunAt`, có rate limit + khung giờ + claim chống trùng (unit test 8/8 pass).
 
@@ -792,13 +793,13 @@ Việc làm:
 - [ ] Xem log từng người nhận. — ✅ có sẵn + filter trạng thái + tiến độ x/N theo snapshot (12/07).
 - [ ] Xử lý nick offline. — 🔧 NOT_CONNECTED → nhả claim/trả về queued, chờ tick sau (unit test).
 
-### Template/Block
+### Template/Block (code 12/07/2026 — checkbox là QA staging)
 
-- [ ] Tạo template.
-- [ ] Gõ `//` trong chat để chèn mẫu.
-- [ ] Tạo block có biến thể.
-- [ ] Preview block theo khách.
-- [ ] Dùng block trong sequence.
+- [x] Tạo template. — ✅ backend Community `POST /automation/templates` (trước EE-only nên chết).
+- [ ] Gõ `//` trong chat để chèn mẫu. — 🔧 backend đã có (track-use); cần QA staging popup chat.
+- [ ] Tạo block có biến thể. — ⬜ chưa (biến thể cần schema ContentBlockVariant); BỔ SUNG: validate biến lạ khi lưu.
+- [ ] Preview block theo khách. — ⬜ chưa.
+- [ ] Dùng block trong sequence. — ⬜ chưa (step hiện là text inline, chưa gắn blockId).
 
 ### Sequence (code đã triển khai 12/07/2026 — checkbox là QA staging, xem mục 15.8)
 

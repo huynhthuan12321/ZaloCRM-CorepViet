@@ -176,29 +176,31 @@ QA checklist:
 
 Muc tieu: sale go `/` hoac slug de chen nhanh trong Chat.
 
-Checklist:
+Checklist (12/07/2026 — noi backend Community, truoc day route la EE-only nen man chet):
 
-- [ ] Danh sach mau lay tu API.
-- [ ] Tao mau moi luu duoc.
-- [ ] Sua/xoa/doi rieng tu-cong khai.
-- [ ] Folder theo du an hoac nhom mau.
-- [ ] Slug duy nhat trong org, vi du `//baogia`, `//camon`.
-- [ ] Bien `{gender}`, `{name}`, `{sale}` render dung khi chen vao chat.
-- [ ] UI disable nut Luu khi thieu ten/slug/noi dung.
+- [x] Danh sach mau lay tu API (`GET /automation/templates`).
+- [x] Tao mau moi luu duoc.
+- [x] Sua/xoa (soft-delete archivedAt)/doi rieng tu-cong khai.
+- [x] Folder theo nhom mau (CRUD + force-delete go folder khoi templates).
+- [x] Slug duy nhat trong org (normalizeShortcut + check 409 shortcut_exists).
+- [x] Bien render dung khi chen vao chat (track-use tang usageCount/manualSendCount).
+- [x] UI disable nut Luu khi thieu (co san frontend).
 
-API de xuat:
+API (route thuc te `/api/v1/automation/*` — khop frontend use-message-templates.ts):
 
-- [ ] `GET /api/marketing/templates`
-- [ ] `POST /api/marketing/templates`
-- [ ] `PATCH /api/marketing/templates/:id`
-- [ ] `DELETE /api/marketing/templates/:id`
+- [x] `GET /api/v1/automation/templates` (+ folderId/visibility/tags/category/search/includeArchived).
+- [x] `POST /api/v1/automation/templates`.
+- [x] `PUT /api/v1/automation/templates/:id`.
+- [x] `DELETE /api/v1/automation/templates/:id` (soft).
+- [x] `GET/POST/PUT/DELETE /api/v1/automation/template-folders[/:id]`.
+- [x] `POST /api/v1/automation/templates/:id/track-use`.
 
 QA checklist:
 
-- [ ] Tao mau moi xong hien ngay trong list.
-- [ ] Tim kiem theo ten/noi dung/slug dung.
-- [ ] Chen slug trong Chat ra noi dung dung bien.
-- [ ] Khong cho 2 mau cung slug trong cung org.
+- [x] Tao mau moi xong hien ngay trong list (backend tra DTO khop).
+- [x] Tim kiem theo ten/noi dung/slug (buildTemplateWhere AND search).
+- [ ] Chen slug trong Chat ra noi dung dung bien — can QA staging (popup // gio co backend).
+- [x] Khong cho 2 mau cung slug trong cung org (409).
 
 ### 6.2 Khoi noi dung
 
@@ -239,11 +241,11 @@ Muc tieu: tao chuoi buoc tu cac khoi, co delay va luat an toan.
 
 Checklist:
 
-- [ ] Danh sach luong lay du lieu that, khong fake.
-- [ ] Tao luong drawer hoat dong.
-- [ ] Them/sap xep/xoa step trong luong.
-- [ ] Moi step gan 1 block va delay.
-- [ ] Cong tac bat/tat luong cap nhat backend.
+- [x] Danh sach luong lay du lieu that, khong fake.
+- [x] Tao luong drawer hoat dong.
+- [x] Them/sap xep (reorder len/xuong 12/07)/xoa step trong luong.
+- [~] Moi step gan 1 block va delay — hien step la text inline + delay; gan Block ID de phase sau.
+- [x] Cong tac bat/tat luong cap nhat backend (toggle = ngung ca phien dang chay).
 - [ ] Luat an toan: gio lam viec, throttle, tranh trung KH, gian deu nick, dung khi KH reply/ket ban.
 - [ ] Trang stats `/marketing/sequences/:id/stats` neu chua lam thi an link hoac hien coming soon.
 

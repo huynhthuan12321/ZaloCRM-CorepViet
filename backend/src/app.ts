@@ -350,6 +350,10 @@ async function bootstrap() {
   // CHỈ THÊM route đọc map về model legacy; không đụng route legacy đang chạy.
   const { marketingFacadeRoutes } = await import('./modules/marketing/marketing-facade-routes.js');
   await app.register(marketingFacadeRoutes);
+  // Mẫu tin nhắn — CRUD fallback Community (Phase 3): bản Community trước thiếu route
+  // /automation/templates (EE-only) → màn Mẫu tin nhắn + chèn // trong Chat chết. Nối lại.
+  const { messageTemplateRoutes } = await import('./modules/marketing/message-template-routes.js');
+  await app.register(messageTemplateRoutes);
   await app.register(groupModerationRoutes);
   await app.register(friendRoutes);
   await app.register(profileRoutes);
