@@ -755,7 +755,7 @@ Việc làm (trạng thái cập nhật 12/07/2026 — chi tiết mục 15):
 - Target item log. — 🔧 đã có từ trước (`TargetRunItem` + modal chi tiết).
 - Invite worker. — 🔧 đã có từ trước (`target-cron.ts` Phase 1 + tin chào).
 - Khi accepted -> enroll sequence. — ✅ `TargetJob.followupSequenceId` + listener enroll `CareSession(target_followup)`, dedupe, chờ ≥3 phút nhường tin chào (unit test pass). UI TargetsView có mục chọn luồng bám đuổi.
-- CareSession detail. — ⏳ một phần: API `automation-status` trả bước hiện tại/lastSentAt/nextRunAt/lastError THẬT; panel timeline UI chưa làm.
+- CareSession detail. — ✅ 12/07: API `automation-status` trả bước hiện tại/lastSentAt/nextRunAt/lastError THẬT; **BỔ SUNG endpoint `GET /contacts/:contactId/followup-history` (trước EE-only → FollowUpHistoryDialog chết 404 ở Community) — nay dựng timeline từ `CareSessionEvent` (step_sent/reply/closed/reaction/...); helper `care-session-timeline.ts` test 7/7 pass.** Panel timeline (FollowUpHistoryDialog trong Chat) giờ chạy thật.
 - Listening rules. — ⏳ một phần: rule per-phiên qua `rulesSnapshot` (pauseOnReplyHours, stopOnReply, allowedHourRange, sendGap); cấu hình org-level chưa làm.
 - Stop/pause khi khách reply. — ✅ `care-session-listener.ts` subscribe event bus, pause 24h (mặc định) hoặc đóng phiên, idempotent (unit test pass).
 
@@ -819,7 +819,7 @@ Việc làm:
 ### CareSession (code đã triển khai 12/07/2026)
 
 - [ ] Danh sách hiện session thật. — 🔧 automation-status trả bước hiện tại/lastSentAt/nextRunAt thật (hết số 0 tĩnh).
-- [ ] Panel detail hiển thị timeline. — ⬜ UI chưa làm; dữ liệu timeline đã có (`CareSessionEvent`: step_sent/reply/closed).
+- [x] Panel detail hiển thị timeline. — ✅ 12/07: FollowUpHistoryDialog (Chat) + endpoint `followup-history` map `CareSessionEvent` → timeline (step/reply/mark). Trước đây endpoint EE-only nên dialog chết 404.
 - [ ] Pause/resume/stop hoạt động. — 🔧 route có sẵn + "gửi bước tiếp theo ngay" (advance) đã implement thật.
 - [ ] Lỗi hiển thị rõ nguyên nhân. — 🔧 `lastError` + `attemptCount` lưu per-phiên, trả về API.
 

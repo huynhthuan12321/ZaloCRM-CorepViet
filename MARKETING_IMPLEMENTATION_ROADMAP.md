@@ -4,7 +4,7 @@ Tai lieu nay la lo trinh trien khai nang cap module Marketing cua ZaloCRM-CorepV
 
 Pham vi hien tai: Marketing 6.1 -> 6.7 gom Muc tieu, Phien cham soc, Bam duoi thu cong, Luong kich ban, Khoi noi dung, Mau tin nhan, Broadcast va Tep khach hang.
 
-Trang thai: Phase 0 + Phase 1 da hoan tat ngay 12/07/2026 (Phase 1: facade doc `/api/v1/marketing/*` + go hard-code + index audit + test org-isolation — xem `MARKETING_ADR_001_facade_strategy.md`). Phase 2 da co mot phan deep-link tu tep khach hang; cac phase con lai tiep tuc theo checklist ben duoi.
+Trang thai: Phase 0 + 1 + 2 + 3 + 4 da hoan tat ngay 12/07/2026. Phase 1: facade doc `/api/v1/marketing/*` + go hard-code + index (`MARKETING_ADR_001_facade_strategy.md`). Phase 2 (Tep khach hang): deep-link + Export CSV theo filter (noi nut chet). Phase 3 (Block/Template/Sequence UI): noi backend Community cho Mau tin nhan (truoc EE-only -> man + chat // chet) + reorder step Sequence + validate bien Block. Phase 4 (Target/CareSession UI): noi endpoint `followup-history` (truoc EE-only -> panel timeline Phien cham soc chet 404) -> FollowUpHistoryDialog chay that tu CareSessionEvent. Cac phase con lai tiep tuc theo checklist ben duoi.
 
 ---
 
@@ -327,15 +327,19 @@ QA checklist:
 
 Muc tieu: theo doi KH trong cac luong bam duoi va su kien reply/ket ban/block.
 
+Ghi chu: o ban Community, Phien cham soc quan ly PER-CONTACT trong Chat (FollowUpCard +
+FollowUpHistoryDialog), khong co trang standalone /marketing/care-sessions. Facade doc
+`GET /api/v1/marketing/care-sessions` (Phase 1) san sang neu sau nay lam trang list rieng.
+
 Checklist:
 
-- [ ] Danh sach phien lay tu DB that.
-- [ ] Loc: tat ca, vua tra loi, tam dung, dang cham, da dong.
-- [ ] Search theo ten/SĐT.
-- [ ] Click dong hien panel chi tiet ben phai.
-- [ ] Tab Cai dat lang nghe luu duoc cau hinh.
-- [ ] Su kien lang nghe: dong y ket ban, tu choi, reply, reaction tich cuc/tieu cuc, chan nick, tro thanh lead.
-- [ ] Thong bao theo 3 dich: owner, quan ly, nhom Zalo.
+- [x] Danh sach phien lay tu DB that (automation-status per-contact; facade list org-scoped).
+- [ ] Loc: tat ca, vua tra loi, tam dung, dang cham, da dong. — can trang standalone (chua co).
+- [ ] Search theo ten/SĐT. — can trang standalone.
+- [x] Click hien panel chi tiet timeline. — FollowUpHistoryDialog + endpoint `followup-history` (12/07, truoc EE-only nen chet 404).
+- [~] Tab Cai dat lang nghe luu duoc cau hinh. — rule per-phien qua rulesSnapshot; org-level UI chua lam.
+- [x] Su kien lang nghe: reply, reaction, friend accept/reject, blocked, closed... — `CareSessionEvent` + listener (Phase 3/4 truoc).
+- [~] Thong bao theo 3 dich: owner, quan ly, nhom Zalo. — EE; Community co notify co ban.
 
 API de xuat:
 

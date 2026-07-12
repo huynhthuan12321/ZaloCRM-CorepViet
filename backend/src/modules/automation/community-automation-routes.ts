@@ -13,6 +13,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { assertContactVisible } from '../contacts/contact-scope.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizeSequenceSteps } from './sequence-snapshot.js';
+import { buildFollowupHistory } from './care-session-timeline.js';
 
 type UserCtx = { id: string; orgId: string; role: string };
 
@@ -311,6 +312,42 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
           };
         }),
     };
+  });
+
+  // GET /contacts/:contactId/followup-history — timeline Phiên chăm sóc (Phase 4).
+  // Trước 2026-07-12 endpoint này EE-only → FollowUpHistoryDialog chết 404 ở Community.
+  // triggerId = CareSession.id (khớp automation-status ở trên trả về triggerId: s.id).
+  app.get('/api/v1/contacts/:contactId/followup-history', async (
+    request: FastifyRequest<{ Params: { contactId: string }; Querystring: { triggerId?: string; sequenceId?: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const { contactId } = request.params;
+    if (!(await requireVisibleContact(user, contactId, reply))) return reply;
+
+    const { triggerId, sequenceId } = request.query;
+    // Neo phiên theo triggerId (=CareSession.id). Fallback: phiên mới nhất của
+    // contact (+ theo sequenceId nếu có) để không vỡ khi thiếu triggerId.
+    const session = triggerId
+      ? await prisma.careSession.findFirst({
+          where: { id: triggerId, orgId: user.orgId, contactId },
+          select: { id: true },
+        })
+      : await prisma.careSession.findFirst({
+          where: { orgId: user.orgId, contactId, ...(sequenceId ? { sourceSequenceId: sequenceId } : {}) },
+          orderBy: { openedAt: 'desc' },
+          select: { id: true },
+        });
+
+    if (!session) return { flow: { stepsSent: 0 }, timeline: [] };
+
+    const events = await prisma.careSessionEvent.findMany({
+      where: { sessionId: session.id },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+      select: { eventType: true, payload: true, createdAt: true },
+    });
+    return buildFollowupHistory(events);
   });
 
   app.get('/api/v1/automation/care-sessions/listen-status', async (
