@@ -12,7 +12,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { assertContactVisible } from '../contacts/contact-scope.js';
 import { logger } from '../../shared/utils/logger.js';
-import { normalizeSequenceSteps } from './sequence-snapshot.js';
+import { normalizeSequenceSteps, type SequenceDraftStep } from './sequence-snapshot.js';
 import { buildFollowupHistory } from './care-session-timeline.js';
 
 type UserCtx = { id: string; orgId: string; role: string };
@@ -27,6 +27,28 @@ function plusHours(hours: number): Date {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Phase 3 (2026-07-13) — resolve step ghép từ Khối nội dung: step nào có blockId sẽ được
+ * điền `text` từ ContentBlock (org-scoped). Nếu step đã có text riêng thì GIỮ NGUYÊN
+ * (cho phép sửa tay sau khi ghép). Block bị xoá/khác org → bỏ blockId, giữ text sẵn có.
+ * Worker gửi vẫn đọc `text` → không phá dry-run.
+ */
+async function resolveStepBlocks(steps: SequenceDraftStep[], orgId: string): Promise<SequenceDraftStep[]> {
+  const blockIds = [...new Set(steps.map((s) => s.blockId).filter((id): id is string => !!id))];
+  if (!blockIds.length) return steps;
+  const blocks = await prisma.contentBlock.findMany({
+    where: { id: { in: blockIds }, orgId },
+    select: { id: true, messageText: true },
+  });
+  const map = new Map(blocks.map((b) => [b.id, b.messageText]));
+  return steps.map((s) => {
+    if (!s.blockId) return s;
+    const blockText = map.get(s.blockId);
+    if (blockText === undefined) return { ...s, blockId: null }; // block không còn → giữ text sẵn
+    return { ...s, text: s.text.trim() || blockText };
+  });
 }
 
 // normalizeSequenceSteps chuyển sang ./sequence-snapshot.ts (2026-07-12) — dùng chung
@@ -136,7 +158,10 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
     const user = request.user as UserCtx;
     const name = (request.body.name ?? '').trim();
     if (!name) return reply.status(400).send({ error: 'name is required' });
-    const steps = normalizeSequenceSteps(request.body.steps, request.body.messageText ?? '');
+    const steps = await resolveStepBlocks(
+      normalizeSequenceSteps(request.body.steps, request.body.messageText ?? ''),
+      user.orgId,
+    );
     const created = await prisma.automationSequence.create({
       data: {
         orgId: user.orgId,
@@ -171,7 +196,10 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
     if ('description' in request.body) data.description = (request.body.description ?? '').trim() || null;
     if (typeof request.body.enabled === 'boolean') data.enabled = request.body.enabled;
     if ('steps' in request.body || typeof request.body.messageText === 'string') {
-      data.steps = normalizeSequenceSteps(request.body.steps, request.body.messageText ?? '');
+      data.steps = await resolveStepBlocks(
+        normalizeSequenceSteps(request.body.steps, request.body.messageText ?? ''),
+        user.orgId,
+      );
     }
     if (request.body.runtimeRules && typeof request.body.runtimeRules === 'object') data.runtimeRules = request.body.runtimeRules as object;
 

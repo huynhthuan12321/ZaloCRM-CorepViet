@@ -107,6 +107,15 @@
             <option :value="10080">Sau 7 ngày</option>
           </select>
           <label class="f-label small">Nội dung</label>
+          <div class="step-block-row">
+            <select class="f-input f-block-pick" :value="step.blockId ?? ''" @change="applyBlock(idx, ($event.target as HTMLSelectElement).value)">
+              <option value="">— Nhập tay hoặc chọn Khối nội dung —</option>
+              <option v-for="b in sendableBlocks" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </select>
+            <span v-if="step.blockId" class="step-block-tag" title="Nội dung lấy từ Khối nội dung; có thể sửa tay bên dưới">
+              <v-icon size="13">mdi-view-grid-plus-outline</v-icon> từ khối
+            </span>
+          </div>
           <textarea v-model="step.text" class="f-input f-area" rows="3"
             placeholder="VD: Em chào Anh/Chị, bên em gửi thêm thông tin sản phẩm..."></textarea>
         </div>
@@ -131,7 +140,7 @@ import { useConfirm } from '@/composables/use-confirm';
 const { push: toast } = useToast();
 const { confirm } = useConfirm();
 
-type StepRow = { text: string; delayMinutes: number; styles?: unknown[] };
+type StepRow = { text: string; delayMinutes: number; styles?: unknown[]; blockId?: string | null };
 type SequenceRow = {
   id: string;
   name: string;
@@ -140,8 +149,10 @@ type SequenceRow = {
   stepCount: number;
   steps: StepRow[];
 };
+type SendableBlock = { id: string; name: string; messageText: string };
 
 const sequences = ref<SequenceRow[]>([]);
+const sendableBlocks = ref<SendableBlock[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const modal = reactive<{ open: boolean; id: string | null }>({ open: false, id: null });
@@ -149,8 +160,28 @@ const form = reactive<{ name: string; description: string; enabled: boolean; ste
   name: '',
   description: '',
   enabled: true,
-  steps: [{ text: '', delayMinutes: 0 }],
+  steps: [{ text: '', delayMinutes: 0, blockId: null }],
 });
+
+// Khối nội dung loại 'gửi tin' đang BẬT — để ghép vào bước luồng. Lỗi tải khối không
+// chặn CRUD luồng (vẫn nhập tay được) nên nuốt lỗi, chỉ để danh sách rỗng.
+async function loadBlocks(): Promise<void> {
+  try {
+    const res = await api.get('/content-blocks', { params: { type: 'send_message', enabled: 'true' } });
+    sendableBlocks.value = (res.data.blocks ?? []).map((b: any) => ({ id: b.id, name: b.name, messageText: b.messageText ?? '' }));
+  } catch { sendableBlocks.value = []; }
+}
+
+// Chọn 1 khối cho bước: điền text từ khối (nếu bước đang trống) + gắn blockId để hiển thị
+// nguồn. Bỏ chọn (value rỗng) → gỡ blockId, giữ nguyên text đang có.
+function applyBlock(idx: number, blockId: string): void {
+  const step = form.steps[idx];
+  if (!step) return;
+  if (!blockId) { step.blockId = null; return; }
+  const block = sendableBlocks.value.find((b) => b.id === blockId);
+  step.blockId = blockId;
+  if (block && !step.text.trim()) step.text = block.messageText;
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -166,6 +197,7 @@ async function load(): Promise<void> {
         text: String(st.text ?? st.content ?? st.messageText ?? ''),
         delayMinutes: Number(st.delayMinutes ?? 0) || 0,
         styles: Array.isArray(st.styles) ? st.styles : [],
+        blockId: typeof st.blockId === 'string' ? st.blockId : null,
       })),
     }));
   } finally {
@@ -179,7 +211,7 @@ function openCreate(): void {
     name: '',
     description: '',
     enabled: true,
-    steps: [{ text: '', delayMinutes: 0 }],
+    steps: [{ text: '', delayMinutes: 0, blockId: null }],
   });
   modal.open = true;
 }
@@ -190,13 +222,13 @@ function openEdit(seq: SequenceRow): void {
     name: seq.name,
     description: seq.description ?? '',
     enabled: seq.enabled,
-    steps: seq.steps.length ? seq.steps.map((s) => ({ ...s })) : [{ text: '', delayMinutes: 0 }],
+    steps: seq.steps.length ? seq.steps.map((s) => ({ ...s })) : [{ text: '', delayMinutes: 0, blockId: null }],
   });
   modal.open = true;
 }
 
 function addStep(): void {
-  form.steps.push({ text: '', delayMinutes: form.steps.length === 0 ? 0 : 1440 });
+  form.steps.push({ text: '', delayMinutes: form.steps.length === 0 ? 0 : 1440, blockId: null });
 }
 
 function removeStep(idx: number): void {
@@ -217,6 +249,7 @@ async function saveSequence(): Promise<void> {
     text: s.text.trim(),
     delayMinutes: idx === 0 ? 0 : Math.max(0, Number(s.delayMinutes) || 0),
     styles: s.styles ?? [],
+    blockId: s.blockId ?? null,
   })).filter((s) => s.text);
   if (!name) return void toast('Nhap ten luong', 'error');
   if (!steps.length) return void toast('Nhap it nhat 1 buoc tin nhan', 'error');
@@ -260,7 +293,7 @@ function delayLabel(minutes: number): string {
   return `${Math.round(minutes / 1440)} ngay`;
 }
 
-onMounted(load);
+onMounted(() => { void load(); void loadBlocks(); });
 </script>
 
 <style scoped>
@@ -304,5 +337,8 @@ onMounted(load);
 .steps-head { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
 .step-editor { border: 1px solid var(--border, #e5e4e7); border-radius: 10px; padding: 10px 12px; margin-top: 8px; background: #fbfcfd; }
 .step-editor-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.step-block-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.f-block-pick { flex: 1; }
+.step-block-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; color: #0f6fa0; background: #eef6fb; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 .seq-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>

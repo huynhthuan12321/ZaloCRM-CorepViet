@@ -4136,12 +4136,27 @@ model ContentBlock {
   imageUrl    String? @map("image_url")
   usageCount  Int     @default(0) @map("usage_count")
 
+  // Phase 3 Marketing EE (2026-07-13) — additive, mặc định an toàn (giữ hành vi cũ):
+  //   blockType: 'send_message' (gửi tin) | 'request_friend' (lời mời kết bạn) | 'status_change' (đổi trạng thái)
+  //   variants : [{ text, imageUrl? }] — các biến thể nội dung (chống trùng). variants[0]
+  //              đồng bộ với messageText/imageUrl để worker gửi (giữ nguyên) vẫn dùng được.
+  //   tags     : nhãn tự do (dự án/mục đích) để lọc.  folder: nhóm hiển thị (tùy chọn).
+  //   enabled  : bật/tắt khối (tắt = ẩn khỏi picker Broadcast/Sequence, KHÔNG xoá dữ liệu).
+  blockType String  @default("send_message") @map("block_type")
+  variants  Json    @default("[]")
+  tags      String[] @default([])
+  folder    String?
+  enabled   Boolean @default(true)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([orgId])
   // Phase 1 Marketing facade (2026-07-12) — ordering list theo org + createdAt desc.
   @@index([orgId, createdAt(sort: Desc)])
+  // Phase 3 (2026-07-13) — lọc theo loại khối + trạng thái bật.
+  @@index([orgId, blockType, enabled])
+  @@index([tags], type: Gin)
   @@map("content_blocks")
 }
 

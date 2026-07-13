@@ -96,8 +96,8 @@
 | 2. Marketing Facade (read) | DONE | 95 | (giữ legacy) | ✓ 9 GET org-scoped | ✓ legacy models | — | ✓ 11 | ✓ smoke | ✓ |
 | 3. Tệp khách hàng | MOSTLY | 90 | ✓ đầy đủ | ✓ CRUD+export+rescan | ✓ CustomerList(+Entry) | ✓ enrichment | ✓ filter | ✓ export CSV thật | ~ (lookup Zalo chưa QA thật) |
 | 4. Mẫu tin nhắn | MOSTLY | 85 | ✓ | ✓ CRUD Community (mới) | ✓ MessageTemplate(+Folder) | — | ✓ 12 | ✓ create/409 | ~ (chèn // chat chưa QA) |
-| 5. Khối nội dung | PARTIAL | 35 | ✓ CRUD+ảnh+validate biến | ✓ CRUD cơ bản | ✓ ContentBlock | — | — | ✗ | ✗ (thiếu variants/version) |
-| 6. Luồng kịch bản | MOSTLY | 70 | ✓ builder+reorder | ✓ CRUD+preview | ✓ AutomationSequence | ✓ care-session-cron | ✓ 8 | ✗ (chưa gửi thật) | ~ |
+| 5. Khối nội dung | MOSTLY | 70 | ✓ CRUD+biến thể+loại+tag+bật/tắt+tìm/lọc (P3 13/07) | ✓ CRUD thật `/content-blocks` (?q/type/enabled/tag) | ✓ ContentBlock (+block_type/variants/tags/folder/enabled) | — | ✓ 16 (content-block-phase3) | ✗ | ~ (thiếu AI/rich-text/preview/folder-UI) |
+| 6. Luồng kịch bản | MOSTLY | 78 | ✓ builder+reorder+ghép Khối (P3 13/07) | ✓ CRUD+preview+resolveStepBlocks | ✓ AutomationSequence | ✓ care-session-cron | ✓ 8+2 | ✗ (chưa gửi thật) | ~ |
 | 7. Bám đuổi thủ công | MOSTLY | 70 | ✓ trong Chat | ✓ manual-enroll | ✓ CareSession | ✓ cron | ✓ | ✗ | ~ (không có trang standalone) |
 | 8. Mục tiêu/Target | PARTIAL | 45 | ~ modal đơn 1-nick | ✓ target-cron+invite+welcome+enroll | ✓ TargetJob(+RunItem) | ✓ target-cron | 🔧 | ✗ (rủi ro kết bạn thật) | ✗ (thiếu wizard multi-nick) |
 | 9. Phiên chăm sóc | MOSTLY | 65 | ✓ FollowUpCard+HistoryDialog | ✓ followup-history+listener | ✓ CareSession(+Event) | ✓ listener | ✓ 7 | ~ (empty→404 OK; timeline có data chưa QA) | ~ (không có listening org-level) |

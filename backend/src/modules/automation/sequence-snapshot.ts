@@ -13,6 +13,9 @@ export type SequenceDraftStep = {
   text: string;
   delayMinutes: number;
   styles: unknown[];
+  // Phase 3 (2026-07-13) — nếu step ghép từ Khối nội dung, giữ lại blockId để UI hiển thị
+  // "đến từ khối X". Worker gửi VẪN đọc `text` (đã resolve lúc lưu) — không phá dry-run.
+  blockId?: string | null;
 };
 
 function asArray(value: unknown): unknown[] {
@@ -39,10 +42,13 @@ export function parseSequenceSteps(value: unknown, fallbackText = ''): SequenceD
       const obj = row && typeof row === 'object' ? row as Record<string, unknown> : {};
       const text = textFromUnknown(row).trim();
       const delay = Number(obj.delayMinutes ?? obj.delay ?? (index === 0 ? 0 : 1440));
+      const blockIdRaw = obj.blockId;
+      const blockId = typeof blockIdRaw === 'string' && blockIdRaw.trim() ? blockIdRaw.trim() : null;
       return {
         text,
         delayMinutes: Number.isFinite(delay) && delay >= 0 ? Math.round(delay) : (index === 0 ? 0 : 1440),
         styles: Array.isArray(obj.styles) ? obj.styles : [],
+        blockId,
       };
     })
     .filter((row) => row.text);
@@ -54,7 +60,7 @@ export function parseSequenceSteps(value: unknown, fallbackText = ''): SequenceD
  */
 export function normalizeSequenceSteps(value: unknown, fallbackText = ''): SequenceDraftStep[] {
   const steps = parseSequenceSteps(value, fallbackText);
-  return steps.length ? steps : [{ text: 'Tin nhan cham soc khach hang', delayMinutes: 0, styles: [] }];
+  return steps.length ? steps : [{ text: 'Tin nhan cham soc khach hang', delayMinutes: 0, styles: [], blockId: null }];
 }
 
 /** Luật runtime đọc từ CareSession.rulesSnapshot (fallback mặc định an toàn). */

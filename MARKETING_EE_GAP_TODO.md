@@ -22,8 +22,8 @@
 | Mẫu tin nhắn | `/marketing/message-templates` | folder + slug `/tắt` + tag dự án + biến + Riêng tư/Chung | đủ folder/shortcut/tag/visibility/biến | ✅ |
 | Broadcast | `/marketing/broadcasts` | wizard 4 bước; detail **3 tab** + KPI đã nhận/đã xem; **4 nguồn** đối tượng | wizard 4 bước (dry-run safe); detail **4 tab**; **2 nguồn**; thiếu KPI nhận/xem | 🟡 |
 | Mục tiêu | `/marketing/targets` | **wizard 4 bước**, multi-nick, lời mời ≤200, chuỗi 5 tin toggle+delay, quy tắc an toàn, báo nội bộ 3 đích, hẹn lịch 6–22h, trang chi tiết + log | **modal 1 trang**, **1 nick**, welcome + 1 luồng bám đuổi, chống block cơ bản, chỉ modal log | 🟡 |
-| Khối nội dung | `/marketing/content-blocks` | **biến thể** + **AI tạo biến thể** + **rich-text** + **preview Zalo LIVE** + folder/tag + loại (send_message/request_friend) | CRUD đơn: tên + 1 text + 1 ảnh | 🟡 |
-| Luồng kịch bản | `/marketing/sequences` | bước = **Khối** ghép, giờ làm việc, luật chống spam, `/:id/stats`, bộ đếm | CRUD luồng, bước = **text thuần** + delay preset | 🟡 |
+| Khối nội dung | `/marketing/content-blocks` | **biến thể** + **AI tạo biến thể** + **rich-text** + **preview Zalo LIVE** + folder/tag + loại (send_message/request_friend) | **P3 CRUD thật**: biến thể + loại khối + tag + bật/tắt + tìm/lọc; còn thiếu AI/rich-text/preview LIVE/folder-UI | 🟢 |
+| Luồng kịch bản | `/marketing/sequences` | bước = **Khối** ghép, giờ làm việc, luật chống spam, `/:id/stats`, bộ đếm | **P3**: bước ghép được Khối (send_message) + delay/sắp xếp; còn thiếu UI giờ làm việc/luật/stats | 🟢 |
 | Phiên chăm sóc | `/marketing/care-sessions` | trang riêng: 4 thẻ, danh sách phiên, panel chi tiết, tab **Cài đặt lắng nghe** (sự kiện + 3 đích) | **placeholder an toàn** (route + nav OK, không 404); backend worker đã chạy, thiếu endpoint LIST + view thật | 🟡 |
 | Bám đuổi thủ công | `/marketing/manual-followup` | trang riêng: thẻ tổng/đang chạy/xong/dừng, lọc, empty state | **placeholder an toàn** (route + nav OK, không 404); thiếu endpoint LIST + view thật | 🟡 |
 
@@ -64,14 +64,18 @@
   - ☐ Backend: cập nhật trạng thái nhận/xem (webhook/poll Zalo nếu có) + trả trong API.
 - ☐ Chốt: detail **3 tab** theo spec hay giữ 4 tab (thêm “Cài đặt”)? — quyết khi làm.
 
-### B2 — Khối nội dung EE  (quy mô: Lớn)  🟡→✅
-- ☐ **Biến thể**: 1 khối có nhiều biến thể, xoay vòng chống trùng (Biến thể 1 mặc định + Thêm).
-  - ☐ DB: model biến thể (bảng con hoặc JSON array) + migration.
-- ☐ **AI tạo biến thể** (nút): gọi module `ai` backend sinh biến thể từ nội dung gốc.
-- ☐ **Rich-text editor** (B/I/U, list, emoji) — tái dùng `rich-text-editor` sẵn có.
-- ☐ **Preview Zalo (LIVE)** panel phải.
-- ☐ **Folder + Tag** + **Loại khối** (`send_message` / `request_friend` / đổi trạng thái).
-- ☐ Trình soạn chuyển từ modal → **trang toàn màn** (theo spec).
+### B2 — Khối nội dung EE  (quy mô: Lớn)  🟡→🟢 (Phase 3 CRUD thật)
+- ☑ **P3 (2026-07-13) Biến thể**: 1 khối nhiều biến thể (JSON `variants` trên `content_blocks`), thêm/xoá trong modal. `variants[0]` đồng bộ vào `messageText`/`imageUrl` → worker gửi (broadcast-cron) đọc như cũ, KHÔNG phá dry-run.
+  - ☑ DB: migration additive `20260713120000_content_blocks_phase3` (ADD COLUMN block_type/variants/tags/folder/enabled + index; không đụng dữ liệu cũ).
+- ☑ **P3 Loại khối** (`send_message` / `request_friend` / `status_change`) — chọn khi tạo/sửa, lọc theo loại.
+- ☑ **P3 Tag** tự do + **bật/tắt** (enabled) + **tìm/lọc** (q/type/enabled) — API `GET /content-blocks?q=&type=&enabled=&tag=`.
+- ☑ **P3 CRUD thật + trạng thái UI**: loading / empty / error(+retry) / debounce search; validate biến `{{...}}` ở mọi biến thể (chặn cả FE lẫn BE).
+- ☑ **P3 Broadcast wizard Step 2**: chỉ lấy khối `send_message` đang bật từ API thật (bỏ khối kết bạn/đã tắt).
+- ☐ **AI tạo biến thể** (nút): gọi module `ai` backend sinh biến thể từ nội dung gốc. *(còn thiếu)*
+- ☐ **Rich-text editor** (B/I/U, list, emoji) — tái dùng `rich-text-editor` sẵn có. *(còn thiếu — hiện textarea thuần)*
+- ☐ **Preview Zalo (LIVE)** panel phải. *(còn thiếu)*
+- ☐ **Folder**: đã có cột `folder` (BE) nhưng UI chưa dựng cây thư mục. *(còn thiếu UI)*
+- ☐ Trình soạn chuyển từ modal → **trang toàn màn** (theo spec). *(còn modal)*
 
 ### B3 — Mục tiêu wizard 4 bước  (quy mô: Lớn)  🟡→✅
 - ☐ Chuyển modal 1 trang → **wizard 4 bước** (Tệp+Nick+Skip → Lời chào+Chuỗi → Quy tắc an toàn → Xem trước+Bắt đầu).
@@ -83,11 +87,11 @@
 - ☐ **Trang chi tiết Mục tiêu**: thẻ trạng thái, Phase 1/Phase 2, Top 5 nick, dashboard + log đầy đủ.
 - ☐ Backend `target` module: mở rộng schema/route cho multi-nick + chuỗi 5 tin + quy tắc an toàn.
 
-### B4 — Luồng kịch bản EE  (quy mô: Vừa)  🟡→✅
-- ☐ Bước của luồng = **tham chiếu Khối** (hiện là text thuần) — ghép Khối + độ trễ.
-- ☐ Cấu hình **giờ làm việc** (08:00–22:00 VN) + giãn cách gửi.
-- ☐ Luật chống spam: tránh trùng, giãn đều giữa nick, dừng nếu KH rep.
-- ☐ Trang **thống kê** `/marketing/sequences/:id/stats` + bộ đếm Enroll/Hoàn thành/Lỗi/Đang chạy trên thẻ.
+### B4 — Luồng kịch bản EE  (quy mô: Vừa)  🟡→🟢 (một phần Phase 3)
+- ☑ **P3 (2026-07-13) Bước ghép Khối**: mỗi bước có thể chọn 1 Khối nội dung loại `send_message` đang bật từ API thật → điền `text` từ khối (vẫn sửa tay được), lưu kèm `blockId` để hiển thị nguồn. Backend `resolveStepBlocks` resolve text server-side (org-scoped); worker gửi vẫn đọc `text` → dry-run an toàn.
+- ☐ Cấu hình **giờ làm việc** (08:00–22:00 VN) + giãn cách gửi. *(runtimeRules đã có ở BE, UI chưa phơi)*
+- ☐ Luật chống spam: tránh trùng, giãn đều giữa nick, dừng nếu KH rep. *(worker đã thực thi; UI cấu hình chưa có)*
+- ☐ Trang **thống kê** `/marketing/sequences/:id/stats` + bộ đếm Enroll/Hoàn thành/Lỗi/Đang chạy trên thẻ. *(còn thiếu)*
 
 ### B5 — Phiên chăm sóc + Bám đuổi thủ công (trang standalone)  (quy mô: Lớn)  ❌→🟡 (placeholder)
 - ☑ **A4 (2026-07-13) Navigation hoàn chỉnh + placeholder an toàn.** Không còn route chết/404/menu thiếu:
@@ -159,3 +163,43 @@ docker compose logs --tail=200 app | grep -E "P2022|BroadcastRun|CareSession|doe
 - ☐ Log backend có `[dry-run]` khi tới giờ chạy job, **không** có tin Zalo gửi ra.
 - ☐ Không có `P2022` / `does not exist`.
 - ☐ Build: `frontend npm run build` PASS · `backend tsc --noEmit` PASS · `broadcast-wizard-logic.spec.ts` 14/14 PASS.
+
+---
+
+## 7. Phase 3 — Content Blocks + Sequences CRUD thật (2026-07-13)
+
+### 7.1 Đã làm (CRUD THẬT, không mock)
+- **Khối nội dung** (`content_blocks` mở rộng additive):
+  - Backend `content-block-routes.ts`: GET (filter `q`/`type`/`enabled`/`tag`) · POST · PATCH (gồm bật/tắt) · DELETE — org-scoped, auth middleware, validate biến `{{...}}` + loại khối.
+  - Helper thuần `content-block-helpers.ts` (test được): `normalizeBlockType`, `unknownVars`, `normalizeVariants`, `buildBlockContent` (đồng bộ `variants[0]` → `messageText`/`imageUrl`).
+  - Frontend `ContentBlocksView.vue`: list/search(debounce)/filter/create/edit/delete/enable-disable · loading/empty/error(+retry) · form biến thể (thêm/xoá + ảnh mỗi biến thể) · tag · nhãn dry-run.
+- **Luồng kịch bản**:
+  - Backend `community-automation-routes.ts` + `resolveStepBlocks`: step có `blockId` → điền `text` từ Khối (org-scoped, server-side). Worker gửi vẫn đọc `text`.
+  - `sequence-snapshot.ts`: `SequenceDraftStep.blockId` (giữ khi parse) — không phá snapshot/worker.
+  - Frontend `SequencesView.vue`: mỗi bước chọn Khối `send_message` đang bật từ API thật; vẫn sửa tay + sắp xếp/xoá bước.
+- **Broadcast wizard Step 2**: nạp khối từ `/content-blocks?type=send_message&enabled=true` (khối thật, không mock).
+
+### 7.2 Còn thiếu (mock / chưa dựng)
+- AI sinh biến thể; rich-text editor (đang textarea); preview Zalo LIVE; UI cây folder (cột `folder` đã có ở BE).
+- Sequence: UI cấu hình giờ làm việc/luật chống spam (BE đã thực thi qua `runtimeRules`); trang `/:id/stats`.
+- KHÔNG có phần nào của Phase 3 gọi Zalo API — toàn bộ là CRUD dữ liệu.
+
+### 7.3 An toàn production (giữ nguyên)
+- KHÔNG đổi `MARKETING_DRY_RUN` / `VITE_MARKETING_DRY_RUN`. KHÔNG enqueue/resume job gửi thật.
+- Bật/tắt Khối & Luồng chỉ đổi cột `enabled` — KHÔNG kích hoạt gửi.
+- Migration `20260713120000_content_blocks_phase3` **additive thuần** (ADD COLUMN có DEFAULT + CREATE INDEX) — an toàn `prisma migrate deploy` trên DB đang có dữ liệu; khối cũ nhận default `send_message`/`variants []`/`enabled true`.
+
+### 7.4 Test đã chạy
+- `backend npm run build` (tsc) **PASS**.
+- `backend vitest tests/content-block-phase3.test.ts` **16/16 PASS** (block type/vars/variants/buildContent + parseSequenceSteps giữ blockId).
+- `backend vitest broadcast-content-block-org-scope.test.ts` **PASS** (không regress resolveJobContent).
+- `frontend npm run build` **PASS**. `broadcast-wizard-logic.spec.ts` **14/14 PASS**.
+
+### 7.5 Checklist verify sau deploy VPS
+- ☐ `docker exec zalo-crm-app npx prisma migrate deploy` áp `20260713120000_content_blocks_phase3` OK; không `P2022`/`does not exist`.
+- ☐ **Khối nội dung**: tạo khối có 2 biến thể + tag + loại `send_message` → hiện trong list; sửa; bật/tắt (khối tắt biến mờ + ẩn khỏi picker); tìm/lọc theo loại & trạng thái; xoá.
+- ☐ Tạo khối loại `request_friend` / `status_change` → lưu OK, KHÔNG hiện trong picker Broadcast (chỉ `send_message` bật).
+- ☐ **Luồng kịch bản**: tạo luồng, 1 bước chọn Khối `send_message` → text tự điền; sửa tay; thêm/sắp xếp/xoá bước; lưu; bật/tắt; xoá.
+- ☐ **Broadcast wizard Step 2**: chọn chế độ "Khối nội dung (xoay vòng)" → danh sách là khối thật; tạo job vẫn ra **nháp (paused)** khi dry-run.
+- ☐ Nhập biến `{{gender}}` (lạ) vào khối/bước → bị chặn (toast lỗi), không lưu.
+- ☐ Log backend KHÔNG có tin Zalo gửi ra; nếu tới giờ job chạy chỉ thấy `[dry-run]`.

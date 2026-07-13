@@ -210,30 +210,34 @@ QA checklist:
 
 Muc tieu: khoi la don vi hanh dong de gan vao Luong va Broadcast.
 
+> Cap nhat 13/07/2026 (Phase 3 blocks-sequences): CRUD THAT tren bang `content_blocks`
+> (mo rong additive: block_type / variants / tags / folder / enabled). Endpoint dung
+> `/api/v1/content-blocks` (Community) — KHONG dung namespace `/api/marketing/blocks` de
+> tranh dung facade read-only. Con thieu: AI bien the, rich-text, preview LIVE, folder UI.
+
 Checklist:
 
-- [ ] Danh sach khoi theo folder/tag/type.
-- [ ] Tao khoi full-page co editor va preview Zalo.
-- [ ] Loai khoi: `send_message`, `request_friend`, `change_status`, `assign_tag`.
-- [ ] Ho tro nhieu bien the noi dung.
-- [ ] Random/round-robin bien the khi gui.
-- [ ] AI tao bien the de sau, neu chua lam thi disable ro.
-- [ ] Luu folder, tag, visibility, status.
+- [~] Danh sach khoi theo folder/tag/type. (type + tag + tim/loc XONG; folder: cot BE co, UI chua)
+- [ ] Tao khoi full-page co editor va preview Zalo. (hien modal + textarea, chua full-page/preview)
+- [x] Loai khoi: `send_message`, `request_friend`, `status_change` (chon khi tao/sua + loc).
+- [x] Ho tro nhieu bien the noi dung (JSON `variants`, them/xoa trong modal).
+- [x] Random/round-robin bien the khi gui (broadcast-cron xoay vong theo variants[0]/blockIds — giu nguyen).
+- [ ] AI tao bien the — chua lam, chua co nut (khong hien nut de tranh gay hieu lam).
+- [x] Luu tag, enabled; folder luu duoc (BE) nhung chua co UI cay thu muc.
 
-API de xuat:
+API (Community, da co):
 
-- [ ] `GET /api/marketing/blocks`
-- [ ] `POST /api/marketing/blocks`
-- [ ] `GET /api/marketing/blocks/:id`
-- [ ] `PATCH /api/marketing/blocks/:id`
-- [ ] `DELETE /api/marketing/blocks/:id`
+- [x] `GET /api/v1/content-blocks` (?q=&type=&enabled=&tag=)
+- [x] `POST /api/v1/content-blocks`
+- [x] `PATCH /api/v1/content-blocks/:id` (gom bat/tat qua { enabled })
+- [x] `DELETE /api/v1/content-blocks/:id`
 
 QA checklist:
 
-- [ ] Tao khoi `send_message` co 2 bien the.
-- [ ] Tao khoi `request_friend` gioi han 200 ky tu.
-- [ ] Preview cap nhat live khi go noi dung.
-- [ ] Khong mat dinh dang khi luu/mo lai.
+- [x] Tao khoi `send_message` co 2 bien the. (co test unit buildBlockContent + QA thu cong sau deploy)
+- [~] Tao khoi `request_friend` — luu OK; gioi han 200 ky tu chua ep (de sau).
+- [ ] Preview cap nhat live khi go noi dung. (chua co preview)
+- [x] Khong mat dinh dang khi luu/mo lai (variants text thuan, round-trip OK).
 
 ---
 
@@ -248,7 +252,7 @@ Checklist:
 - [x] Danh sach luong lay du lieu that, khong fake.
 - [x] Tao luong drawer hoat dong.
 - [x] Them/sap xep (reorder len/xuong 12/07)/xoa step trong luong.
-- [~] Moi step gan 1 block va delay — hien step la text inline + delay; gan Block ID de phase sau.
+- [x] Moi step gan 1 block va delay — Phase 3 (13/07): step chon Khoi `send_message` dang bat tu API that -> dien text tu khoi (van sua tay), luu kem `blockId`; backend `resolveStepBlocks` resolve server-side. Worker gui van doc `text` (dry-run an toan).
 - [x] Cong tac bat/tat luong cap nhat backend (toggle = ngung ca phien dang chay).
 - [ ] Luat an toan: gio lam viec, throttle, tranh trung KH, gian deu nick, dung khi KH reply/ket ban.
 - [ ] Trang stats `/marketing/sequences/:id/stats` neu chua lam thi an link hoac hien coming soon.

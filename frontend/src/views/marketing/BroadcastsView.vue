@@ -398,7 +398,8 @@ function useTemplate(t: TemplateRow): void { form.messageText = t.content; showT
 async function onSelectBlocksMode(): Promise<void> {
   form.contentMode = 'blocks';
   if (contentBlocks.value.length === 0) {
-    try { const res = await api.get('/content-blocks'); contentBlocks.value = res.data.blocks ?? []; } catch { /* empty */ }
+    // Chỉ lấy khối loại 'gửi tin' đang BẬT — không hiển thị khối kết bạn / đã tắt trong Broadcast.
+    try { const res = await api.get('/content-blocks', { params: { type: 'send_message', enabled: 'true' } }); contentBlocks.value = res.data.blocks ?? []; } catch { /* empty */ }
   }
 }
 function toggleBlock(id: string): void { const i = form.contentBlockIds.indexOf(id); if (i >= 0) form.contentBlockIds.splice(i, 1); else form.contentBlockIds.push(id); }
