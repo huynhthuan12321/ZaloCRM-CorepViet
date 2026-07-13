@@ -181,9 +181,13 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         delaySecMin: Math.max(5, b.delaySecMin ?? 30),
         delaySecMax: Math.max(5, b.delaySecMax ?? 90),
         nextRunAt,
+        // Draft/dry-run an toàn: FE (VITE_MARKETING_DRY_RUN) tạo job dạng 'paused' →
+        // cron chỉ quét job 'active' nên KHÔNG bao giờ gửi thật. Mặc định 'active'
+        // (schema default) khi FE không truyền status. Chỉ nhận 'paused' để tạo nháp.
+        ...(b.status === 'paused' ? { status: 'paused' } : {}),
       },
     });
-    logger.info(`[broadcast] job created id=${job.id} by=${user.id} next=${nextRunAt.toISOString()}`);
+    logger.info(`[broadcast] job created id=${job.id} by=${user.id} status=${job.status} next=${nextRunAt.toISOString()}`);
     return reply.status(201).send({ job });
   });
 
@@ -195,7 +199,14 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
       include: { runs: { orderBy: { startedAt: 'desc' }, take: 10 } },
     });
     if (!job) return reply.status(404).send({ error: 'not_found' });
-    return { job };
+    // Join tay tên tệp + nick (không FK relation) cho trang chi tiết — vẫn org-scoped.
+    const [list, nick] = await Promise.all([
+      job.customerListId
+        ? prisma.customerList.findFirst({ where: { id: job.customerListId, orgId: user.orgId }, select: { id: true, name: true, hasZaloEntries: true } })
+        : Promise.resolve(null),
+      prisma.zaloAccount.findFirst({ where: { id: job.zaloAccountId, orgId: user.orgId }, select: { id: true, displayName: true, phone: true, status: true } }),
+    ]);
+    return { job: { ...job, list, nick } };
   });
 
   // ── PATCH /broadcast-jobs/:id — sửa / pause / resume ───────────────────
