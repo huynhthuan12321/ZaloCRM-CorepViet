@@ -196,10 +196,18 @@ docker compose logs --tail=200 app | grep -E "P2022|BroadcastRun|CareSession|doe
 - `frontend npm run build` **PASS**. `broadcast-wizard-logic.spec.ts` **14/14 PASS**.
 
 ### 7.5 Checklist verify sau deploy VPS
-- ☐ `docker exec zalo-crm-app npx prisma migrate deploy` áp `20260713120000_content_blocks_phase3` OK; không `P2022`/`does not exist`.
+- ☐ `docker compose run --rm --entrypoint "npx prisma migrate deploy" app` (chạy TỪ IMAGE MỚI, trước `up -d`) áp `20260713120000_content_blocks_phase3` OK; không `P2022`/`does not exist`.
 - ☐ **Khối nội dung**: tạo khối có 2 biến thể + tag + loại `send_message` → hiện trong list; sửa; bật/tắt (khối tắt biến mờ + ẩn khỏi picker); tìm/lọc theo loại & trạng thái; xoá.
 - ☐ Tạo khối loại `request_friend` / `status_change` → lưu OK, KHÔNG hiện trong picker Broadcast (chỉ `send_message` bật).
 - ☐ **Luồng kịch bản**: tạo luồng, 1 bước chọn Khối `send_message` → text tự điền; sửa tay; thêm/sắp xếp/xoá bước; lưu; bật/tắt; xoá.
 - ☐ **Broadcast wizard Step 2**: chọn chế độ "Khối nội dung (xoay vòng)" → danh sách là khối thật; tạo job vẫn ra **nháp (paused)** khi dry-run.
 - ☐ Nhập biến `{{gender}}` (lạ) vào khối/bước → bị chặn (toast lỗi), không lưu.
 - ☐ Log backend KHÔNG có tin Zalo gửi ra; nếu tới giờ job chạy chỉ thấy `[dry-run]`.
+
+> Checklist QA web chi tiết (từng bước, có cột KQ): **`MARKETING_PHASE3_QA_CHECKLIST.md`**.
+
+### 7.6 Trạng thái merge & deploy (cập nhật realtime)
+- ☑ **Merge:** `feature/marketing-phase3-blocks-sequences` (commit `eb5fc85`) đã **fast-forward vào `main`** và **push `origin/main`** (2026-07-13). Working tree sạch; `.env` + `scratchpad/` KHÔNG bị track.
+- ☐ **Deploy VPS:** CHỜ chạy (thứ tự: backup DB → `git reset --hard origin/main` → `docker compose build app` → `migrate deploy` từ image mới → `up -d app` → soi log). `.env` production giữ nguyên `MARKETING_DRY_RUN=true` + `VITE_MARKETING_DRY_RUN=true`.
+- ☐ **QA web:** CHỜ deploy xong (theo `MARKETING_PHASE3_QA_CHECKLIST.md`).
+- ⚠️ **Thứ tự migrate:** migrate PHẢI chạy từ **image mới** (`compose run --rm` hoặc sau `up -d` container mới) — KHÔNG dùng container cũ (prisma cũ chưa có migration file Phase 3).

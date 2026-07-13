@@ -2,10 +2,12 @@
 
 **Ngày kiểm tra:** 2026-07-13
 **Branch:** `main`
-**Commit:** `f37166d` (Merge PR #1 `feature/marketing-phase-1-4` → main; = `origin/main`)
+**Commit:** `eb5fc85` (Phase 3 Content Blocks + Sequences CRUD → main; = `origin/main`). Nền trước đó: `f37166d` (PR #1 Marketing Phase 1–4), `5844b52` (dry-run backend kill-switch), `d2c8219` (nav + placeholder an toàn).
 **Reviewer:** Senior Architect / Tech Lead / QA Lead audit (evidence-based, không chỉ checkbox)
 
 > Nguồn sự thật: **code + runtime**. Nơi tài liệu/checkbox mâu thuẫn code → lấy code. Mục chưa chạy được → `UNVERIFIED` / `BLOCKED`.
+
+> **Cập nhật 2026-07-13 (Phase 3):** đã merge `eb5fc85` vào `main` + push `origin/main` (fast-forward, sạch). Content Blocks (block_type/variants/tags/enabled/CRUD thật + filter) & Sequences (bước ghép ContentBlock) — migration additive `20260713120000_content_blocks_phase3`. **Deploy VPS + QA web: CHỜ** (xem `MARKETING_PHASE3_QA_CHECKLIST.md`). Dry-run production giữ nguyên (`MARKETING_DRY_RUN` + `VITE_MARKETING_DRY_RUN` = true).
 
 ---
 

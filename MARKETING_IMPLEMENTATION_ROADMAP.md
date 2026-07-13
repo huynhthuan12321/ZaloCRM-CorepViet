@@ -6,6 +6,8 @@ Pham vi hien tai: Marketing 6.1 -> 6.7 gom Muc tieu, Phien cham soc, Bam duoi th
 
 Trang thai: Phase 0 + 1 + 2 + 3 + 4 da hoan tat ngay 12/07/2026. Phase 1: facade doc `/api/v1/marketing/*` + go hard-code + index (`MARKETING_ADR_001_facade_strategy.md`). Phase 2 (Tep khach hang): deep-link + Export CSV theo filter (noi nut chet). Phase 3 (Block/Template/Sequence UI): noi backend Community cho Mau tin nhan (truoc EE-only -> man + chat // chet) + reorder step Sequence + validate bien Block. Phase 4 (Target/CareSession UI): noi endpoint `followup-history` (truoc EE-only -> panel timeline Phien cham soc chet 404) -> FollowUpHistoryDialog chay that tu CareSessionEvent. Cac phase con lai tiep tuc theo checklist ben duoi.
 
+> Cap nhat 13/07/2026 — **Phase 3 blocks-sequences (commit `eb5fc85`, da merge `main`)**: Content Blocks CRUD that (block_type / variants / tags / enabled / tim-loc) + Sequences buoc ghep ContentBlock that. Migration additive `20260713120000_content_blocks_phase3`. **Deploy VPS + QA web: CHO** (xem `MARKETING_PHASE3_QA_CHECKLIST.md`). Production giu `MARKETING_DRY_RUN` + `VITE_MARKETING_DRY_RUN` = true — chua gui Zalo that.
+
 ---
 
 ## 1. Nguyen tac trien khai
