@@ -1,19 +1,19 @@
-﻿<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<!-- Copyright (C) 2026 Nguyá»…n Tiáº¿n Lá»™c -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <!--
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
- Luá»“ng Má»¥c TiÃªu M9 â€” Modal "+ Gáº¯n thÃªm luá»“ng bÃ¡m Ä‘uá»•i" (2026-06-02)
+ Luồng Mục Tiêu M9 — Modal "+ Gắn thêm luồng bám đuổi" (2026-06-02)
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
- Hiá»ƒn thá»‹ khi sale báº¥m nÃºt "+ Gáº¯n thÃªm luá»“ng bÃ¡m Ä‘uá»•i" trong tab FOLLOW-UP.
- Cho phÃ©p sale enroll 1 KH ad-hoc vÃ o "Má»¥c tiÃªu há»‡ thá»‘ng â€” BÃ¡m Ä‘uá»•i thá»§ cÃ´ng"
- vá»›i 1 sequence Ä‘Æ°á»£c chá»n + nick Ä‘ang chat Ä‘Æ°á»£c auto-pin.
+ Hiển thị khi sale bấm nút "+ Gắn thêm luồng bám đuổi" trong tab FOLLOW-UP.
+ Cho phép sale enroll 1 KH ad-hoc vào "Mục tiêu hệ thống — Bám đuổi thủ công"
+ với 1 sequence được chọn + nick đang chat được auto-pin.
 
- API endpoint (BE Ä‘Ã£ ship M9):
+ API endpoint (BE đã ship M9):
    POST /api/v1/chat/contacts/:cid/manual-enroll
    Body: { sequenceId, nickId, reason }
 
- Mockup reference: 03-v2-tab-followup-content.html (modal pháº§n dÆ°á»›i)
+ Mockup reference: 03-v2-tab-followup-content.html (modal phần dưới)
 -->
 
 <template>
@@ -23,14 +23,14 @@
         <!-- Header -->
         <div class="afm-head">
           <div class="afm-head__row">
-            <h2>BÃ¡m Ä‘uá»•i thá»§ cÃ´ng cho {{ contactName }}</h2>
-            <button class="afm-x" @click="onClose" aria-label="ÄÃ³ng">
+            <h2>Bám đuổi thủ công cho {{ contactName }}</h2>
+            <button class="afm-x" @click="onClose" aria-label="Đóng">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
           </div>
           <div class="afm-sub">
-            <template v-if="step === 1">BÆ°á»›c 1/2 Â· Chá»n 1 ká»‹ch báº£n cÃ³ sáºµn Ä‘á»ƒ báº¯t Ä‘áº§u chÄƒm khÃ¡ch nÃ y</template>
-            <template v-else>BÆ°á»›c 2/2 Â· Ghi chÃº lÃ½ do gáº¯n luá»“ng (Ä‘á»ƒ quáº£n lÃ½ audit Ä‘Æ°á»£c)</template>
+            <template v-if="step === 1">Bước 1/2 · Chọn 1 kịch bản có sẵn để bắt đầu chăm khách này</template>
+            <template v-else>Bước 2/2 · Ghi chú lý do gắn luồng (để quản lý audit được)</template>
           </div>
         </div>
 
@@ -39,15 +39,15 @@
           <!-- Loading -->
           <div v-if="loadingSequences" class="afm-loading">
             <div class="afm-spinner" />
-            <p>Äang táº£i danh sÃ¡ch luá»“ng...</p>
+            <p>Đang tải danh sách luồng...</p>
           </div>
 
           <template v-else>
-            <!-- â•â• BÆ¯á»šC 1: chá»n luá»“ng + nick â•â• -->
+            <!-- ══ BƯỚC 1: chọn luồng + nick ══ -->
             <template v-if="step === 1">
             <!-- Sequence picker -->
             <div class="afm-field">
-              <label class="afm-label">Chá»n luá»“ng ká»‹ch báº£n <span class="afm-req">*</span></label>
+              <label class="afm-label">Chọn luồng kịch bản <span class="afm-req">*</span></label>
 
               <div v-if="sequences.length === 0" class="afm-empty-seq">
                   Ch?a c? lu?ng n?o ?ang b?t trong t? ch?c.
@@ -71,55 +71,55 @@
                   <span class="afm-opt-nm">{{ seq.name }}</span>
                   <span v-if="seq.description" class="afm-opt-ds">{{ seq.description }}</span>
                   <span class="afm-opt-metarow">
-                    <span class="afm-opt-steps">{{ seq.stepCount }} bÆ°á»›c</span>
+                    <span class="afm-opt-steps">{{ seq.stepCount }} bước</span>
                     <span class="afm-opt-tag"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> {{ seq.estLabel }}</span>
                     <span class="afm-opt-tag">{{ seq.rulesLabel }}</span>
                   </span>
-                  <span class="afm-opt-start">â–¸ Báº¯t Ä‘áº§u ngay khi KH Ä‘Æ°á»£c gáº¯n vÃ o luá»“ng</span>
+                  <span class="afm-opt-start">▸ Bắt đầu ngay khi KH được gắn vào luồng</span>
                 </span>
-                <button type="button" class="afm-preview-btn" title="Xem trÆ°á»›c tin nháº¯n sáº½ gá»­i" @click="openPreview(seq, $event)">
+                <button type="button" class="afm-preview-btn" title="Xem trước tin nhắn sẽ gửi" @click="openPreview(seq, $event)">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                  Xem trÆ°á»›c
+                  Xem trước
                 </button>
               </button>
             </div>
 
             <!-- Nick auto-pin -->
             <div class="afm-field">
-              <label class="afm-label">Nick gá»­i (theo cuá»™c chat hiá»‡n táº¡i)</label>
+              <label class="afm-label">Nick gửi (theo cuộc chat hiện tại)</label>
               <div class="afm-nick">
                 <span class="afm-nick-ic">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
                 </span>
-                <span class="afm-nick-nm">{{ nickName || 'ChÆ°a chá»n nick' }}</span>
+                <span class="afm-nick-nm">{{ nickName || 'Chưa chọn nick' }}</span>
               </div>
             </div>
 
             </template>
 
-            <!-- â•â• BÆ¯á»šC 2: popup ghi chÃº lÃ½ do (next-step) â•â• -->
+            <!-- ══ BƯỚC 2: popup ghi chú lý do (next-step) ══ -->
             <template v-else>
-              <!-- recap luá»“ng + nick Ä‘Ã£ chá»n á»Ÿ bÆ°á»›c 1 -->
+              <!-- recap luồng + nick đã chọn ở bước 1 -->
               <div class="afm-recap">
                 <span class="afm-recap-ic">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                 </span>
                 <div class="afm-recap-info">
                   <div class="afm-recap-nm">{{ selectedSeqName }}</div>
-                  <div class="afm-recap-meta">{{ selectedSeqMeta }}<template v-if="nickName"> Â· Nick {{ nickName }}</template></div>
+                  <div class="afm-recap-meta">{{ selectedSeqMeta }}<template v-if="nickName"> · Nick {{ nickName }}</template></div>
                 </div>
               </div>
 
               <!-- Reason -->
               <div class="afm-field">
-                <label class="afm-label">LÃ½ do bÃ¡m Ä‘uá»•i <span class="afm-req">*</span></label>
+                <label class="afm-label">Lý do bám đuổi <span class="afm-req">*</span></label>
                 <textarea
                   v-model="reason"
                   class="afm-reason"
-                  placeholder="VD: KH há»i giÃ¡ Emerald GV, cáº§n chÄƒm tiáº¿p tá»›i khi Ä‘áº·t lá»‹ch xem nhÃ â€¦"
+                  placeholder="VD: KH hỏi giá Emerald GV, cần chăm tiếp tới khi đặt lịch xem nhà…"
                   rows="3"
                 />
-                <div class="afm-help">Báº¯t buá»™c nháº­p Ä‘á»ƒ quáº£n lÃ½ audit Ä‘Æ°á»£c lÃ½ do bÃ¡m Ä‘uá»•i thá»§ cÃ´ng.</div>
+                <div class="afm-help">Bắt buộc nhập để quản lý audit được lý do bám đuổi thủ công.</div>
               </div>
             </template>
 
@@ -131,30 +131,30 @@
           </template>
         </div>
 
-        <!-- Footer â€” bÆ°á»›c 1: Há»§y / Tiáº¿p tá»¥c Â· bÆ°á»›c 2: Quay láº¡i / XÃ¡c nháº­n -->
+        <!-- Footer — bước 1: Hủy / Tiếp tục · bước 2: Quay lại / Xác nhận -->
         <div class="afm-foot">
           <template v-if="step === 1">
-            <button class="afm-btn ghost" @click="onClose">Há»§y</button>
+            <button class="afm-btn ghost" @click="onClose">Hủy</button>
             <button class="afm-btn primary" :disabled="!canNext" @click="goNext">
-              {{ canNext ? 'Tiáº¿p tá»¥c' : 'Chá»n luá»“ng' }}
+              {{ canNext ? 'Tiếp tục' : 'Chọn luồng' }}
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           </template>
           <template v-else>
             <button class="afm-btn ghost" :disabled="submitting" @click="step = 1">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-              Quay láº¡i
+              Quay lại
             </button>
             <button class="afm-btn primary" :disabled="!canSubmit || submitting" @click="onSubmit">
               <svg v-if="!submitting" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4" /></svg>
-              {{ submitting ? 'Äang báº¯t Ä‘áº§u...' : 'XÃ¡c nháº­n báº¯t Ä‘áº§u bÃ¡m Ä‘uá»•i' }}
+              {{ submitting ? 'Đang bắt đầu...' : 'Xác nhận bắt đầu bám đuổi' }}
             </button>
           </template>
         </div>
       </div>
     </div>
 
-    <!-- Xem trÆ°á»›c tin nháº¯n luá»“ng (2026-06-18) â€” dÃ¹ng KH Ä‘ang chat -->
+    <!-- Xem trước tin nhắn luồng (2026-06-18) — dùng KH đang chat -->
     <SequencePreviewDialog
       v-if="previewSeq"
       :visible="!!previewSeq"
@@ -192,18 +192,18 @@ interface SequenceOption {
   name: string;
   description?: string | null;
   stepCount: number;
-  estLabel: string;   // dá»± kiáº¿n hoÃ n thÃ nh (â‰ˆ)
-  rulesLabel: string; // giá» gá»­i + giÃ£n cÃ¡ch
+  estLabel: string;   // dự kiến hoàn thành (≈)
+  rulesLabel: string; // giờ gửi + giãn cách
 }
 
-// â”€â”€ Xem trÆ°á»›c (2026-06-18): má»Ÿ SequencePreviewDialog cho luá»“ng + KH Ä‘ang chat â”€â”€
+// ── Xem trước (2026-06-18): mở SequencePreviewDialog cho luồng + KH đang chat ──
 const previewSeq = ref<{ id: string; name: string } | null>(null);
 function openPreview(seq: SequenceOption, ev: Event): void {
-  ev.stopPropagation(); // khÃ´ng chá»n radio khi báº¥m Xem trÆ°á»›c
+  ev.stopPropagation(); // không chọn radio khi bấm Xem trước
   previewSeq.value = { id: seq.id, name: seq.name };
 }
 
-// â”€â”€ TÃ­nh "dá»± kiáº¿n hoÃ n thÃ nh" (â‰ˆ, bá» qua nÃ©-ngoÃ i-giá») + "luáº­t" tá»« runtimeRules â”€â”€
+// ── Tính "dự kiến hoàn thành" (≈, bỏ qua né-ngoài-giờ) + "luật" từ runtimeRules ──
 function avgGapMinutes(rules: any): number {
   const g = rules?.sendGap;
   if (!g) return 0;
@@ -213,28 +213,28 @@ function avgGapMinutes(rules: any): number {
   return 0;
 }
 function estLabelOf(steps: any[], rules: any): string {
-  if (!Array.isArray(steps) || steps.length <= 1) return 'ngay (1 bÆ°á»›c)';
+  if (!Array.isArray(steps) || steps.length <= 1) return 'ngay (1 bước)';
   const gap = avgGapMinutes(rules);
   let totalMin = 0;
   for (let i = 1; i < steps.length; i++) totalMin += gap > 0 ? gap : (steps[i]?.delayMinutes ?? 0);
-  if (totalMin <= 0) return 'vÃ i phÃºt';
-  if (totalMin < 60) return `â‰ˆ ${Math.round(totalMin)} phÃºt`;
-  if (totalMin < 1440) return `â‰ˆ ${(totalMin / 60).toFixed(1)} giá»`;
-  return `â‰ˆ ${(totalMin / 1440).toFixed(1)} ngÃ y`;
+  if (totalMin <= 0) return 'vài phút';
+  if (totalMin < 60) return `≈ ${Math.round(totalMin)} phút`;
+  if (totalMin < 1440) return `≈ ${(totalMin / 60).toFixed(1)} giờ`;
+  return `≈ ${(totalMin / 1440).toFixed(1)} ngày`;
 }
 function rulesLabelOf(rules: any): string {
   const parts: string[] = [];
   const tr = rules?.allowedTimeRange;
   const hr = rules?.allowedHourRange;
-  if (Array.isArray(tr) && tr.length === 2) parts.push(`Giá» gá»­i ${tr[0]}â€“${tr[1]}`);
-  else if (Array.isArray(hr) && hr.length === 2) parts.push(`Giá» gá»­i ${hr[0]}hâ€“${hr[1]}h`);
+  if (Array.isArray(tr) && tr.length === 2) parts.push(`Giờ gửi ${tr[0]}–${tr[1]}`);
+  else if (Array.isArray(hr) && hr.length === 2) parts.push(`Giờ gửi ${hr[0]}h–${hr[1]}h`);
   const g = rules?.sendGap;
   if (g) {
-    const unit = g.unit === 'hour' ? 'giá»' : g.unit === 'second' ? 'giÃ¢y' : 'phÃºt';
-    if (typeof g.min === 'number' && typeof g.max === 'number' && g.min !== g.max) parts.push(`giÃ£n ${g.min}â€“${g.max} ${unit}`);
-    else if (g.value != null) parts.push(`giÃ£n ${g.value} ${unit}`);
+    const unit = g.unit === 'hour' ? 'giờ' : g.unit === 'second' ? 'giây' : 'phút';
+    if (typeof g.min === 'number' && typeof g.max === 'number' && g.min !== g.max) parts.push(`giãn ${g.min}–${g.max} ${unit}`);
+    else if (g.value != null) parts.push(`giãn ${g.value} ${unit}`);
   }
-  return parts.join(' Â· ') || 'máº·c Ä‘á»‹nh';
+  return parts.join(' · ') || 'mặc định';
 }
 
 // â”€â”€ State â”€â”€
@@ -245,8 +245,8 @@ const reason = ref('');
 const submitting = ref(false);
 const error = ref<string | null>(null);
 
-// â”€â”€ 2 bÆ°á»›c (anh chá»‘t 2026-06-18: ghi chÃº lÃ½ do lÃ  NEXT-STEP, khÃ´ng náº±m cÃ¹ng mÃ n pháº£i cuá»™n) â”€â”€
-//   bÆ°á»›c 1 = chá»n luá»“ng + nick Â· bÆ°á»›c 2 = popup nháº­p ghi chÃº â†’ XÃ¡c nháº­n / Quay láº¡i.
+// ── 2 bước (anh chốt 2026-06-18: ghi chú lý do là NEXT-STEP, không nằm cùng màn phải cuộn) ──
+//   bước 1 = chọn luồng + nick · bước 2 = popup nhập ghi chú → Xác nhận / Quay lại.
 const step = ref<1 | 2>(1);
 const canNext = computed(() => !!selectedSequenceId.value && !!props.nickId);
 function goNext(): void {
@@ -255,9 +255,9 @@ function goNext(): void {
   step.value = 2;
 }
 const selectedSeq = computed(() => sequences.value.find((s) => s.id === selectedSequenceId.value) ?? null);
-const selectedSeqName = computed(() => selectedSeq.value?.name ?? 'Luá»“ng Ä‘Ã£ chá»n');
+const selectedSeqName = computed(() => selectedSeq.value?.name ?? 'Luồng đã chọn');
 const selectedSeqMeta = computed(() =>
-  selectedSeq.value ? `${selectedSeq.value.stepCount} bÆ°á»›c Â· ${selectedSeq.value.estLabel}` : '',
+  selectedSeq.value ? `${selectedSeq.value.stepCount} bước · ${selectedSeq.value.estLabel}` : '',
 );
 
 // â”€â”€ Computed â”€â”€
@@ -301,13 +301,13 @@ async function fetchSequences(): Promise<void> {
         };
       });
 
-    // Auto-select sequence Ä‘áº§u tiÃªn
+    // Auto-select sequence đầu tiên
     if (sequences.value.length > 0 && !selectedSequenceId.value) {
       selectedSequenceId.value = sequences.value[0].id;
     }
   } catch (err) {
     console.error('[add-flow-modal] fetch sequences failed', err);
-    error.value = 'Lá»—i táº£i danh sÃ¡ch Sequence. Vui lÃ²ng thá»­ láº¡i.';
+    error.value = 'Lỗi tải danh sách Sequence. Vui lòng thử lại.';
   } finally {
     loadingSequences.value = false;
   }
@@ -333,10 +333,10 @@ async function onSubmit(): Promise<void> {
       sequenceName: seq?.name ?? '',
     });
   } catch (err: unknown) {
-    // Æ¯u tiÃªn `detail` (thÃ´ng bÃ¡o Ä‘áº§y Ä‘á»§ tiáº¿ng Viá»‡t, vd cooldown cÃ³ tÃªn luá»“ng + Ä‘áº¿m
-    // ngÆ°á»£c); fallback `error` (mÃ£ lá»—i) náº¿u route khÃ´ng tráº£ detail.
+    // Ưu tiên `detail` (thông báo đầy đủ tiếng Việt, vd cooldown có tên luồng + đếm
+    // ngược); fallback `error` (mã lỗi) nếu route không trả detail.
     const data = (err as { response?: { data?: { error?: string; detail?: string } } }).response?.data;
-    error.value = data?.detail || data?.error || 'Lá»—i gáº¯n khÃ¡ch vÃ o luá»“ng. Vui lÃ²ng thá»­ láº¡i.';
+    error.value = data?.detail || data?.error || 'Lỗi gắn khách vào luồng. Vui lòng thử lại.';
     console.error('[add-flow-modal] enroll failed', err);
   } finally {
     submitting.value = false;
@@ -478,7 +478,7 @@ onMounted(() => {
 .afm-nick-ic { color: var(--brand-700); display: inline-flex; flex-shrink: 0; }
 .afm-nick-nm { font-weight: 600; color: var(--ink); }
 
-/* Recap luá»“ng Ä‘Ã£ chá»n (bÆ°á»›c 2) */
+/* Recap luồng đã chọn (bước 2) */
 .afm-recap {
   display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
   background: var(--brand-soft); border-radius: var(--r-sm); padding: 10px 12px;

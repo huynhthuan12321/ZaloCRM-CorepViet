@@ -211,3 +211,12 @@ docker compose logs --tail=200 app | grep -E "P2022|BroadcastRun|CareSession|doe
 - ☐ **Deploy VPS:** CHỜ chạy (thứ tự: backup DB → `git reset --hard origin/main` → `docker compose build app` → `migrate deploy` từ image mới → `up -d app` → soi log). `.env` production giữ nguyên `MARKETING_DRY_RUN=true` + `VITE_MARKETING_DRY_RUN=true`.
 - ☐ **QA web:** CHỜ deploy xong (theo `MARKETING_PHASE3_QA_CHECKLIST.md`).
 - ⚠️ **Thứ tự migrate:** migrate PHẢI chạy từ **image mới** (`compose run --rm` hoặc sau `up -d` container mới) — KHÔNG dùng container cũ (prisma cũ chưa có migration file Phase 3).
+
+### 7.7 Fix UI (2026-07-13) — route Mẫu tin nhắn & mojibake AddFlowModal
+- ☑ **Mojibake AddFlowModal.vue:** file modal "Gắn thêm luồng bám đuổi" bị **double-encoded UTF-8→CP1252** (281 chuỗi hỏng: "BÃ¡m Ä‘uá»•i", "Chá»n luá»“ng"…) + có **BOM**. Đã khôi phục **per-line** (chỉ decode dòng mojibake, GIỮ nguyên 2 dòng đã đúng L54-55) → UTF-8 **không BOM**, 0 mojibake. Tổng dòng 525→525, chỉ đổi text (59 dòng), KHÔNG đụng logic (`manual-enroll`/`sequenceId`/`canNext`/`submitting` nguyên vẹn). Đây là file DUY NHẤT bị mojibake thật trong `frontend/src` (các file khác báo là chữ "ĐÃ/MÃ" hợp lệ — false positive).
+- ✅ **Route "Mẫu tin nhắn": KHÔNG có bug code.** Audit `router/index.ts` + `CommunityMarketingShell.vue` + `marketingFeatureFlags.ts`:
+  - `/marketing/message-templates` → `MessageTemplatesView` ✓ · `/marketing/content-blocks` → `ContentBlocksView` ✓
+  - redirect `/marketing/templates` → `/message-templates` ✓ · `/marketing/blocks` → `/content-blocks` ✓
+  - gate `messageTemplates` bật mặc định (opt-out) · `isActive` không xung đột prefix · không route trùng path/name · build sạch.
+  - Các route/redirect này ĐÃ nằm trên `origin/main` (commit `eaacf63` + `d2c8219`). ⇒ Nếu production còn lỗi "click Mẫu tin nhắn không sang trang" thì **do bundle FE cũ chưa deploy lại** (Phase 3 deploy đang CHỜ) — **rebuild + redeploy frontend là hết**. Không cần sửa code route.
+- ☐ **Verify sau deploy:** click "Mẫu tin nhắn" & "Khối nội dung" ra đúng 2 trang khác nhau; `/marketing/templates` redirect đúng; modal Gắn luồng hiển thị tiếng Việt có dấu chuẩn.
