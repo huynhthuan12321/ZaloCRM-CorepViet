@@ -85,9 +85,17 @@
         <div class="step-editor" v-for="(step, idx) in form.steps" :key="idx">
           <div class="step-editor-head">
             <b>Bước {{ idx + 1 }}</b>
-            <button v-if="form.steps.length > 1" class="btn-ic danger" @click="removeStep(idx)">
-              <v-icon size="15">mdi-close</v-icon>
-            </button>
+            <div class="step-actions">
+              <button type="button" class="btn-ic" :disabled="idx === 0" title="Lên" @click="moveStep(idx, -1)">
+                <v-icon size="15">mdi-arrow-up</v-icon>
+              </button>
+              <button type="button" class="btn-ic" :disabled="idx === form.steps.length - 1" title="Xuống" @click="moveStep(idx, 1)">
+                <v-icon size="15">mdi-arrow-down</v-icon>
+              </button>
+              <button v-if="form.steps.length > 1" type="button" class="btn-ic danger" title="Xoá bước" @click="removeStep(idx)">
+                <v-icon size="15">mdi-close</v-icon>
+              </button>
+            </div>
           </div>
           <label class="f-label small">Gửi sau</label>
           <select v-model.number="step.delayMinutes" class="f-input">
@@ -195,6 +203,14 @@ function removeStep(idx: number): void {
   form.steps.splice(idx, 1);
 }
 
+// Đổi thứ tự bước — thứ tự này chính là thứ tự gửi (worker chạy tuần tự theo mảng).
+function moveStep(idx: number, dir: -1 | 1): void {
+  const to = idx + dir;
+  if (to < 0 || to >= form.steps.length) return;
+  const [moved] = form.steps.splice(idx, 1);
+  form.steps.splice(to, 0, moved);
+}
+
 async function saveSequence(): Promise<void> {
   const name = form.name.trim();
   const steps = form.steps.map((s, idx) => ({
@@ -278,6 +294,8 @@ onMounted(load);
 .seq-modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
 .btn-x, .btn-ic { background: none; border: none; cursor: pointer; padding: 2px; border-radius: 6px; }
 .btn-ic:hover { background: rgba(15, 111, 160, .1); }
+.btn-ic:disabled { opacity: .35; cursor: not-allowed; }
+.step-actions { display: inline-flex; gap: 2px; align-items: center; }
 .f-label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 4px; }
 .f-label.small { margin-top: 8px; }
 .f-input { width: 100%; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; padding: 7px 10px; font-size: 13.5px; background: var(--surface, #fff); color: inherit; }

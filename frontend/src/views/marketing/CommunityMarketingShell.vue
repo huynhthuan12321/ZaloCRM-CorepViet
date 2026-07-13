@@ -33,24 +33,24 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRoute } from 'vue-router';
+import { marketingFeatureGate } from '@/utils/marketingFeatureFlags';
 
 const route = useRoute();
 
 // Chỉ chức năng core. Phase 2 thêm Tệp khách hàng (/marketing/lists) khi Lists move ra core.
-const navItems = [
-  { to: '/marketing/group-scan', label: 'Quét nhóm', icon: 'mdi-account-group-outline' },
-  { to: '/marketing/lists', label: 'Tệp khách hàng', icon: 'mdi-format-list-bulleted' },
-  // Community extension 2026-07-07 — Mục tiêu (auto kết bạn, nên chạy trước Broadcast).
-  { to: '/marketing/targets', label: 'Mục tiêu', icon: 'mdi-account-multiple-plus-outline' },
-  // Community extension 2026-07-06 — Broadcast tự động (gửi tin hàng loạt theo lịch).
-  { to: '/marketing/broadcasts', label: 'Broadcast tự động', icon: 'mdi-bullhorn-variant-outline' },
-  // Community extension 2026-07-07 — Khối nội dung (kho nội dung tái dùng cho Broadcast).
-  { to: '/marketing/content-blocks', label: 'Khối nội dung', icon: 'mdi-view-grid-plus-outline' },
-  // Community 2026-07-08 — Mẫu tin nhắn nhanh (template gõ "/" trong chat).
-  { to: '/marketing/message-templates', label: 'Mẫu tin nhắn', icon: 'mdi-message-flash-outline' },
-  { to: '/marketing/sequences', label: 'Luồng kịch bản', icon: 'mdi-target-variant' },
+const allNavItems = [
+  { to: '/marketing/group-scan', label: 'Quét nhóm', icon: 'mdi-account-group-outline', enabled: marketingFeatureGate.groupScan },
+  { to: '/marketing/lists', label: 'Tệp khách hàng', icon: 'mdi-format-list-bulleted', enabled: marketingFeatureGate.lists },
+  { to: '/marketing/targets', label: 'Mục tiêu', icon: 'mdi-account-multiple-plus-outline', enabled: marketingFeatureGate.targets },
+  { to: '/marketing/broadcasts', label: 'Broadcast tự động', icon: 'mdi-bullhorn-variant-outline', enabled: marketingFeatureGate.broadcasts },
+  { to: '/marketing/content-blocks', label: 'Khối nội dung', icon: 'mdi-view-grid-plus-outline', enabled: marketingFeatureGate.contentBlocks },
+  { to: '/marketing/message-templates', label: 'Mẫu tin nhắn', icon: 'mdi-message-flash-outline', enabled: marketingFeatureGate.messageTemplates },
+  { to: '/marketing/sequences', label: 'Luồng kịch bản', icon: 'mdi-target-variant', enabled: marketingFeatureGate.sequences },
 ];
+
+const navItems = computed(() => allNavItems.filter((item) => item.enabled));
 
 function isActive(to: string): boolean {
   return route.path === to || route.path.startsWith(to + '/');

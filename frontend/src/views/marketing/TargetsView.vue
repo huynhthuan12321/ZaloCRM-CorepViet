@@ -54,6 +54,9 @@
             <template v-if="job.welcomeEnabled">
               · 🤝 {{ job.welcomedCount }} đã chào<template v-if="job.welcomeFailedCount"> ({{ job.welcomeFailedCount }} lỗi)</template>
             </template>
+            <template v-if="job.followupSequenceId">
+              · 🔁 {{ job.followupEnrolledCount }} vào bám đuổi
+            </template>
             <button class="btn-link" @click="viewItems(job)">chi tiết</button>
           </div>
         </div>
@@ -158,6 +161,26 @@
           </template>
         </template>
 
+        <!-- ===== Bám đuổi sau chấp nhận (khép kín Phase 4) ===== -->
+        <label class="f-check">
+          <input v-model="form.followupEnabled" type="checkbox" @change="onToggleFollowup" />
+          <span><b>Gắn luồng bám đuổi khi khách chấp nhận kết bạn</b>
+            <span class="f-hint">— tự tạo Phiên chăm sóc, gửi các bước của Luồng kịch bản theo lịch</span></span>
+        </label>
+
+        <template v-if="form.followupEnabled">
+          <div v-if="sequencesLoading" class="tg-empty" style="padding:12px 0">Đang tải…</div>
+          <div v-else-if="sequences.length === 0" class="tg-empty" style="padding:12px 0">
+            Chưa có luồng nào đang bật — tạo ở <RouterLink to="/marketing/sequences">Luồng kịch bản</RouterLink>.
+          </div>
+          <select v-else v-model="form.followupSequenceId" class="f-input" style="margin-top:6px">
+            <option value="" disabled>— chọn luồng —</option>
+            <option v-for="s in sequences" :key="s.id" :value="s.id">
+              {{ s.name }} ({{ s.stepCount }} bước)
+            </option>
+          </select>
+        </template>
+
         <details class="f-adv">
           <summary>Chống block (nâng cao)</summary>
           <div class="f-row">
@@ -217,18 +240,21 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import { useConfirm } from '@/composables/use-confirm';
 
 const { push: toast } = useToast();
 const { confirm } = useConfirm();
+const route = useRoute();
 
 interface JobRow {
   id: string; name: string; status: string; requestMsg: string; sourceType: 'customer_list' | 'group_scan';
   maxTotal: number; sentCount: number; noZaloCount: number; failedCount: number;
   welcomeEnabled: boolean; welcomedCount: number; welcomeFailedCount: number;
+  followupSequenceId: string | null; followupEnrolledCount: number;
   list: { id: string; name: string; hasZaloEntries: number } | null;
   groupScan: { id: string; scannedGroups: number; memberCount: number; friendCount: number } | null;
   nick: { id: string; displayName: string | null; phone: string | null; status: string } | null;
@@ -254,9 +280,25 @@ const form = reactive({
   maxTotal: 200, delaySecMin: 60, delaySecMax: 180,
   welcomeEnabled: false, welcomeMode: 'text' as 'text' | 'blocks',
   welcomeMsg: '', welcomeBlockIds: [] as string[],
+  followupEnabled: false, followupSequenceId: '',
 });
 
 const contentBlocks = ref<Array<{ id: string; name: string; messageText: string }>>([]);
+const sequences = ref<Array<{ id: string; name: string; stepCount: number }>>([]);
+const sequencesLoading = ref(false);
+
+async function onToggleFollowup(): Promise<void> {
+  if (!form.followupEnabled || sequences.value.length > 0) return;
+  sequencesLoading.value = true;
+  try {
+    const res = await api.get('/automation/sequences', { params: { enabled: 'true' } });
+    sequences.value = (res.data.sequences ?? []).map((s: any) => ({
+      id: s.id, name: s.name, stepCount: s.stepCount ?? 0,
+    }));
+  } finally {
+    sequencesLoading.value = false;
+  }
+}
 
 const itemsModal = reactive({
   open: false, jobName: '',
@@ -289,6 +331,24 @@ async function openCreate(): Promise<void> {
       id: n.id, displayName: n.displayName, phone: n.phone, status: n.status,
     }));
   }
+}
+
+function firstQueryString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return '';
+}
+
+let appliedCreateFromList = '';
+
+async function applyCreateFromListQuery(): Promise<void> {
+  const fromList = firstQueryString(route.query.createFromList) || firstQueryString(route.query.listId);
+  if (!fromList || fromList === appliedCreateFromList) return;
+  appliedCreateFromList = fromList;
+  await openCreate();
+  await nextTick();
+  form.sourceType = 'customer_list';
+  form.customerListId = fromList;
 }
 
 async function onNickChange(): Promise<void> {
@@ -337,6 +397,7 @@ async function createJob(): Promise<void> {
     if (form.welcomeMode === 'text' && !form.welcomeMsg.trim()) return void toast('Nhập nội dung tin chào', 'error');
     if (form.welcomeMode === 'blocks' && form.welcomeBlockIds.length === 0) return void toast('Chọn ít nhất 1 khối nội dung cho tin chào', 'error');
   }
+  if (form.followupEnabled && !form.followupSequenceId) return void toast('Chọn luồng bám đuổi', 'error');
 
   creating.value = true;
   try {
@@ -349,12 +410,14 @@ async function createJob(): Promise<void> {
       welcomeEnabled: form.welcomeEnabled,
       welcomeMsg: form.welcomeEnabled && form.welcomeMode === 'text' ? form.welcomeMsg : '',
       welcomeBlockIds: form.welcomeEnabled && form.welcomeMode === 'blocks' ? form.welcomeBlockIds : [],
+      followupSequenceId: form.followupEnabled ? form.followupSequenceId : null,
     });
     toast('Đã tạo mục tiêu', 'success');
     showCreate.value = false;
     Object.assign(form, {
       name: '', requestMsg: '', sourceType: 'customer_list', groupScanId: '',
       welcomeEnabled: false, welcomeMode: 'text', welcomeMsg: '', welcomeBlockIds: [],
+      followupEnabled: false, followupSequenceId: '',
     });
     await load();
   } catch (err: any) {
@@ -403,8 +466,15 @@ function fmtDate(d: string | null): string {
 
 onMounted(async () => {
   await load();
+  await applyCreateFromListQuery();
   pollTimer = setInterval(load, 15_000); // job đang chạy → cập nhật số liệu
 });
+
+watch(
+  () => `${firstQueryString(route.query.createFromList)}|${firstQueryString(route.query.listId)}`,
+  () => { void applyCreateFromListQuery(); },
+);
+
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
 </script>
 

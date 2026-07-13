@@ -12,10 +12,10 @@
         </div>
       </div>
       <div class="actions">
-        <button class="btn btn-ghost btn-sm" disabled title="Nhập danh sách từ tệp CSV">
+        <button class="btn btn-ghost btn-sm" title="Nhập danh sách từ tệp CSV" @click="openCreateTab('csv')">
           <v-icon size="16">mdi-upload</v-icon> Import CSV
         </button>
-        <button class="btn btn-primary btn-sm" @click="showCreate = true">
+        <button class="btn btn-primary btn-sm" @click="openCreateTab('paste')">
           <v-icon size="16">mdi-plus-circle-outline</v-icon> Tạo tệp
         </button>
       </div>
@@ -279,7 +279,7 @@
       </div>
     </div>
 
-    <CreateListModal v-model="showCreate" @created="onCreated" />
+    <CreateListModal v-model="showCreate" :initial-tab="createTab" @created="onCreated" />
   </div>
 </template>
 
@@ -329,6 +329,13 @@ const {
 } = useCustomerLists();
 
 const showCreate = ref(false);
+// Phase 2 (2026-07-12): nút "Import CSV" mở thẳng tab csv của modal tạo tệp
+const createTab = ref<'paste' | 'csv'>('paste');
+
+function openCreateTab(tab: 'paste' | 'csv'): void {
+  createTab.value = tab;
+  showCreate.value = true;
+}
 
 onMounted(() => fetchLists());
 

@@ -11,12 +11,16 @@
  *   POST   /api/v1/broadcast-jobs/:id/run-now — chạy ngay (nextRunAt = now)
  *   DELETE /api/v1/broadcast-jobs/:id         — xoá (cascade runs/items)
  *   GET    /api/v1/broadcast-jobs/:id/runs/:runId/items — log từng người nhận
+ *   POST   /api/v1/broadcast-jobs/audience-count — dry-run đếm người nhận + quota (Phase 2)
+ *   POST   /api/v1/broadcast-jobs/:id/runs/:runId/retry-failed — gửi lại tin lỗi (Phase 2)
  */
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { computeNextRunAt, parseTimeOfDay, type ScheduleType } from './broadcast-service.js';
+import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
+import { getEffectiveLimit } from '../zalo/sdk-limit-service.js';
 
 interface JobBody {
   name?: string;
@@ -77,7 +81,7 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
       include: {
         runs: {
           orderBy: { startedAt: 'desc' }, take: 1,
-          select: { id: true, status: true, startedAt: true, endedAt: true, sentCount: true, failedCount: true, skippedCount: true },
+          select: { id: true, status: true, startedAt: true, endedAt: true, sentCount: true, failedCount: true, skippedCount: true, queuedCount: true },
         },
       },
     });
@@ -291,6 +295,120 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         take: 1000,
       });
       return { items };
+    },
+  );
+
+  // ── POST /broadcast-jobs/audience-count — dry-run đếm người nhận (Phase 2) ──
+  // Đếm TRƯỚC khi tạo/gửi: tổng, sẽ gửi, breakdown skip + quota tin còn lại của nick.
+  // Không tạo record nào — thuần read-only.
+  app.post<{ Body: { sourceType?: 'customer_list' | 'friends'; customerListId?: string; zaloAccountId?: string; maxPerRun?: number } }>(
+    '/api/v1/broadcast-jobs/audience-count',
+    async (request, reply) => {
+      const user = request.user!;
+      const b = request.body ?? {};
+      const sourceType = b.sourceType === 'friends' ? 'friends' : 'customer_list';
+      const maxPerRun = Math.min(500, Math.max(1, b.maxPerRun ?? 50));
+
+      const nick = await prisma.zaloAccount.findFirst({
+        where: { id: b.zaloAccountId ?? '', orgId: user.orgId },
+        select: { id: true, status: true },
+      });
+      if (!nick) return reply.status(400).send({ error: 'zaloAccount_not_found' });
+
+      // Quota tin/ngày của nick (đã dùng / trần hiệu lực) — dự báo đủ hay thiếu.
+      const [usedToday, limits] = await Promise.all([
+        zaloRateLimiter.getDailyCount(nick.id, 'message'),
+        getEffectiveLimit(nick.id, 'message'),
+      ]);
+      const quotaRemaining = Math.max(0, limits.daily - usedToday);
+
+      if (sourceType === 'friends') {
+        const total = await prisma.friend.count({ where: { zaloAccountId: nick.id, friendshipStatus: 'accepted' } });
+        const willSend = Math.min(total, maxPerRun);
+        return {
+          sourceType, total, willSend,
+          breakdown: { friendsAccepted: total },
+          quota: { usedToday, dailyLimit: limits.daily, remaining: quotaRemaining, enough: quotaRemaining >= willSend },
+          nickOnline: nick.status === 'connected',
+        };
+      }
+
+      const list = await prisma.customerList.findFirst({
+        where: { id: b.customerListId ?? '', orgId: user.orgId },
+        select: { id: true },
+      });
+      if (!list) return reply.status(400).send({ error: 'customerList_not_found' });
+
+      const [total, hasZalo, noZalo, uidReady] = await Promise.all([
+        prisma.customerListEntry.count({ where: { customerListId: list.id } }),
+        prisma.customerListEntry.count({ where: { customerListId: list.id, hasZalo: true } }),
+        prisma.customerListEntry.count({ where: { customerListId: list.id, hasZalo: false } }),
+        prisma.customerListEntry.count({ where: { customerListId: list.id, hasZalo: true, resolvedByNickId: nick.id } }),
+      ]);
+      const unknown = total - hasZalo - noZalo; // chưa quét Zalo (hasZalo=null)
+      const willSend = Math.min(hasZalo, maxPerRun);
+      return {
+        sourceType, total, willSend,
+        breakdown: {
+          hasZalo,
+          skipNoZalo: noZalo,
+          skipUnknown: unknown, // chưa quét — nên "Quét lại Zalo" tệp trước khi gửi
+          uidReady, // UID sẵn theo nick này — gửi thẳng
+          needLookup: Math.max(0, hasZalo - uidReady), // cần findUser (tốn quota friend_lookup)
+        },
+        quota: { usedToday, dailyLimit: limits.daily, remaining: quotaRemaining, enough: quotaRemaining >= willSend },
+        nickOnline: nick.status === 'connected',
+      };
+    },
+  );
+
+  // ── POST /broadcast-jobs/:id/runs/:runId/retry-failed — gửi lại tin lỗi (Phase 2) ──
+  // Tạo run MỚI với snapshot = các item 'failed' của run cũ (trạng thái 'queued').
+  // Worker tick sau sẽ gửi lại — vẫn qua đủ khung giờ + giãn cách + rate limit.
+  app.post<{ Params: { id: string; runId: string } }>(
+    '/api/v1/broadcast-jobs/:id/runs/:runId/retry-failed',
+    async (request, reply) => {
+      if (!requireBroadcastAdmin(request, reply)) return;
+      const user = request.user!;
+      const job = await prisma.broadcastJob.findFirst({
+        where: { id: request.params.id, orgId: user.orgId },
+        select: { id: true, status: true },
+      });
+      if (!job) return reply.status(404).send({ error: 'not_found' });
+
+      const run = await prisma.broadcastRun.findFirst({
+        where: { id: request.params.runId, jobId: job.id, orgId: user.orgId },
+        select: { id: true, status: true },
+      });
+      if (!run) return reply.status(404).send({ error: 'not_found' });
+      if (run.status === 'running') return reply.status(400).send({ error: 'run_still_running' });
+
+      const hasRunning = await prisma.broadcastRun.findFirst({
+        where: { jobId: job.id, status: 'running' }, select: { id: true },
+      });
+      if (hasRunning) return reply.status(400).send({ error: 'job_has_running_run' });
+
+      const failedItems = await prisma.broadcastRunItem.findMany({
+        where: { runId: run.id, status: 'failed' },
+        select: { entryId: true, phone: true, name: true, zaloUid: true },
+      });
+      if (failedItems.length === 0) return reply.status(400).send({ error: 'no_failed_items' });
+
+      const retryRun = await prisma.broadcastRun.create({
+        data: {
+          jobId: job.id, orgId: user.orgId,
+          audienceSnapshotAt: new Date(), queuedCount: failedItems.length,
+          items: {
+            create: failedItems.map((it) => ({
+              orgId: user.orgId, entryId: it.entryId,
+              phone: it.phone ?? '', name: it.name, zaloUid: it.zaloUid, status: 'queued',
+            })),
+          },
+        },
+        select: { id: true, queuedCount: true },
+      });
+      logger.info(`[broadcast] retry-failed run=${run.id} → new run=${retryRun.id} (${failedItems.length} người)`);
+      return reply.status(201).send({ run: retryRun });
     },
   );
 }

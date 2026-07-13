@@ -128,6 +128,14 @@ const editing = ref<BlockRow | null>(null);
 
 const form = reactive({ name: '', messageText: '', imageUrl: '' });
 
+// Biến hợp lệ backend render được (broadcast-service.renderMessage). Biến lạ sẽ bị
+// gửi NGUYÊN {{...}} cho khách → chặn ngay lúc lưu.
+const BLOCK_VARS = ['ten', 'ten_khach', 'sdt', 'phone'];
+function unknownVars(text: string): string[] {
+  const found = [...text.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map((m) => m[1].toLowerCase());
+  return [...new Set(found.filter((v) => !BLOCK_VARS.includes(v)))];
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   try {
@@ -153,6 +161,10 @@ function openEdit(b: BlockRow): void {
 async function save(): Promise<void> {
   if (!form.name.trim()) return void toast('Nhập tên khối', 'error');
   if (!form.messageText.trim()) return void toast('Nhập nội dung tin', 'error');
+  const bad = unknownVars(form.messageText);
+  if (bad.length) {
+    return void toast(`Biến không hợp lệ: ${bad.map((v) => `{{${v}}}`).join(', ')}. Chỉ dùng {{ten}}, {{ten_khach}}, {{sdt}}, {{phone}}.`, 'error');
+  }
 
   saving.value = true;
   try {

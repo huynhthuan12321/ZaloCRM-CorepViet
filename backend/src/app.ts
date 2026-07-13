@@ -346,6 +346,14 @@ async function bootstrap() {
   // Mục tiêu — auto kết bạn (🟢 Community extension 2026-07-07)
   const { targetRoutes } = await import('./modules/target/target-routes.js');
   await app.register(targetRoutes);
+  // Marketing facade — contract đọc canonical /api/v1/marketing/* (Phase 1, ADR-001).
+  // CHỈ THÊM route đọc map về model legacy; không đụng route legacy đang chạy.
+  const { marketingFacadeRoutes } = await import('./modules/marketing/marketing-facade-routes.js');
+  await app.register(marketingFacadeRoutes);
+  // Mẫu tin nhắn — CRUD fallback Community (Phase 3): bản Community trước thiếu route
+  // /automation/templates (EE-only) → màn Mẫu tin nhắn + chèn // trong Chat chết. Nối lại.
+  const { messageTemplateRoutes } = await import('./modules/marketing/message-template-routes.js');
+  await app.register(messageTemplateRoutes);
   await app.register(groupModerationRoutes);
   await app.register(friendRoutes);
   await app.register(profileRoutes);
@@ -418,6 +426,13 @@ async function bootstrap() {
       startBroadcastCron(io);
       const { startTargetCron } = await import('./modules/target/target-cron.js');
       startTargetCron();
+      // Phiên chăm sóc (🟢 Community, 2026-07-12 khép kín Phase 3-4): worker gửi bước
+      // Luồng kịch bản theo CareSession.nextRunAt + listener event bus (KH trả lời →
+      // pause phiên; KH chấp nhận kết bạn → enroll luồng bám đuổi từ Mục tiêu).
+      const { startCareSessionCron } = await import('./modules/automation/care-session-cron.js');
+      startCareSessionCron();
+      const { startCareSessionListener } = await import('./modules/automation/care-session-listener.js');
+      startCareSessionListener();
     }
     // Group info refresh periodic (mỗi 6h) — làm tươi avatar/tên/sĩ số nhóm chống
     // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).

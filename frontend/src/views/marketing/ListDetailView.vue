@@ -47,6 +47,10 @@
             <v-icon size="16">mdi-target</v-icon>
             Tạo Mục tiêu từ tệp này
           </button>
+          <button class="btn btn-ghost btn-sm" title="Tạo Broadcast gửi tin hàng loạt tới tệp này" @click="onCreateBroadcast">
+            <v-icon size="16">mdi-bullhorn-outline</v-icon>
+            Tạo Broadcast
+          </button>
           <button
             class="btn btn-sm"
             :class="currentList?.leadNotifyEnabled ? 'btn-running' : 'btn-ghost'"
@@ -60,9 +64,9 @@
             <v-icon size="16">mdi-refresh</v-icon>
             Quét lại Zalo
           </button>
-          <button class="btn btn-ghost btn-sm">
+          <button class="btn btn-ghost btn-sm" :disabled="exporting" title="Tải CSV theo bộ lọc/tab hiện tại" @click="onExport">
             <v-icon size="16">mdi-download</v-icon>
-            Export CSV
+            {{ exporting ? 'Đang xuất…' : 'Export CSV' }}
           </button>
           <v-menu :close-on-content-click="true">
             <template #activator="{ props: act }">
@@ -731,6 +735,7 @@ const {
   updateEntry,
   addEntries,
   deleteEntry,
+  exportEntriesCsv,
   bulkResolveEntries,
   selectedCount,
   toggleSelect,
@@ -878,6 +883,19 @@ async function onRescan() {
   }
 }
 
+const exporting = ref(false);
+async function onExport() {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    const ok = await exportEntriesCsv(listId.value);
+    if (ok) toast.success('Đã tải CSV theo bộ lọc hiện tại');
+    else toast.error('Export CSV thất bại, thử lại');
+  } finally {
+    exporting.value = false;
+  }
+}
+
 async function onDelete() {
   if (!(await confirm({
     title: 'Xoá vĩnh viễn tệp này?',
@@ -891,16 +909,26 @@ async function onDelete() {
 }
 
 /**
- * Phase Marketing rename 2026-05-23 — "Mục tiêu" namespace.
- * Click "Tạo Mục tiêu từ tệp này" → navigate sang trang tạo Mục tiêu mới,
- * truyền listId qua query để pre-fill (Ngày 2 sẽ refactor route đích thành MucTieuWizard).
- * Hiện tại route /marketing/triggers/tao-moi alias trỏ FriendInviteCreateView.vue.
+ * Phase 2 (2026-07-12) - open TargetsView with this customer list preselected.
+ * Keep listId in the query for old deep-links while createFromList is the new contract.
  */
 function onCreateMucTieu() {
   if (!listId.value) return;
   router.push({
-    path: '/marketing/triggers/tao-moi',
-    query: { listId: listId.value },
+    path: '/marketing/targets',
+    query: { createFromList: listId.value, listId: listId.value },
+  });
+}
+
+/**
+ * Phase 2 (2026-07-12) — "Tạo Broadcast từ tệp này": mở BroadcastsView với
+ * modal tạo sẵn nguồn = tệp hiện tại (mục 14.10 tài liệu phân tích).
+ */
+function onCreateBroadcast() {
+  if (!listId.value) return;
+  router.push({
+    path: '/marketing/broadcasts',
+    query: { createFromList: listId.value },
   });
 }
 
