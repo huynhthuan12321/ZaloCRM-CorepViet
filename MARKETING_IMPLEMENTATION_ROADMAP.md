@@ -167,12 +167,12 @@ API (route legacy thuc te `/api/v1/customer-lists/*` — theo ADR-001 giu legacy
 
 QA checklist:
 
-- [ ] Paste 100 SĐT hop le tao duoc tep.
-- [ ] Paste co trung, co ky tu la, co `+84`, co `p:`, co `tel:` van normalize dung.
-- [ ] File CSV UTF-8 co dau tieng Viet import dung ten.
-- [ ] File Excel nhieu cot nhan dien duoc phone/name.
-- [ ] Khi lookup dang chay UI hien progress va khong treo.
-- [ ] Trang chi tiet co the cuon den dong cuoi, nhin duoc tong so data va pagination/page size.
+- [X] Paste 100 SĐT hop le tao duoc tep.
+- [X] Paste co trung, co ky tu la, co `+84`, co `p:`, co `tel:` van normalize dung.
+- [x] File CSV UTF-8 co dau tieng Viet import dung ten.
+- [X] File Excel nhieu cot nhan dien duoc phone/name.
+- [X] Khi lookup dang chay UI hien progress va khong treo.
+- [X] Trang chi tiet co the cuon den dong cuoi, nhin duoc tong so data va pagination/page size.
 
 ---
 
@@ -269,10 +269,10 @@ API de xuat:
 
 QA checklist:
 
-- [ ] Tao luong moi xong hien trong `/marketing/sequences`.
-- [ ] Luong moi co trong modal Gan luong o tab Follow-up trong Chat.
-- [ ] Toggle bat/tat reload van giu trang thai.
-- [ ] Khong cho luong active neu chua co step.
+- [X ] Tao luong moi xong hien trong `/marketing/sequences`.
+- [X ] Luong moi co trong modal Gan luong o tab Follow-up trong Chat.
+- [X ] Toggle bat/tat reload van giu trang thai.
+- [X ] Khong cho luong active neu chua co step.
 
 ### 7.2 Bam duoi thu cong
 
@@ -295,9 +295,9 @@ API de xuat:
 
 QA checklist:
 
-- [ ] Chon KH trong Chat -> gan luong -> trang manual hien KH.
-- [ ] Neu khong co sequence active, modal hien link tao luong va ly do ro.
-- [ ] Gan trung cung KH/cung luong phai bi chan hoac hoi xac nhan.
+- [X ] Chon KH trong Chat -> gan luong -> trang manual hien KH.
+- [X ] Neu khong co sequence active, modal hien link tao luong va ly do ro.
+- [X ] Gan trung cung KH/cung luong phai bi chan hoac hoi xac nhan.
 
 ---
 

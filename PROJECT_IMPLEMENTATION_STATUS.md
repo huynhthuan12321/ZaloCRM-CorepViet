@@ -2,12 +2,12 @@
 
 **Ngày kiểm tra:** 2026-07-13
 **Branch:** `main`
-**Commit:** `eb5fc85` (Phase 3 Content Blocks + Sequences CRUD → main; = `origin/main`). Nền trước đó: `f37166d` (PR #1 Marketing Phase 1–4), `5844b52` (dry-run backend kill-switch), `d2c8219` (nav + placeholder an toàn).
+**Commit:** `1bd9e5b` (Phase 4.1 Care Sessions + Manual Followup → main; = `origin/main`). Nền: `eb5fc85` (Phase 3 Content Blocks + Sequences), `55b92e5` (fix route/mojibake), `5844b52` (dry-run backend kill-switch), `d2c8219` (nav + placeholder), `f37166d` (PR #1 Marketing Phase 1–4).
 **Reviewer:** Senior Architect / Tech Lead / QA Lead audit (evidence-based, không chỉ checkbox)
 
 > Nguồn sự thật: **code + runtime**. Nơi tài liệu/checkbox mâu thuẫn code → lấy code. Mục chưa chạy được → `UNVERIFIED` / `BLOCKED`.
 
-> **Cập nhật 2026-07-13 (Phase 3):** đã merge `eb5fc85` vào `main` + push `origin/main` (fast-forward, sạch). Content Blocks (block_type/variants/tags/enabled/CRUD thật + filter) & Sequences (bước ghép ContentBlock) — migration additive `20260713120000_content_blocks_phase3`. **Deploy VPS + QA web: CHỜ** (xem `MARKETING_PHASE3_QA_CHECKLIST.md`). Dry-run production giữ nguyên (`MARKETING_DRY_RUN` + `VITE_MARKETING_DRY_RUN` = true).
+> **Cập nhật 2026-07-13 (Phase 3 + 4.1 — ĐÃ DEPLOY):** `1bd9e5b` trên `main`=`origin/main`. **Phase 3:** Content Blocks (block_type/variants/tags/enabled/CRUD thật + filter) & Sequences (bước ghép ContentBlock) — migration additive `20260713120000_content_blocks_phase3` đã áp. **Phase 4.1:** endpoint LIST care-sessions + 2 trang dữ liệu thật (Phiên chăm sóc / Bám đuổi thủ công) + pause/stop an toàn (không migration). Cả hai **đã deploy VPS + QA web**. Dry-run production giữ nguyên (`MARKETING_DRY_RUN` + `VITE_MARKETING_DRY_RUN` = true). Chi tiết bàn giao: `SESSION_HANDOFF_MARKETING_2026-07-13.md`.
 
 ---
 

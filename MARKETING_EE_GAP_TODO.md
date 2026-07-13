@@ -207,9 +207,9 @@ docker compose logs --tail=200 app | grep -E "P2022|BroadcastRun|CareSession|doe
 
 ### 7.6 Trạng thái merge & deploy (cập nhật realtime)
 - ☑ **Merge:** `feature/marketing-phase3-blocks-sequences` (commit `eb5fc85`) đã **fast-forward vào `main`** và **push `origin/main`** (2026-07-13). Working tree sạch; `.env` + `scratchpad/` KHÔNG bị track.
-- ☐ **Deploy VPS:** CHỜ chạy (thứ tự: backup DB → `git reset --hard origin/main` → `docker compose build app` → `migrate deploy` từ image mới → `up -d app` → soi log). `.env` production giữ nguyên `MARKETING_DRY_RUN=true` + `VITE_MARKETING_DRY_RUN=true`.
-- ☐ **QA web:** CHỜ deploy xong (theo `MARKETING_PHASE3_QA_CHECKLIST.md`).
-- ⚠️ **Thứ tự migrate:** migrate PHẢI chạy từ **image mới** (`compose run --rm` hoặc sau `up -d` container mới) — KHÔNG dùng container cũ (prisma cũ chưa có migration file Phase 3).
+- ☑ **Deploy VPS:** ĐÃ deploy `app` + migrate `20260713120000_content_blocks_phase3` từ image mới. `.env` production giữ nguyên `MARKETING_DRY_RUN=true` + `VITE_MARKETING_DRY_RUN=true`.
+- ☑ **QA web:** đã QA (Content Blocks CRUD/biến thể/bật-tắt/lọc, Broadcast Step 2 chỉ khối send_message enabled, Sequence chọn ContentBlock thật).
+- ⚠️ **Thứ tự migrate (đã áp dụng):** migrate chạy từ **image mới** (`compose run --rm` hoặc sau `up -d` container mới) — KHÔNG dùng container cũ.
 
 ### 7.7 Fix UI (2026-07-13) — route Mẫu tin nhắn & mojibake AddFlowModal
 - ☑ **Mojibake AddFlowModal.vue:** file modal "Gắn thêm luồng bám đuổi" bị **double-encoded UTF-8→CP1252** (281 chuỗi hỏng: "BÃ¡m Ä‘uá»•i", "Chá»n luá»“ng"…) + có **BOM**. Đã khôi phục **per-line** (chỉ decode dòng mojibake, GIỮ nguyên 2 dòng đã đúng L54-55) → UTF-8 **không BOM**, 0 mojibake. Tổng dòng 525→525, chỉ đổi text (59 dòng), KHÔNG đụng logic (`manual-enroll`/`sequenceId`/`canNext`/`submitting` nguyên vẹn). Đây là file DUY NHẤT bị mojibake thật trong `frontend/src` (các file khác báo là chữ "ĐÃ/MÃ" hợp lệ — false positive).
@@ -218,4 +218,12 @@ docker compose logs --tail=200 app | grep -E "P2022|BroadcastRun|CareSession|doe
   - redirect `/marketing/templates` → `/message-templates` ✓ · `/marketing/blocks` → `/content-blocks` ✓
   - gate `messageTemplates` bật mặc định (opt-out) · `isActive` không xung đột prefix · không route trùng path/name · build sạch.
   - Các route/redirect này ĐÃ nằm trên `origin/main` (commit `eaacf63` + `d2c8219`). ⇒ Nếu production còn lỗi "click Mẫu tin nhắn không sang trang" thì **do bundle FE cũ chưa deploy lại** (Phase 3 deploy đang CHỜ) — **rebuild + redeploy frontend là hết**. Không cần sửa code route.
-- ☐ **Verify sau deploy:** click "Mẫu tin nhắn" & "Khối nội dung" ra đúng 2 trang khác nhau; `/marketing/templates` redirect đúng; modal Gắn luồng hiển thị tiếng Việt có dấu chuẩn.
+- ☑ **Verify sau deploy:** click "Mẫu tin nhắn" & "Khối nội dung" ra đúng 2 trang khác nhau; `/marketing/templates` redirect đúng; modal Gắn luồng hiển thị tiếng Việt có dấu chuẩn. (đã deploy commit `55b92e5`)
+
+### 7.8 Phase 4.1 — Care Sessions + Manual Followup (2026-07-13)
+- ☑ **Backend LIST** `GET /api/v1/automation/care-sessions` (`?state=&q=&sourceType=`): org-scoped + RBAC owner-scope; join contact/sequence/nick; đếm `stepsSent` qua `groupBy` (không N+1); trả `{ sessions, summary, dryRun }`. Helper thuần `care-session-list-helpers.ts` — 17 test.
+- ☑ **Frontend trang THẬT** `CareSessionsView` (tất cả phiên) + `ManualFollowupView` (chỉ `sequence_manual`) dùng chung `CareSessionListPanel` + `use-care-sessions`: thẻ tổng bấm-lọc, search debounce, badge trạng thái (đang chạy·dry-run / tạm dừng / hoàn thành / đã dừng), tiến độ bước, loading/empty/error+retry, nút Tạm dừng/Dừng (đổi state DB, KHÔNG gửi).
+- ☑ **Luồng khép kín:** gắn luồng từ Chat (`AddFlowModal` → `manual-enroll`) hiện ngay trong 2 trang; worker `care-session-cron` chạy dry-run (ghi `[dry-run]`, KHÔNG gửi Zalo).
+- ☑ **An toàn:** 2 trang CHỈ READ + pause/stop; KHÔNG `zaloOps.send` mới, KHÔNG resume/run-now/tạo job active.
+- ☑ **Deploy VPS:** ĐÃ deploy (commit `1bd9e5b`, chỉ rebuild `app` — KHÔNG migration mới). QA §G checklist đã tick.
+- ☐ **Còn thiếu (Phase 4.2):** panel timeline chi tiết từng phiên (API `followup-history` đã có, chưa gắn); tab **Cài đặt lắng nghe** (3 đích báo Owner/Quản lý/Nhóm Zalo); realtime (hiện refresh tay); tỉ lệ phản hồi.
