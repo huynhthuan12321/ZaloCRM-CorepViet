@@ -4,6 +4,17 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --legacy-peer-deps
 COPY frontend/ ./
+# VITE feature flags — build-time (Vite bake vào bundle; KHÔNG đọc lúc runtime).
+# Mặc định AN TOÀN: EE/Broadcast/Sequence TẮT, dry-run BẬT. Bật module Marketing bằng
+# cách set các biến này = true khi build (qua docker-compose build.args / .env server).
+ARG VITE_MARKETING_ENTERPRISE_ENABLED=false
+ARG VITE_BROADCAST_ENABLED=false
+ARG VITE_SEQUENCE_ENABLED=false
+ARG VITE_MARKETING_DRY_RUN=true
+ENV VITE_MARKETING_ENTERPRISE_ENABLED=$VITE_MARKETING_ENTERPRISE_ENABLED \
+    VITE_BROADCAST_ENABLED=$VITE_BROADCAST_ENABLED \
+    VITE_SEQUENCE_ENABLED=$VITE_SEQUENCE_ENABLED \
+    VITE_MARKETING_DRY_RUN=$VITE_MARKETING_DRY_RUN
 RUN npm run build
 
 # ── Stage 2: Build backend ───────────────────────────────────────────────────

@@ -3,6 +3,13 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      # VITE build-time flags — bật/tắt module Marketing (bake vào frontend lúc build).
+      # Lấy từ .env server; mặc định an toàn (tắt module, dry-run bật). Đổi .env rồi build lại.
+      args:
+        VITE_MARKETING_ENTERPRISE_ENABLED: ${VITE_MARKETING_ENTERPRISE_ENABLED:-false}
+        VITE_BROADCAST_ENABLED: ${VITE_BROADCAST_ENABLED:-false}
+        VITE_SEQUENCE_ENABLED: ${VITE_SEQUENCE_ENABLED:-false}
+        VITE_MARKETING_DRY_RUN: ${VITE_MARKETING_DRY_RUN:-true}
     container_name: zalo-crm-app
     restart: unless-stopped
     ports:
