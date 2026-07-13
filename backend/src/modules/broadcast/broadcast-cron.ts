@@ -24,6 +24,7 @@ import cron from 'node-cron';
 import type { Server } from 'socket.io';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
+import { config } from '../../config/index.js';
 import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
@@ -290,6 +291,14 @@ async function processRun(run: RunRow, io: Server | null): Promise<void> {
 
     // 3. Gửi tin (text hoặc ảnh + caption)
     const text = renderMessage(content.messageText, { name, phone });
+    // DRY-RUN backend (kill-switch cấp server): KHÔNG gọi Zalo thật, chỉ ghi mock 'skipped'
+    // để hàng đợi vẫn tiêu thụ (không kẹt run). Bảo vệ cả job 'active' tạo thẳng qua API.
+    if (config.marketingDryRun) {
+      await finalizeItem(itemId, run, 'skipped', uid, 'dry_run');
+      emitProgress(io, run);
+      logger.info(`[broadcast-cron] [dry-run] run=${run.id} bỏ qua gửi thật → ${phone ?? uid}`);
+      return;
+    }
     if (content.imageUrl) {
       const media = await downloadMediaToTemp({ url: content.imageUrl }, 'image/jpeg');
       try {

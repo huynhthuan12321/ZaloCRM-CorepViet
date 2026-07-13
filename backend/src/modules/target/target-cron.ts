@@ -26,6 +26,7 @@
 import cron from 'node-cron';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
+import { config } from '../../config/index.js';
 import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
@@ -166,10 +167,16 @@ async function processWelcome(job: WelcomeJobRow, now: Date): Promise<void> {
     if (content.imageUrl) {
       const media = await downloadMediaToTemp({ url: content.imageUrl }, 'image/jpeg');
       try {
-        await zaloOps.sendImage(job.zaloAccountId, item.zaloUid, 0, [media.path], null, text);
+        if (config.marketingDryRun) {
+          logger.info(`[target-cron] [dry-run] welcome job=${job.id} bỏ qua gửi ảnh thật → uid=${item.zaloUid}`);
+        } else {
+          await zaloOps.sendImage(job.zaloAccountId, item.zaloUid, 0, [media.path], null, text);
+        }
       } finally {
         await media.cleanup().catch(() => {});
       }
+    } else if (config.marketingDryRun) {
+      logger.info(`[target-cron] [dry-run] welcome job=${job.id} bỏ qua gửi thật → uid=${item.zaloUid}`);
     } else {
       await zaloOps.sendMessage(job.zaloAccountId, item.zaloUid, 0, { msg: text });
     }
@@ -274,6 +281,13 @@ async function processCustomerListTarget(job: JobRow): Promise<void> {
     // Gửi lời mời kết bạn — tái dùng nguyên vẹn attemptFriendRequest (đã có
     // audit trail FriendshipAttempt + mirror Friend "Đã gửi lời mời").
     const message = renderMessage(job.requestMsg, { name, phone });
+    if (config.marketingDryRun) {
+      // DRY-RUN backend: KHÔNG gọi attemptFriendRequest (nó vừa gửi lời mời THẬT vừa
+      // "đốt" contact thành FriendshipAttempt). Ghi mock 'skipped' để job tiến entry kế.
+      await recordItem(job.id, job.orgId, entry.id, phone, name, null, 'skipped', 'dry_run');
+      logger.info(`[target-cron] [dry-run] job=${job.id} bỏ qua kết bạn thật → ${phone}`);
+      return;
+    }
     const outcome = await attemptFriendRequest({
       orgId: job.orgId, zaloAccountId: job.zaloAccountId, contactId, phone, message,
     });
@@ -341,6 +355,12 @@ async function processGroupScanTarget(job: JobRow): Promise<void> {
     }
 
     const message = renderMessage(job.requestMsg, { name, phone: null });
+    if (config.marketingDryRun) {
+      // DRY-RUN backend: bỏ qua gửi lời mời thật (group_scan) — ghi mock 'skipped'.
+      await recordItem(job.id, job.orgId, member.id, null, name, null, 'skipped', 'dry_run');
+      logger.info(`[target-cron] [dry-run] job=${job.id} bỏ qua kết bạn thật → uid=${member.memberUid}`);
+      return;
+    }
     const outcome = await attemptFriendRequestByUid({
       orgId: job.orgId, zaloAccountId: job.zaloAccountId, contactId, zaloUid: member.memberUid, message,
     });

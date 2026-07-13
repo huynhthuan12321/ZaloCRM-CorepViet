@@ -47,6 +47,9 @@ const allNavItems = [
   { to: '/marketing/broadcasts', label: 'Broadcast tự động', icon: 'mdi-bullhorn-variant-outline', enabled: marketingFeatureGate.broadcasts },
   { to: '/marketing/content-blocks', label: 'Khối nội dung', icon: 'mdi-view-grid-plus-outline', enabled: marketingFeatureGate.contentBlocks },
   { to: '/marketing/message-templates', label: 'Mẫu tin nhắn', icon: 'mdi-message-flash-outline', enabled: marketingFeatureGate.messageTemplates },
+  // Phiên chăm sóc + Bám đuổi thủ công: trang standalone CHƯA dựng (không có route/view).
+  // Dữ liệu care-session hiện truy cập theo từng KH trong Chat/Follow-up. Sẽ thêm ở Nhóm B
+  // (cần endpoint list tổng ở backend trước). KHÔNG thêm nav vào đây để tránh link chết.
   { to: '/marketing/sequences', label: 'Luồng kịch bản', icon: 'mdi-target-variant', enabled: marketingFeatureGate.sequences },
 ];
 

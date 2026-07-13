@@ -220,7 +220,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/marketing/CommunityMarketingShell.vue'),
         meta: { requiresAuth: true },
         children: [
-          { path: '', redirect: '/marketing/group-scan' },
+          { path: '', redirect: getMarketingFallbackPath() },
           // E1 — Quét nhóm & thành viên (group scan).
           { path: 'group-scan', name: 'CE.GroupScan', component: () => import('@/views/GroupScanView.vue'), meta: { requiresAuth: true } },
           // Tệp khách hàng (Customer Lists) — open-core, dùng được ở Community.

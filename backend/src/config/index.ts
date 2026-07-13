@@ -116,6 +116,18 @@ export const config = {
   isProduction: process.env.NODE_ENV === 'production',
 
   /**
+   * MARKETING_DRY_RUN 2026-07-13 — kill-switch AN TOÀN cấp BACKEND cho toàn bộ
+   * automation gửi Zalo (Broadcast / Mục tiêu kết bạn / Phiên chăm sóc / tin chào).
+   * Trước đây dry-run CHỈ có ở frontend (FE tạo job status=paused) → KHÔNG bảo vệ
+   * job 'active' tạo thẳng qua API, nút Resume, hay job cũ còn sót trên VPS. Cờ này
+   * chặn ở ĐÚNG call-site gọi zaloOps.send / attemptFriendRequest: bật → worker vẫn
+   * tick, vẫn tiến trạng thái/hàng đợi (để không kẹt), nhưng KHÔNG gọi Zalo thật,
+   * chỉ log '[dry-run]' + ghi trạng thái mock. Mặc định FALSE (giữ nguyên hành vi cũ);
+   * production đặt MARKETING_DRY_RUN=true trong .env cho tới khi cho phép gửi thật.
+   */
+  marketingDryRun: (envValue('MARKETING_DRY_RUN') || 'false').toLowerCase() === 'true',
+
+  /**
    * Phase 1a tenant-guard 2026-06-07 — chế độ cô lập tenant ở tầng Prisma:
    *   off     (mặc định) — không kiểm tra (hành vi cũ, zero risk khi deploy)
    *   warn    — log cảnh báo khi org-scoped query chạy ngoài tenant context

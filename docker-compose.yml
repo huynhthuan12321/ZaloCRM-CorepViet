@@ -25,6 +25,10 @@ services:
       # Phase 7 overnight test: STUB mode prevents Zalo SDK calls.
       # Set to 'false' or remove for REAL mode.
       - AUTOMATION_STUB_MODE=${AUTOMATION_STUB_MODE:-false}
+      # Marketing DRY-RUN (kill-switch backend, 2026-07-13): true → worker Broadcast/
+      # Mục tiêu/Phiên chăm sóc KHÔNG gọi Zalo thật (chỉ log + ghi mock). Runtime env
+      # (khác VITE_* build-time). Mặc định false; production đặt =true trong .env.
+      - MARKETING_DRY_RUN=${MARKETING_DRY_RUN:-false}
       # Friend Invite Queue test mode: 60s tick delay instead of 20-40min.
       - FRIEND_INVITE_TEST_MODE=${FRIEND_INVITE_TEST_MODE:-true}
       # ── Luồng Mục Tiêu M1 (2026-06-01) ── BullMQ Redis URL

@@ -1,7 +1,6 @@
 export type MarketingFeatureKey =
   | 'groupScan'
   | 'lists'
-  | 'listDetail'
   | 'messageTemplates'
   | 'targets'
   | 'careSessions'
@@ -10,34 +9,23 @@ export type MarketingFeatureKey =
   | 'contentBlocks'
   | 'broadcasts';
 
-function envFlag(name: string, fallback = false): boolean {
-  const env = import.meta.env as Record<string, string | boolean | undefined>;
-  const raw = String(env[name] ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on', 'enabled'].includes(raw);
-}
+export type MarketingFeatureGate = Record<MarketingFeatureKey, boolean>;
 
-export const marketingEnterpriseEnabled = envFlag('VITE_MARKETING_ENTERPRISE_ENABLED');
-export const marketingBroadcastEnabled = marketingEnterpriseEnabled || envFlag('VITE_BROADCAST_ENABLED');
-export const marketingSequenceEnabled = marketingEnterpriseEnabled || envFlag('VITE_SEQUENCE_ENABLED');
-export const marketingDryRunEnabled = envFlag('VITE_MARKETING_DRY_RUN', true);
+export const MARKETING_FALLBACK_PATH = '/marketing/targets';
 
-export const MARKETING_FALLBACK_PATH = '/marketing/lists';
+export const MARKETING_FEATURE_KEYS: MarketingFeatureKey[] = [
+  'groupScan',
+  'lists',
+  'messageTemplates',
+  'targets',
+  'careSessions',
+  'manualFollowup',
+  'sequences',
+  'contentBlocks',
+  'broadcasts',
+];
 
-export const marketingFeatureGate: Record<MarketingFeatureKey, boolean> = {
-  groupScan: true,
-  lists: true,
-  listDetail: true,
-  messageTemplates: true,
-  targets: marketingEnterpriseEnabled,
-  careSessions: marketingEnterpriseEnabled,
-  manualFollowup: marketingEnterpriseEnabled,
-  sequences: marketingSequenceEnabled,
-  contentBlocks: marketingSequenceEnabled,
-  broadcasts: marketingBroadcastEnabled,
-};
-
-const PATH_FEATURES: Array<[RegExp, MarketingFeatureKey]> = [
+export const MARKETING_PATH_FEATURES: Array<[RegExp, MarketingFeatureKey]> = [
   [/^\/marketing\/group-scan(?:\/|$)/, 'groupScan'],
   [/^\/marketing\/lists(?:\/|$)/, 'lists'],
   [/^\/marketing\/message-templates(?:\/|$)/, 'messageTemplates'],
@@ -53,9 +41,49 @@ const PATH_FEATURES: Array<[RegExp, MarketingFeatureKey]> = [
   [/^\/marketing\/broadcasts(?:\/|$)/, 'broadcasts'],
 ];
 
+const parseBoolean = (value: unknown, fallback: boolean): boolean => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return fallback;
+};
+
+const parseDisabledFeatures = (): Set<MarketingFeatureKey> => {
+  const raw = String(import.meta.env.VITE_MARKETING_DISABLED_FEATURES || '');
+  const disabled = new Set<MarketingFeatureKey>();
+  raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      if ((MARKETING_FEATURE_KEYS as string[]).includes(item)) disabled.add(item as MarketingFeatureKey);
+    });
+  return disabled;
+};
+
+const disabledFeatures = parseDisabledFeatures();
+
+// Mô hình OPT-OUT: mọi module Marketing BẬT mặc định (hướng "EE đầy đủ"). Tắt module
+// cụ thể bằng VITE_MARKETING_DISABLED_FEATURES="careSessions,manualFollowup" (build-time).
+export const marketingFeatureGate = MARKETING_FEATURE_KEYS.reduce((acc, key) => {
+  acc[key] = !disabledFeatures.has(key);
+  return acc;
+}, {} as MarketingFeatureGate);
+
+// Dry-run mặc định BẬT (an toàn — không gửi Zalo thật). Ưu tiên đọc VITE_MARKETING_DRY_RUN
+// (biến Dockerfile/compose thực sự set); giữ 2 tên cũ làm alias để không vỡ cấu hình cũ.
+export const marketingDryRunEnabled = parseBoolean(
+  import.meta.env.VITE_MARKETING_DRY_RUN
+    ?? import.meta.env.VITE_MARKETING_DRY_RUN_ENABLED
+    ?? import.meta.env.VITE_MARKETING_BROADCAST_DRY_RUN,
+  true,
+);
+
 export function getMarketingFeatureForPath(path: string): MarketingFeatureKey | null {
-  const normalized = path.split('?')[0] || '';
-  return PATH_FEATURES.find(([pattern]) => pattern.test(normalized))?.[1] ?? null;
+  const cleanPath = path.split('?')[0] || path;
+  const match = MARKETING_PATH_FEATURES.find(([pattern]) => pattern.test(cleanPath));
+  return match?.[1] ?? null;
 }
 
 export function isMarketingPathEnabled(path: string): boolean {
@@ -64,5 +92,17 @@ export function isMarketingPathEnabled(path: string): boolean {
 }
 
 export function getMarketingFallbackPath(): string {
-  return MARKETING_FALLBACK_PATH;
+  // Chỉ liệt kê các đường ĐÃ có route thật (tránh redirect vào 404). Phiên chăm sóc +
+  // Bám đuổi thủ công chưa có trang standalone (Nhóm B) nên KHÔNG đưa vào fallback.
+  const priority: Array<[MarketingFeatureKey, string]> = [
+    ['targets', '/marketing/targets'],
+    ['sequences', '/marketing/sequences'],
+    ['contentBlocks', '/marketing/content-blocks'],
+    ['broadcasts', '/marketing/broadcasts'],
+    ['lists', '/marketing/lists'],
+    ['messageTemplates', '/marketing/message-templates'],
+    ['groupScan', '/marketing/group-scan'],
+  ];
+
+  return priority.find(([feature]) => marketingFeatureGate[feature])?.[1] ?? '/marketing/group-scan';
 }

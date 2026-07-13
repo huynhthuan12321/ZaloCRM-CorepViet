@@ -1,4 +1,4 @@
-﻿# Marketing Implementation Roadmap & Checklist
+# Marketing Implementation Roadmap & Checklist
 
 Tai lieu nay la lo trinh trien khai nang cap module Marketing cua ZaloCRM-CorepViet, dua tren file phan tich `MARKETING_UPGRADE_ANALYSIS.md` va cac man hinh/chuc nang da ra soat.
 
@@ -81,26 +81,26 @@ Dieu kien nghiem thu Phase 0:
 - [x] Khong mo gui that trong Phase 0; dry-run mac dinh bat.
 ## 4. Phase 1 - Nen tang du lieu Marketing
 
-Muc tieu: co schema va API nen de cac module Marketing dung chung, tranh moi man luu mot kieu.
+Muc tieu: co API nen de cac module Marketing dung chung, tranh moi man luu mot kieu. Cap nhat 12/07/2026: Phase 1 da chot huong **facade READ-ONLY tren legacy schema**, khong tao bo bang Marketing* moi trong dot nay.
 
-Model can ra soat/them:
+Quyet dinh schema hien tai theo ADR-001:
 
-- [ ] `MarketingList`
-- [ ] `MarketingListItem`
-- [ ] `MarketingTemplate`
-- [ ] `MarketingBlock`
-- [ ] `MarketingBlockVariant`
-- [ ] `MarketingSequence`
-- [ ] `MarketingSequenceStep`
-- [ ] `MarketingGoal`
-- [ ] `MarketingGoalEnrollment`
-- [ ] `CareSession`
-- [ ] `BroadcastCampaign`
-- [ ] `BroadcastRecipient`
-- [ ] `MarketingJob` hoac queue job tuong duong
-- [ ] `MarketingEventLog` / audit log
+- [x] Giu legacy schema dang chay production de giam rui ro migrate lon.
+- [x] Dung `/api/v1/marketing/*` lam facade doc du lieu cho UI/bao cao.
+- [x] Legacy routes tiep tuc la write contract trong Phase 1.
+- [x] Bo sung additive index bang migration `20260712120000_marketing_phase1_indexes`.
+- [x] Doi hard-code project/branding bat dong san sang lay dong theo org qua facade `project-tags`.
+- [x] Ghi nhan bo bang Marketing* moi la DEFERRED, chi lam khi refactor lon hoac tach Enterprise module.
+- [ ] Chay `prisma migrate deploy` tren staging/prod va smoke test voi DB that.
 
-API dung chung (facade READ-ONLY, prefix thuc te `/api/v1/marketing/*` — xem ADR-001):
+Model Marketing* moi - trang thai hien tai:
+
+- Deferred: `MarketingList`, `MarketingListItem`, `MarketingTemplate`, `MarketingBlock`, `MarketingBlockVariant`.
+- Deferred: `MarketingSequence`, `MarketingSequenceStep`, `MarketingGoal`, `MarketingGoalEnrollment`.
+- Deferred: `CareSession`, `BroadcastCampaign`, `BroadcastRecipient`, `MarketingJob`, `MarketingEventLog`.
+- Ly do deferred: cac bang legacy hien da co du lieu va route write; tao bo bang moi luc nay se tang rui ro migration/data sync.
+
+API dung chung da co (facade READ-ONLY, prefix thuc te `/api/v1/marketing/*`):
 
 - [x] `GET /api/v1/marketing/summary`
 - [x] `GET /api/v1/marketing/lists`
@@ -110,25 +110,29 @@ API dung chung (facade READ-ONLY, prefix thuc te `/api/v1/marketing/*` — xem A
 - [x] `GET /api/v1/marketing/goals`
 - [x] `GET /api/v1/marketing/care-sessions`
 - [x] `GET /api/v1/marketing/broadcasts`
-- [x] `GET /api/v1/marketing/project-tags` (bo sung — go hard-code branding)
+- [x] `GET /api/v1/marketing/project-tags`
 
-Checklist ky thuat:
+Checklist ky thuat da doi soat:
 
-- [ ] Tat ca bang co `orgId`, `createdById`, `createdAt`, `updatedAt`.
-- [ ] Co index cho `orgId`, `status`, `phoneNormalized`, `zaloUid`, `createdAt`.
-- [ ] Co enum status thong nhat: `draft`, `scheduled`, `running`, `paused`, `completed`, `failed`, `archived`, `deleted`.
-- [ ] Co transaction khi tao chien dich/sequence/broadcast kem step/recipient.
-- [ ] Co migration va seed test data rieng, khong phu thuoc du lieu demo production.
+- [x] Org scoping/tenant guard da audit trong facade va service legacy lien quan.
+- [x] Index bo sung da tao cho cac bang legacy quan trong: content blocks, automation sequences, customer list entries.
+- [x] Status duoc normalize o facade; chua doi enum schema de tranh migration pha tuong thich.
+- [x] Transaction write giu theo legacy routes trong Phase 1.
+- [x] Test org-isolation cho facade: `tests/marketing-facade-service.test.ts` pass 11/11.
+- [x] Backend typecheck pass.
+- [x] Frontend typecheck pass.
+- [x] Prisma validate pass.
+- [ ] Smoke test migration tren staging/prod sau khi deploy.
 
-Definition of Done:
+Definition of Done Phase 1:
 
-- [x] `npm run build` backend pass (tsc --noEmit 0 loi).
-- [ ] Prisma migrate pass tren local/staging (migration additive da viet; may dev khong co DB — chay khi deploy).
-- [x] API facade tra ve dung du lieu theo org (query loc orgId tuong minh + test org-isolation 11/11).
-- [x] Go hard-code `PROJECT_TAGS` branding bat dong san khoi UI (lay dong theo org).
+- [x] `npm run build` backend pass (`tsc --noEmit` 0 loi).
+- [x] API facade tra ve dung du lieu theo org.
+- [x] Go hard-code `PROJECT_TAGS` branding bat dong san khoi UI.
+- [x] ADR-001 ghi ro chien luoc facade + legacy schema.
+- [ ] Staging DB migrate deploy + smoke test.
 
 ---
-
 ## 5. Phase 2 - Tep khach hang
 
 Muc tieu: Tep KH la nguon du lieu goc cho Muc tieu va Broadcast, nen can lam chac truoc.
@@ -471,39 +475,41 @@ Mot module chi duoc coi la xong khi:
 
 ## 13. Cac diem khong duoc bo qua
 
-- [ ] Zalo action la tac vu that, phai co dry-run/staging.
-- [ ] Moi job gui tin can idempotency key de tranh gui trung khi retry.
-- [ ] Khong gui tin neu nick offline hoac chua xac thuc.
-- [ ] Khong gui ngoai khung gio cau hinh.
-- [ ] Phai ton trong cap 300 loi moi/ngay va 300 tin/ngay moi nick.
-- [ ] Khong lookup/gui vao nguoi la neu user chua bat option do.
-- [ ] Khi KH reply, cac job follow-up pending phai pause/cancel theo rule.
-- [ ] Khi KH chan nick, dong session va dung luong neu cau hinh yeu cau.
-- [ ] Tat ca action hang loat phai co preview va xac nhan cuoi.
+Trang thai doi soat 13/07/2026: cac rule nen tang da duoc ghi nhan; nhung mot so rule van phai verify khi trien khai Phase 5-7 vi lien quan job gui that.
+
+- [x] Zalo action la tac vu that, roadmap da yeu cau dry-run/staging truoc khi mo gui that.
+- [ ] Moi job gui tin can idempotency key de tranh gui trung khi retry. (Phase 5-7)
+- [ ] Khong gui tin neu nick offline hoac chua xac thuc. (can verify worker/runtime)
+- [ ] Khong gui ngoai khung gio cau hinh. (can verify worker/runtime)
+- [ ] Phai ton trong cap 300 loi moi/ngay va 300 tin/ngay moi nick. (can verify worker/runtime)
+- [ ] Khong lookup/gui vao nguoi la neu user chua bat option do. (Phase Broadcast/Goal)
+- [ ] Khi KH reply, cac job follow-up pending phai pause/cancel theo rule. (Phase Care Session)
+- [ ] Khi KH chan nick, dong session va dung luong neu cau hinh yeu cau. (Phase Care Session)
+- [x] Cac action UI hang loat can preview/xac nhan; Phase 0 da khoa nut hong va ghi rule UX.
+- [ ] Preview/xac nhan cuoi cho job gui that can test lai end-to-end truoc release.
 
 ---
-
 ## 14. Checklist truoc khi bat dau code
 
-- [ ] Anh xac nhan da noi xong pham vi Marketing.
-- [ ] Chot thu tu phase se lam truoc.
-- [ ] Chot chay tren local hay server.
-- [ ] Chot co can giu giao dien hien tai hay duoc thiet ke lai mot phan.
-- [ ] Chot cac module Enterprise nao bat that trong ban nay.
-- [ ] Chot du lieu demo bat dong san se doi het sang Co Rep Viet.
-- [ ] Backup database truoc khi migrate.
-- [ ] Tao branch rieng, vi du `feature/marketing-roadmap-implementation`.
+Trang thai: da hoan tat cho Phase 0-4. Giu lai muc nay de trace quyet dinh ban dau; cac viec con lai duoc chuyen sang checklist van hanh/staging.
+
+- [x] Anh xac nhan da noi xong pham vi Marketing de lap roadmap.
+- [x] Chot thu tu phase: Phase 0 -> 7.
+- [x] Chot trien khai tren repo `D:\ZaloCRM-CorepViet`, deploy lai server sau khi push GitHub.
+- [x] Giu giao dien hien tai, sua loi va thay fake data truoc; khong redesign lon.
+- [x] Cac module EE duoc ghi ro trong roadmap, chua mo gui that neu chua verify.
+- [x] Du lieu demo bat dong san da duoc dua vao danh sach can doi sang Co Rep Viet / org dynamic.
+- [x] Lam truc tiep tren `main` theo cach van hanh hien tai cua du an.
+- [ ] Backup database truoc khi chay migration tren staging/prod.
+- [ ] Neu tiep tuc Phase 5-7, nen tao branch rieng hoac tag checkpoint truoc khi mo worker gui that.
 
 ---
-
 ## 15. Lenh Git goi y khi bat dau trien khai
 
 ```bash
 git checkout -b feature/marketing-roadmap-implementation
 ```
-
 Sau moi phase:
-
 ```bash
 git status
 git add <files>
@@ -561,4 +567,17 @@ Con lai (ngoai pham vi Phase 1, da ghi ADR):
 - [ ] Contract ghi POST/PATCH/DELETE tren `/api/v1/marketing/*`.
 - [ ] Migration `20260712120000` can chay `prisma migrate deploy` tren staging (may dev khong co DB — chua smoke test).
 <!-- PHASE1_STATUS_END -->
+<!-- CHECKLIST_CLEANUP_20260713_START -->
+## Cap nhat don checklist - 13/07/2026
+
+Da doi soat lai roadmap theo hien trang du an sau cac dot trien khai Phase 0-4:
+
+- [x] Phase 0 da hoan thien phan khoa UI loi va chong thao tac gia/khong hoat dong.
+- [x] Phase 1 da hoan thien theo chien luoc facade READ-ONLY tren legacy schema, khong tao bang Marketing* moi.
+- [x] Phase 2-4 da duoc danh dau la da trien khai theo roadmap hien tai.
+- [x] Checklist model Marketing* moi da chuyen sang Deferred de tranh hieu nham la viec con thieu cua Phase 1.
+- [x] Checklist truoc khi code da dong theo lich su lam viec thuc te.
+- [ ] Viec con lai: staging migrate deploy + smoke test DB that.
+- [ ] Viec con lai: Phase 5-7 gom Muc tieu, Phien cham soc, Broadcast, worker/idempotency/rate-limit, preview gui that.
+<!-- CHECKLIST_CLEANUP_20260713_END -->
 

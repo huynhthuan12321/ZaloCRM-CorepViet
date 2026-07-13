@@ -26,6 +26,7 @@
 import cron from 'node-cron';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
+import { config } from '../../config/index.js';
 import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
@@ -184,6 +185,12 @@ async function processSession(session: SessionRow, now: Date): Promise<boolean> 
   });
 
   try {
+    if (config.marketingDryRun) {
+      // DRY-RUN backend: KHÔNG gọi Zalo thật; vẫn tiến bước để phiên không kẹt hàng đợi.
+      await advanceStep(session, steps, idx, now, `[dry-run] ${text}`, uid);
+      logger.info(`[care-session-cron] [dry-run] session=${session.id} step=${idx + 1}/${steps.length} bỏ qua gửi thật → uid=${uid}`);
+      return true;
+    }
     await zaloOps.sendMessage(session.nickId, uid, 0, { msg: text });
     await advanceStep(session, steps, idx, now, text, uid);
     logger.info(`[care-session-cron] session=${session.id} step=${idx + 1}/${steps.length} sent → uid=${uid}`);
