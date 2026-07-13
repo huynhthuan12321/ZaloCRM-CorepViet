@@ -236,43 +236,11 @@ const routes: RouteRecordRaw[] = [
           { path: 'sequences', name: 'Marketing.Sequences', component: () => import('@/views/marketing/SequencesView.vue'), meta: { requiresAuth: true } },
           // Mục tiêu (auto kết bạn) — Community extension 2026-07-07.
           { path: 'targets', name: 'CE.Targets', component: () => import('@/views/marketing/TargetsView.vue'), meta: { requiresAuth: true } },
-          // Phiên chăm sóc + Bám đuổi thủ công (2026-07-13): backend đã có (care-session-cron/
-          // listener) nhưng UI standalone CHƯA dựng (thiếu endpoint LIST tổng — xem GAP B5).
-          // Đặt PLACEHOLDER an toàn: menu không route chết/404, KHÔNG gọi API gửi thật.
-          {
-            path: 'care-sessions', name: 'CE.CareSessions',
-            component: () => import('@/views/marketing/MarketingPlaceholderView.vue'),
-            meta: {
-              requiresAuth: true,
-              placeholderTitle: 'Phiên chăm sóc',
-              placeholderIcon: 'mdi-account-heart-outline',
-              placeholderDesc: 'Theo dõi các phiên bám đuổi tự động đang chạy cho từng khách: khách vừa trả lời, đang tạm dừng, đang chăm, đã đóng. Máy chạy nền (care-session worker) đã hoạt động — trang tổng hợp đang được hoàn thiện.',
-              placeholderBullets: [
-                '4 thẻ trạng thái: vừa trả lời / tạm dừng / đang chăm / đã đóng',
-                'Danh sách phiên + panel chi tiết dòng thời gian',
-                'Tab Cài đặt lắng nghe (sự kiện + 3 đích báo)',
-              ],
-              placeholderDataHint: 'phiên chăm sóc',
-              placeholderBackTo: '/marketing/sequences', placeholderBackLabel: 'Về Luồng kịch bản',
-            },
-          },
-          {
-            path: 'manual-followup', name: 'CE.ManualFollowup',
-            component: () => import('@/views/marketing/MarketingPlaceholderView.vue'),
-            meta: {
-              requiresAuth: true,
-              placeholderTitle: 'Bám đuổi thủ công',
-              placeholderIcon: 'mdi-account-clock-outline',
-              placeholderDesc: 'Tổng hợp các luồng bám đuổi được gắn thủ công cho khách trong tab Follow-up. Việc gắn luồng đã dùng được ngay trong Chat/Follow-up — trang tổng hợp danh sách đang được hoàn thiện.',
-              placeholderBullets: [
-                'Thẻ tổng / đang chạy / hoàn thành / đã dừng + tỉ lệ phản hồi',
-                'Lọc theo trạng thái, tìm theo tên/SĐT',
-                'Empty state khi chưa có phiên nào',
-              ],
-              placeholderDataHint: 'bám đuổi thủ công',
-              placeholderBackTo: '/marketing/sequences', placeholderBackLabel: 'Về Luồng kịch bản',
-            },
-          },
+          // Phiên chăm sóc + Bám đuổi thủ công (Phase 4.1, 2026-07-13): trang dữ liệu THẬT
+          // từ GET /automation/care-sessions (CareSession do chat manual-enroll tạo). CHỈ READ
+          // + pause/stop (đổi trạng thái DB) — KHÔNG gửi Zalo. Dry-run an toàn trên production.
+          { path: 'care-sessions', name: 'CE.CareSessions', component: () => import('@/views/marketing/CareSessionsView.vue'), meta: { requiresAuth: true } },
+          { path: 'manual-followup', name: 'CE.ManualFollowup', component: () => import('@/views/marketing/ManualFollowupView.vue'), meta: { requiresAuth: true } },
           // Alias tương thích link/bookmark cũ (spec dùng /templates, /blocks) → route thật.
           { path: 'templates', redirect: '/marketing/message-templates' },
           { path: 'blocks', redirect: '/marketing/content-blocks' },

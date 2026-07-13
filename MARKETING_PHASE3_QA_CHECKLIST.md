@@ -82,3 +82,24 @@
 
 ## Nếu có lỗi
 Ghi lại: bước #, thao tác, message lỗi (UI toast + `docker compose logs app` dòng liên quan), rồi báo để fix trực tiếp. Không tự tắt dry-run để "thử cho chạy".
+
+---
+
+## G. Phase 4.1 — Chat → Gắn luồng → Bám đuổi thủ công → Phiên chăm sóc
+
+> An toàn: production giữ `MARKETING_DRY_RUN=true` + `VITE_MARKETING_DRY_RUN=true`.
+> Trang mới CHỈ đọc + pause/stop (đổi trạng thái DB). KHÔNG gửi Zalo, KHÔNG resume/run-now.
+
+| # | Việc | Kỳ vọng | KQ | Ghi chú |
+|---|---|---|---|---|
+| G1 | Click menu "Phiên chăm sóc" | Ra trang THẬT (không còn placeholder "Đang triển khai"): hàng thẻ tổng + danh sách. Badge "Dry-run · không gửi thật" hiện ở tiêu đề. | ☐ | |
+| G2 | Click menu "Bám đuổi thủ công" | Ra trang THẬT tương tự, chỉ hiện phiên gắn tay (sequence_manual). | ☐ | |
+| G3 | Chat → mở 1 hội thoại → tab Follow-up → "+ Gắn thêm luồng bám đuổi" → chọn luồng + nhập lý do → Xác nhận | Tạo phiên OK (toast). KHÔNG có tin Zalo gửi ra. | ☐ | |
+| G4 | Quay lại "Bám đuổi thủ công" → Làm mới | Phiên vừa gắn ở G3 xuất hiện, trạng thái "Đang chạy · dry-run", tiến độ "bước x/N". | ☐ | |
+| G5 | Bấm thẻ tổng "Đang chạy" / "Tạm dừng" / "Hoàn thành" / "Đã dừng" | Danh sách lọc đúng theo trạng thái. | ☐ | |
+| G6 | Gõ tên/SĐT vào ô tìm | Lọc đúng (debounce ~300ms). | ☐ | |
+| G7 | Bấm "Tạm dừng" 1 phiên đang chạy | Phiên chuyển "Tạm dừng", có mốc "chạy lại sau…". Chỉ đổi trạng thái, KHÔNG gửi. | ☐ | |
+| G8 | Bấm "Dừng" 1 phiên (xác nhận) | Phiên chuyển "Đã dừng". KHÔNG gửi thêm bước. | ☐ | |
+| G9 | Chờ tick cron (hoặc xem log) | Log backend chỉ có `[dry-run]` khi tới bước gửi; KHÔNG có tin Zalo thật. | ☐ | |
+| G10 | RBAC: đăng nhập bằng sale thường | Chỉ thấy phiên của nick mình phụ trách (không thấy phiên sale khác). | ☐ | |
+| G11 | Trạng thái loading/empty/error | Tải chậm hiện "Đang tải…"; org chưa có phiên hiện empty; ngắt mạng → hiện lỗi + nút "Thử lại". | ☐ | |

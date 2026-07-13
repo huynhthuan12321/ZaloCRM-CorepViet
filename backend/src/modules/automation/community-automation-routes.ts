@@ -14,6 +14,14 @@ import { assertContactVisible } from '../contacts/contact-scope.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizeSequenceSteps, type SequenceDraftStep } from './sequence-snapshot.js';
 import { buildFollowupHistory } from './care-session-timeline.js';
+import { config } from '../../config/index.js';
+import { getOwnerScope, applyOwnerScope } from '../rbac/owner-scope.js';
+import {
+  careSessionToListItem,
+  summarizeSessions,
+  stateFilterToWhere,
+  type CareSessionRow,
+} from './care-session-list-helpers.js';
 
 type UserCtx = { id: string; orgId: string; role: string };
 
@@ -376,6 +384,109 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
       select: { eventType: true, payload: true, createdAt: true },
     });
     return buildFollowupHistory(events);
+  });
+
+  // ── Phase 4.1 (2026-07-13): LIST tổng phiên chăm sóc / bám đuổi thủ công ──
+  // Nguồn dữ liệu cho 2 trang standalone (CareSessionsView + ManualFollowupView).
+  // CHỈ READ — không gửi Zalo, không đụng dry-run. RBAC theo owner-scope (sale chỉ
+  // xem phiên của nick mình phụ trách; leader/admin xem rộng hơn).
+  app.get('/api/v1/automation/care-sessions', async (
+    request: FastifyRequest<{ Querystring: { state?: string; q?: string; sourceType?: string; limit?: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    const now = new Date();
+    const { state, q, sourceType } = request.query;
+    const limit = Math.min(500, Math.max(1, Number(request.query.limit ?? 200) || 200));
+
+    // RBAC: giới hạn theo ownerUserId (sale phụ trách nick). Admin/owner/leader xem rộng.
+    const scope = await getOwnerScope({ userId: user.id, orgId: user.orgId, legacyRole: user.role });
+
+    // Chỉ phiên bám đuổi (gắn luồng) — loại 'manual_listen' (chỉ nghe, không phải chăm sóc chuỗi).
+    const allowedSources = sourceType && ['sequence_manual', 'target_followup'].includes(sourceType)
+      ? [sourceType]
+      : ['sequence_manual', 'target_followup'];
+
+    const stateWhere = stateFilterToWhere(state, now);
+    const where = {
+      orgId: user.orgId,
+      sourceType: { in: allowedSources },
+      ...applyOwnerScope(scope, 'ownerUserId'),
+      ...(stateWhere ?? {}),
+    };
+
+    const rows = await prisma.careSession.findMany({
+      where,
+      orderBy: [{ openedAt: 'desc' }],
+      take: limit,
+      select: {
+        id: true, contactId: true, nickId: true, sourceType: true, sourceSequenceId: true,
+        state: true, closedReason: true, pausedUntil: true, lastReplyAt: true,
+        currentStepIdx: true, stepsSnapshot: true, nextRunAt: true, lastSentAt: true,
+        lastError: true, openedAt: true, closedAt: true,
+      },
+    });
+
+    // Join tay (không FK relation trực tiếp trong query): contact, sequence, nick + đếm bước đã gửi.
+    const contactIds = [...new Set(rows.map((r) => r.contactId))];
+    const seqIds = [...new Set(rows.map((r) => r.sourceSequenceId).filter(Boolean) as string[])];
+    const nickIds = [...new Set(rows.map((r) => r.nickId))];
+    const sessionIds = rows.map((r) => r.id);
+
+    const [contacts, sequences, nicks, sentGroups] = await Promise.all([
+      contactIds.length
+        ? prisma.contact.findMany({
+            where: { id: { in: contactIds }, orgId: user.orgId },
+            select: { id: true, crmName: true, fullName: true, zaloUsername: true, phone: true },
+          })
+        : Promise.resolve([]),
+      seqIds.length
+        ? prisma.automationSequence.findMany({
+            where: { id: { in: seqIds }, orgId: user.orgId }, select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      nickIds.length
+        ? prisma.zaloAccount.findMany({
+            where: { id: { in: nickIds }, orgId: user.orgId }, select: { id: true, displayName: true, phone: true },
+          })
+        : Promise.resolve([]),
+      // Đếm step_sent theo phiên trong 1 query (không N+1).
+      sessionIds.length
+        ? prisma.careSessionEvent.groupBy({
+            by: ['sessionId'],
+            where: { sessionId: { in: sessionIds }, eventType: 'step_sent' },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ sessionId: string; _count: { _all: number } }>),
+    ]);
+
+    const contactMap = new Map(contacts.map((c) => [c.id, c]));
+    const seqMap = new Map(sequences.map((s) => [s.id, s.name]));
+    const nickMap = new Map(nicks.map((n) => [n.id, n]));
+    const sentMap = new Map(sentGroups.map((g) => [g.sessionId, g._count._all]));
+
+    let items = rows.map((row) => {
+      const c = contactMap.get(row.contactId);
+      const nick = nickMap.get(row.nickId);
+      return careSessionToListItem(row as CareSessionRow, {
+        contactName: c?.crmName ?? c?.fullName ?? c?.zaloUsername ?? c?.phone ?? 'Khách hàng',
+        contactPhone: c?.phone ?? null,
+        sequenceName: row.sourceSequenceId ? seqMap.get(row.sourceSequenceId) ?? 'Luồng đã xoá' : 'Bám đuổi thủ công',
+        nickName: nick?.displayName ?? nick?.phone ?? 'Nick',
+        stepsSent: sentMap.get(row.id) ?? 0,
+        dryRun: config.marketingDryRun,
+        now,
+      });
+    });
+
+    // Tìm theo tên KH / SĐT (lọc sau khi map — dữ liệu nhỏ, đã giới hạn limit).
+    if (q?.trim()) {
+      const term = q.trim().toLowerCase();
+      items = items.filter(
+        (it) => it.contactName.toLowerCase().includes(term) || (it.contactPhone ?? '').toLowerCase().includes(term),
+      );
+    }
+
+    return { sessions: items, summary: summarizeSessions(items), dryRun: config.marketingDryRun };
   });
 
   app.get('/api/v1/automation/care-sessions/listen-status', async (

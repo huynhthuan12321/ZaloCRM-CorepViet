@@ -24,8 +24,8 @@
 | Mục tiêu | `/marketing/targets` | **wizard 4 bước**, multi-nick, lời mời ≤200, chuỗi 5 tin toggle+delay, quy tắc an toàn, báo nội bộ 3 đích, hẹn lịch 6–22h, trang chi tiết + log | **modal 1 trang**, **1 nick**, welcome + 1 luồng bám đuổi, chống block cơ bản, chỉ modal log | 🟡 |
 | Khối nội dung | `/marketing/content-blocks` | **biến thể** + **AI tạo biến thể** + **rich-text** + **preview Zalo LIVE** + folder/tag + loại (send_message/request_friend) | **P3 CRUD thật**: biến thể + loại khối + tag + bật/tắt + tìm/lọc; còn thiếu AI/rich-text/preview LIVE/folder-UI | 🟢 |
 | Luồng kịch bản | `/marketing/sequences` | bước = **Khối** ghép, giờ làm việc, luật chống spam, `/:id/stats`, bộ đếm | **P3**: bước ghép được Khối (send_message) + delay/sắp xếp; còn thiếu UI giờ làm việc/luật/stats | 🟢 |
-| Phiên chăm sóc | `/marketing/care-sessions` | trang riêng: 4 thẻ, danh sách phiên, panel chi tiết, tab **Cài đặt lắng nghe** (sự kiện + 3 đích) | **placeholder an toàn** (route + nav OK, không 404); backend worker đã chạy, thiếu endpoint LIST + view thật | 🟡 |
-| Bám đuổi thủ công | `/marketing/manual-followup` | trang riêng: thẻ tổng/đang chạy/xong/dừng, lọc, empty state | **placeholder an toàn** (route + nav OK, không 404); thiếu endpoint LIST + view thật | 🟡 |
+| Phiên chăm sóc | `/marketing/care-sessions` | trang riêng: 4 thẻ, danh sách phiên, panel chi tiết, tab **Cài đặt lắng nghe** (sự kiện + 3 đích) | **P4.1 trang THẬT**: thẻ tổng + list + trạng thái + search/filter + pause/stop; còn thiếu panel timeline chi tiết + tab lắng nghe | 🟢 |
+| Bám đuổi thủ công | `/marketing/manual-followup` | trang riêng: thẻ tổng/đang chạy/xong/dừng, lọc, empty state | **P4.1 trang THẬT**: thẻ tổng + list (sequence_manual) + lọc + empty/loading/error | 🟢 |
 
 **Backend đã có (tái dùng được cho EE):**
 - `automation/care-session-cron.ts`, `care-session-listener.ts`, `care-session-timeline.ts` — máy chạy bám đuổi.
@@ -93,16 +93,15 @@
 - ☐ Luật chống spam: tránh trùng, giãn đều giữa nick, dừng nếu KH rep. *(worker đã thực thi; UI cấu hình chưa có)*
 - ☐ Trang **thống kê** `/marketing/sequences/:id/stats` + bộ đếm Enroll/Hoàn thành/Lỗi/Đang chạy trên thẻ. *(còn thiếu)*
 
-### B5 — Phiên chăm sóc + Bám đuổi thủ công (trang standalone)  (quy mô: Lớn)  ❌→🟡 (placeholder)
+### B5 — Phiên chăm sóc + Bám đuổi thủ công (trang standalone)  (quy mô: Lớn)  ❌→🟢 (Phase 4.1 trang thật)
 - ☑ **A4 (2026-07-13) Navigation hoàn chỉnh + placeholder an toàn.** Không còn route chết/404/menu thiếu:
-  - ☑ `MarketingPlaceholderView.vue` (dùng chung, đọc nội dung từ route meta) — production-safe: **KHÔNG** gọi API gửi thật, nêu rõ "Đang triển khai · An toàn dry-run" + hướng dẫn xem dữ liệu ở Chat/Follow-up.
-  - ☑ Route `/marketing/care-sessions` (`CE.CareSessions`) + `/marketing/manual-followup` (`CE.ManualFollowup`) → trỏ placeholder.
+  - ☑ `MarketingPlaceholderView.vue` (dùng chung, đọc nội dung từ route meta) — production-safe. *(Phase 4.1 đã thay bằng trang thật; component giữ lại cho route placeholder tương lai.)*
   - ☑ Thêm lại 2 nav (Phiên chăm sóc, Bám đuổi thủ công) vào `CommunityMarketingShell.vue` (gate `careSessions`/`manualFollowup`). Menu giờ đủ **9 mục**, đổi label "Broadcast tự động" → **"Gửi tin hàng loạt"**.
   - ☑ Alias tương thích link/bookmark cũ: `/marketing/templates` → `/message-templates`, `/marketing/blocks` → `/content-blocks` (redirect, không 404).
-- ☐ **Backend**: endpoint LIST tổng care-sessions (4 thẻ: vừa trả lời/tạm dừng/đang chăm/đã đóng; lọc; tìm tên/SĐT). *(placeholder chờ endpoint này)*
-- ☐ **Backend**: endpoint LIST manual-followup (thẻ tổng/đang chạy/xong/dừng/tỉ lệ phản hồi).
-- ☐ **View** `CareSessionsView.vue` thật: danh sách phiên + panel chi tiết + tab **Cài đặt lắng nghe** (sự kiện + 3 đích báo: Owner/Quản lý/Nhóm Zalo) — thay placeholder.
-- ☐ **View** `ManualFollowupView.vue` thật + empty state — thay placeholder.
+- ☑ **P4.1 (2026-07-13) Backend LIST endpoint** `GET /api/v1/automation/care-sessions` (`?state=&q=&sourceType=`): org-scoped + RBAC `owner-scope` (sale chỉ xem phiên nick mình); join contact/sequence/nick; đếm `stepsSent` qua `groupBy` (không N+1); trả `{ sessions, summary, dryRun }`. Helper thuần `care-session-list-helpers.ts` (deriveSessionState/careSessionToListItem/summarizeSessions/stateFilterToWhere) — 17 test.
+- ☑ **P4.1 View THẬT** `CareSessionsView.vue` (tất cả phiên) + `ManualFollowupView.vue` (chỉ `sequence_manual`) dùng chung `CareSessionListPanel.vue` + composable `use-care-sessions.ts`: thẻ tổng bấm-lọc, search debounce, badge trạng thái (đang chạy·dry-run / tạm dừng / hoàn thành / đã dừng), tiến độ bước, loading/empty/error+retry, nút Tạm dừng/Dừng (đổi state DB, KHÔNG gửi).
+- ☑ **P4.1 Luồng khép kín**: gắn luồng từ Chat (`AddFlowModal` → `manual-enroll` → `CareSession sequence_manual`) hiện ngay trong 2 trang này. Worker `care-session-cron` chạy dry-run (ghi `[dry-run]`, KHÔNG gửi Zalo) → phiên tiến bước để xem trước an toàn.
+- ☐ **Còn thiếu (Phase 4.2+):** panel chi tiết dòng thời gian từng phiên (timeline đã có API `followup-history`, chưa gắn vào trang standalone); tab **Cài đặt lắng nghe** (sự kiện + 3 đích báo Owner/Quản lý/Nhóm Zalo); realtime (hiện refresh tay); tỉ lệ phản hồi.
 
 ---
 
