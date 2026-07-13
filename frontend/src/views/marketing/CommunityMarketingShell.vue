@@ -44,13 +44,14 @@ const allNavItems = [
   { to: '/marketing/group-scan', label: 'Quét nhóm', icon: 'mdi-account-group-outline', enabled: marketingFeatureGate.groupScan },
   { to: '/marketing/lists', label: 'Tệp khách hàng', icon: 'mdi-format-list-bulleted', enabled: marketingFeatureGate.lists },
   { to: '/marketing/targets', label: 'Mục tiêu', icon: 'mdi-account-multiple-plus-outline', enabled: marketingFeatureGate.targets },
-  { to: '/marketing/broadcasts', label: 'Broadcast tự động', icon: 'mdi-bullhorn-variant-outline', enabled: marketingFeatureGate.broadcasts },
+  // Phiên chăm sóc + Bám đuổi thủ công: backend đã có worker; UI standalone đang triển khai
+  // → route trỏ trang PLACEHOLDER an toàn (không 404, không gọi API gửi thật). Xem GAP B5.
+  { to: '/marketing/care-sessions', label: 'Phiên chăm sóc', icon: 'mdi-account-heart-outline', enabled: marketingFeatureGate.careSessions },
+  { to: '/marketing/sequences', label: 'Luồng kịch bản', icon: 'mdi-target-variant', enabled: marketingFeatureGate.sequences },
+  { to: '/marketing/manual-followup', label: 'Bám đuổi thủ công', icon: 'mdi-account-clock-outline', enabled: marketingFeatureGate.manualFollowup },
+  { to: '/marketing/broadcasts', label: 'Gửi tin hàng loạt', icon: 'mdi-bullhorn-variant-outline', enabled: marketingFeatureGate.broadcasts },
   { to: '/marketing/content-blocks', label: 'Khối nội dung', icon: 'mdi-view-grid-plus-outline', enabled: marketingFeatureGate.contentBlocks },
   { to: '/marketing/message-templates', label: 'Mẫu tin nhắn', icon: 'mdi-message-flash-outline', enabled: marketingFeatureGate.messageTemplates },
-  // Phiên chăm sóc + Bám đuổi thủ công: trang standalone CHƯA dựng (không có route/view).
-  // Dữ liệu care-session hiện truy cập theo từng KH trong Chat/Follow-up. Sẽ thêm ở Nhóm B
-  // (cần endpoint list tổng ở backend trước). KHÔNG thêm nav vào đây để tránh link chết.
-  { to: '/marketing/sequences', label: 'Luồng kịch bản', icon: 'mdi-target-variant', enabled: marketingFeatureGate.sequences },
 ];
 
 const navItems = computed(() => allNavItems.filter((item) => item.enabled));

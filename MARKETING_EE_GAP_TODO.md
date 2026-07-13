@@ -24,8 +24,8 @@
 | Mục tiêu | `/marketing/targets` | **wizard 4 bước**, multi-nick, lời mời ≤200, chuỗi 5 tin toggle+delay, quy tắc an toàn, báo nội bộ 3 đích, hẹn lịch 6–22h, trang chi tiết + log | **modal 1 trang**, **1 nick**, welcome + 1 luồng bám đuổi, chống block cơ bản, chỉ modal log | 🟡 |
 | Khối nội dung | `/marketing/content-blocks` | **biến thể** + **AI tạo biến thể** + **rich-text** + **preview Zalo LIVE** + folder/tag + loại (send_message/request_friend) | CRUD đơn: tên + 1 text + 1 ảnh | 🟡 |
 | Luồng kịch bản | `/marketing/sequences` | bước = **Khối** ghép, giờ làm việc, luật chống spam, `/:id/stats`, bộ đếm | CRUD luồng, bước = **text thuần** + delay preset | 🟡 |
-| Phiên chăm sóc | `/marketing/care-sessions` | trang riêng: 4 thẻ, danh sách phiên, panel chi tiết, tab **Cài đặt lắng nghe** (sự kiện + 3 đích) | **không có route/view** (dữ liệu đang ở Chat/Follow-up) | ❌ |
-| Bám đuổi thủ công | `/marketing/manual-followup` | trang riêng: thẻ tổng/đang chạy/xong/dừng, lọc, empty state | **không có route/view** | ❌ |
+| Phiên chăm sóc | `/marketing/care-sessions` | trang riêng: 4 thẻ, danh sách phiên, panel chi tiết, tab **Cài đặt lắng nghe** (sự kiện + 3 đích) | **placeholder an toàn** (route + nav OK, không 404); backend worker đã chạy, thiếu endpoint LIST + view thật | 🟡 |
+| Bám đuổi thủ công | `/marketing/manual-followup` | trang riêng: thẻ tổng/đang chạy/xong/dừng, lọc, empty state | **placeholder an toàn** (route + nav OK, không 404); thiếu endpoint LIST + view thật | 🟡 |
 
 **Backend đã có (tái dùng được cho EE):**
 - `automation/care-session-cron.ts`, `care-session-listener.ts`, `care-session-timeline.ts` — máy chạy bám đuổi.
@@ -89,12 +89,16 @@
 - ☐ Luật chống spam: tránh trùng, giãn đều giữa nick, dừng nếu KH rep.
 - ☐ Trang **thống kê** `/marketing/sequences/:id/stats` + bộ đếm Enroll/Hoàn thành/Lỗi/Đang chạy trên thẻ.
 
-### B5 — Phiên chăm sóc + Bám đuổi thủ công (trang standalone)  (quy mô: Lớn)  ❌→✅
-- ☐ **Backend**: endpoint LIST tổng care-sessions (4 thẻ: vừa trả lời/tạm dừng/đang chăm/đã đóng; lọc; tìm tên/SĐT).
+### B5 — Phiên chăm sóc + Bám đuổi thủ công (trang standalone)  (quy mô: Lớn)  ❌→🟡 (placeholder)
+- ☑ **A4 (2026-07-13) Navigation hoàn chỉnh + placeholder an toàn.** Không còn route chết/404/menu thiếu:
+  - ☑ `MarketingPlaceholderView.vue` (dùng chung, đọc nội dung từ route meta) — production-safe: **KHÔNG** gọi API gửi thật, nêu rõ "Đang triển khai · An toàn dry-run" + hướng dẫn xem dữ liệu ở Chat/Follow-up.
+  - ☑ Route `/marketing/care-sessions` (`CE.CareSessions`) + `/marketing/manual-followup` (`CE.ManualFollowup`) → trỏ placeholder.
+  - ☑ Thêm lại 2 nav (Phiên chăm sóc, Bám đuổi thủ công) vào `CommunityMarketingShell.vue` (gate `careSessions`/`manualFollowup`). Menu giờ đủ **9 mục**, đổi label "Broadcast tự động" → **"Gửi tin hàng loạt"**.
+  - ☑ Alias tương thích link/bookmark cũ: `/marketing/templates` → `/message-templates`, `/marketing/blocks` → `/content-blocks` (redirect, không 404).
+- ☐ **Backend**: endpoint LIST tổng care-sessions (4 thẻ: vừa trả lời/tạm dừng/đang chăm/đã đóng; lọc; tìm tên/SĐT). *(placeholder chờ endpoint này)*
 - ☐ **Backend**: endpoint LIST manual-followup (thẻ tổng/đang chạy/xong/dừng/tỉ lệ phản hồi).
-- ☐ **View** `CareSessionsView.vue` + route `/marketing/care-sessions`: danh sách phiên + panel chi tiết + tab **Cài đặt lắng nghe** (sự kiện + 3 đích báo: Owner/Quản lý/Nhóm Zalo).
-- ☐ **View** `ManualFollowupView.vue` + route `/marketing/manual-followup` + empty state.
-- ☐ Thêm lại 2 nav vào `CommunityMarketingShell.vue` (đã gỡ ở A2).
+- ☐ **View** `CareSessionsView.vue` thật: danh sách phiên + panel chi tiết + tab **Cài đặt lắng nghe** (sự kiện + 3 đích báo: Owner/Quản lý/Nhóm Zalo) — thay placeholder.
+- ☐ **View** `ManualFollowupView.vue` thật + empty state — thay placeholder.
 
 ---
 
@@ -147,7 +151,11 @@ docker compose logs --tail=200 app | grep -E "P2022|BroadcastRun|CareSession|doe
 > Ghi chú: 3 cờ `VITE_*_ENABLED` giờ là dead-config (code opt-out không đọc) nhưng vẫn set để tương thích Dockerfile ARG hiện tại — vô hại. `VITE_MARKETING_DRY_RUN` (khóa UI) + `MARKETING_DRY_RUN` (chặn cron) là 2 cờ THẬT SỰ có tác dụng.
 
 ### 6.4 Checklist xác minh sau deploy
-- ☐ Menu Marketing hiện đủ: Quét nhóm · Tệp khách hàng · Mục tiêu · Broadcast tự động · Khối nội dung · Mẫu tin nhắn · Luồng kịch bản. *(Phiên chăm sóc + Bám đuổi thủ công CHƯA có trang — nằm ở Nhóm B5.)*
+- ☐ Menu Marketing hiện đủ **9 mục**: Quét nhóm · Tệp khách hàng · Mục tiêu · Phiên chăm sóc · Luồng kịch bản · Bám đuổi thủ công · Gửi tin hàng loạt · Khối nội dung · Mẫu tin nhắn.
+- ☐ Click **từng mục** không 404 / không trang trắng / không crash. Phiên chăm sóc + Bám đuổi thủ công hiện **trang placeholder** ("Đang triển khai · An toàn dry-run"), không gọi API gửi thật.
+- ☐ Không mất lại 3 mục community đang dùng (Quét nhóm · Tệp khách hàng · Mẫu tin nhắn).
+- ☐ Link cũ `/marketing/templates` → chuyển hướng `/marketing/message-templates`; `/marketing/blocks` → `/marketing/content-blocks` (không 404).
 - ☐ `/marketing/broadcasts`: wizard 4 bước (Đối tượng → Nội dung → Nick & lịch → Kiểm tra); nút "Chạy ngay" **khóa** (icon send-lock) khi dry-run; tạo job ra **nháp (paused)**.
 - ☐ Log backend có `[dry-run]` khi tới giờ chạy job, **không** có tin Zalo gửi ra.
 - ☐ Không có `P2022` / `does not exist`.
+- ☐ Build: `frontend npm run build` PASS · `backend tsc --noEmit` PASS · `broadcast-wizard-logic.spec.ts` 14/14 PASS.
