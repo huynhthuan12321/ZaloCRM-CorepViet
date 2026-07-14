@@ -106,11 +106,66 @@ Sidebar Marketing (cả 5 ảnh): **Tạo Mục tiêu mới · Mục tiêu · Ph
 
 ---
 
-## 3. Ghi chú của reviewer (điền khi user nói "xong")
+## 3. Kết quả đối chiếu spec ↔ code (2026-07-14, sau khi user nói "xong")
 
-- [ ] Đối chiếu spec vs code/deploy thực tế (THUAN TIN IMEX Community)
-- [ ] Xác định đúng / sai / thiếu (đặc biệt: 2 màn standalone care-sessions + manual-followup)
-- [ ] Báo cáo, chờ xác nhận trước khi triển khai
+> Đối chiếu trên `main` @ `0f69410`. Quy ước lệch chữ/ảnh: **theo ảnh** (user chốt).
+> Hướng đã chốt (MARKETING_EE_GAP_TODO §0): build EE đầy đủ, không cắt về Community 2 mục.
+
+### 3.1 ĐÚNG / ĐỦ so với spec
+
+- **Tệp khách hàng** (`/marketing/lists` + `:id`): đủ thẻ tổng, 4 nguồn nhập, dedup/normalize (`p:`/`tel:`/`sdt:`…), lookup async, chi tiết + Export CSV + deep-link tạo Mục tiêu/Broadcast. ✅
+- **Mẫu tin nhắn**: folder + slug + Riêng tư/Công khai + biến + track-use; **tag Dự án lấy ĐỘNG theo org** (`use-project-tags`) — spec HS Holding hiện chips BĐS hard-code nhưng bản mình dynamic là ĐÚNG hướng Phase 1. ✅
+- **Khối nội dung**: CRUD thật + biến thể + 3 loại khối + tag + bật/tắt + tìm/lọc + validate biến. ✅ (phần lõi)
+- **Luồng kịch bản**: bước ghép Khối `send_message` thật + delay + reorder + toggle. ✅ (phần lõi)
+- **Broadcast wizard 4 bước**: số bước/độ an toàn khớp spec (đếm KH, chặn biến lạ, dry-run → nháp). ✅
+- **Phiên chăm sóc + Bám đuổi thủ công**: ĐÃ CÓ VIEW THẬT (commit `1bd9e5b`, Phase 4.1) — `CareSessionListPanel` dùng chung: 5 thẻ tổng + filter + search + pause 24h/stop, data từ `GET /automation/care-sessions` (list tổng đã bổ sung). Manual-followup = cùng panel lọc `sourceType=sequence_manual`. ✅ (khung chính — chi tiết còn thiếu ở 3.2)
+
+### 3.2 THIẾU so với spec (gap thật, xếp theo mức độ)
+
+**GAP LỚN NHẤT — Mục tiêu (B3):** `TargetsView.vue` vẫn là **modal 1 trang, 1 nick** (`form.zaloAccountId` đơn):
+- ☐ Wizard 4 bước (Tệp+Nick+Skip → Lời chào+Chuỗi → Quy tắc an toàn → Xem trước+Bắt đầu).
+- ☐ Multi-nick + hạn mức `KB n/300 · Tin n/300` + tự loại nick offline.
+- ☐ Quy tắc bỏ qua bước 1 (đã chat 1-1 / đã là bạn theo phạm vi / không Zalo).
+- ☐ Chuỗi 5 tin (lời mời ≤200 + welcome "Hộp người lạ" + nhắc + cảm ơn + bám đuổi từ chối), mỗi tin BẬT/TẮT + delay — hiện chỉ welcome + 1 sequence.
+- ☐ Báo nội bộ: chỉ cần đích **Sale phụ trách nick** (2 đích kia chính HS Holding cũng "Đang phát triển").
+- ☐ Quy tắc an toàn theo ảnh: threshold multi-nick (RBAC-scope), delay 60ph, pause reply 24h + reset + cancel job + notify; reaction rules **CỐ ĐỊNH** (+5 điểm / pause 48h -5 điểm) — không cho config.
+- ☐ Hẹn lịch bắt đầu (khung 6h–22h VN).
+- ☐ Drawer chi tiết: 4 thẻ (TRONG TỆP/**ĐÃ XỬ LÝ**/CÓ ZALO/KHÔNG ZALO), Phase 1 breakdown (gửi/đồng ý/từ chối/chờ), Phase 2 (welcome/bước tiếp/hoàn tất/dừng), **TOP 3 nick theo tỉ lệ accept**, nút mở trang chi tiết đầy đủ + log.
+
+**Broadcast (B1):**
+- ☐ Nguồn đối tượng: có 2/4 (Bạn bè + Tệp KH); thiếu **Nhãn CRM** + **Bộ lọc động** ("Mẫu có sẵn" cân nhắc bỏ).
+- ☐ KPI **đã nhận (tick xám) / đã xem (tick xanh)**: `BroadcastRunItem` chưa có cột `receivedAt/seenAt` → cần migration + nguồn sự kiện.
+- ☐ Detail đang 4 tab (spec 3 tab) — chờ user chốt giữ hay bỏ tab Cài đặt.
+
+**Phiên chăm sóc (B5 phần còn lại):**
+- ☐ Thẻ/lọc "**Vừa trả lời**" (needs_attention) — panel hiện có `lastReplyAt` per-row nhưng chưa có thẻ + filter riêng.
+- ☐ **Panel chi tiết bên phải** khi click 1 phiên (timeline — backend `followup-history` đã có, chưa nối vào trang này).
+- ☐ Tab **Cài đặt lắng nghe** org-level (bảng sự kiện + mức xử lý + 3 đích thông báo) — backend `listen*` có, UI chưa.
+
+**Luồng kịch bản (B4 phần còn lại):**
+- ☐ UI giờ làm việc + giãn cách + luật chống spam (BE `runtimeRules` đã thực thi, chưa phơi UI).
+- ☐ Bộ đếm Enroll/Hoàn thành/Lỗi/Đang chạy trên thẻ + trang `/sequences/:id/stats`.
+
+**Khối nội dung (B2 phần còn lại):**
+- ☐ AI tạo biến thể · rich-text (tái dùng `rich-text-editor`) · preview Zalo LIVE · UI cây folder (cột BE có) · trình soạn toàn trang.
+
+### 3.3 LỆCH / CẦN QUYẾT ĐỊNH — ✅ USER CHỐT 2026-07-14
+
+1. Broadcast detail: **GIỮ 4 tab**. ✅
+2. Nguồn Broadcast: **GIỮ "Mẫu có sẵn"** — B1 làm đủ 4 nguồn spec (Tệp KH / Nhãn CRM / Mẫu có sẵn / Bộ lọc) + giữ "Bạn bè" hiện có. ✅
+3. Care-session: **THÊM thẻ "Vừa trả lời"** (không đổi enum DB — derive từ lastReplyAt). ✅ → triển khai ngay (mục 3.5).
+4. Tham số cứng theo ảnh: làm default trong config backend (không ai phản đối — giữ đề xuất).
+
+### 3.4 Đề xuất thứ tự triển khai (chờ user xác nhận)
+
+1. **B3 — Mục tiêu wizard 4 bước + drawer chi tiết** (gap lớn nhất, spec Lượt 6 đã đủ chi tiết để làm).
+2. **B5 còn lại — thẻ Vừa trả lời + panel timeline + Cài đặt lắng nghe** (nhanh, backend sẵn).
+3. **B4 còn lại — UI luật luồng + stats** (vừa).
+4. **B1 — Broadcast nguồn CRM/bộ lọc + KPI nhận/xem** (cần migration + nguồn event Zalo).
+5. **B2 còn lại — AI/rich-text/preview/folder** (polish, làm sau).
+
+> Toàn bộ triển khai giữ nguyên 2 cờ dry-run; không gửi Zalo thật. CHƯA code — chờ xác nhận thứ tự.
+> 2026-07-14: User yêu cầu soạn prompt triển khai B3 (không code) → **`MARKETING_B3_PROMPT.md`**. Việc "thêm thẻ Vừa trả lời" (B5) đã chốt làm nhưng chưa triển khai.
 
 ---
 
@@ -185,3 +240,20 @@ Nhãn EE theo overview: 6.1 Mục tiêu 🔶, Bám đuổi thủ công 🔶, 6.2
 - [ ] Khối nội dung docs yêu cầu **biến thể + AI tạo biến thể + rich-text + preview Zalo LIVE**; Community hiện là CRUD cơ bản → gap lớn (nhưng docs xếp Khối là EE).
 - [ ] Mẫu tin nhắn: slug `//` + gắn Dự án chips — kiểm tra template view có hỗ trợ.
 - [ ] Wizard Mục tiêu 4 bước + Broadcast 4 bước: đối chiếu số bước/tên bước với code.
+
+---
+
+## LƯỢT 6 (2026-07-14) — File Word "6.1 Mục tiêu" (spec chữ + 6 ảnh HS Holding, chi tiết hơn Lượt 3)
+
+> Nguồn: `New Microsoft Word Document.docx` (Desktop user). Phần chữ = spec 6.1 Mục tiêu (trùng Lượt 3 mục A/B và Lượt 5/6a). Kèm **6 screenshot HS Holding CRM** — transcribe các chi tiết MỚI chỉ thấy trong ảnh:
+
+- **Ảnh 1 — List Mục tiêu:** thẻ 1/3 đang bật · 0 khách vào · 0 hoàn thành · 0% phản hồi; lọc Tất cả 3/Đang chạy 1/Tạm dừng 1/Hoàn tất 0/Hẹn lịch 1/Nháp 1/Đã xóa 0; toggle Bảng/Card + Sắp xếp; cột: #/Ngày tạo/Mục tiêu (kèm "bởi Nguyễn Tiến Lộc")/Tệp KH (kèm "0 SĐT · 0 có Zalo · 0 không Zalo")/Nick/Phase1·Mời KB (%, Gửi n · Đồng ý n)/Phase2·Bám đuổi (%, Xong n · Đang chạy n)/Phản hồi/Trạng thái/Ngày kết thúc; nút Nhập từ Excel + ⚙ + Tạo Mục tiêu mới.
+- **Ảnh 2 — Wizard B1:** thanh 4 bước đúng tên `1 Tệp + Nick + Skip → 2 Lời chào + Chuỗi → 3 Quy tắc gửi an toàn → 4 Xem trước + Bắt đầu`; header bước ghi "Bắt buộc · ~30 giây"; nick card: `Online · KB 202/300 · Tin 118/300` (chọn NHIỀU nick); "Bỏ qua KH đã là bạn rồi" có dropdown phạm vi **"Bạn với nick trong danh sách"**.
+- **Ảnh 3 — Wizard B2:** Lời mời kết bạn badge **"Bắt buộc"** + đếm ký tự `115/200`; Tin 1 chào mừng badge **"Hộp người lạ"** (gửi ngay sau lời mời, KHÔNG chờ đồng ý) + "CHỜ SAU KHI MỜI: 1 Giây"; Tin 2 "Tin cảm ơn khách đã đồng ý kết bạn" badge "Sau khi đồng ý" + chờ 1 Phút; **mỗi tin có khối "Báo nội bộ khi sự kiện xảy ra"** 3 đích: Sale phụ trách nick (**Hoạt động**) / Quản lý của Sale (**Đang phát triển**) / Nhóm Zalo báo cáo (**Đang phát triển**) ⇒ chính bản HS Holding cũng mới xong 1/3 đích notify.
+- **Ảnh 4 — Wizard B3:** Threshold multi-nick + note "Privacy: chỉ đếm nick trong phạm vi phòng/dept của anh (RBAC M2)"; Delay sau lời mời → bước 1: 1 Giờ, chú thích **"'Spam HẾT luồng' — KH KHÔNG cần accept vẫn nhận đủ chuỗi qua stranger inbox"**; Pause khi KH tương tác: 1 Ngày + "KH reply tiếp → reset" + "reply giữa chuỗi → cancel job pending + notify KHẨN sale"; **Phản ứng nâng cao = 2 rule CỐ ĐỊNH, không cho config** ("Anh chốt 2026-06-01"): tích cực → KHÔNG dừng chuỗi, chỉ +5 điểm CRM; tiêu cực → Pause 48h + -5 điểm + notify sale ("mạnh hơn customer_reply 24h").
+- **Ảnh 5 — Wizard B4:** bảng "Quy tắc gửi an toàn (đã cấu hình ở Bước 3)" với số cụ thể: Giờ hoạt động 06:00–22:00 (16 giờ/ngày) · Khoảng cách giữa các lần gửi 60 giây · Bỏ qua KH gần đây (cross-nick) 30 ngày · Bỏ qua KH nhiều nick: Tắt · Delay sau kết bạn 60 phút · Tạm dừng khi KH reply 24 giờ; panel preview tin (Lời mời + Tin chào mừng render biến thật "Anh Nguyễn Tuấn Trang"); Thời điểm bắt đầu: Bắt đầu ngay / Hẹn lịch (6h–22h VN); nút **"Bắt đầu chạy Mục tiêu"**; footer "Sau khi bắt đầu vẫn có thể tạm dừng/sửa bất cứ lúc nào".
+- **Ảnh 6 — Detail drawer:** 4 thẻ **TRONG TỆP / ĐÃ XỬ LÝ / CÓ ZALO / KHÔNG ZALO** (spec chữ ghi "Đã gửi" — lệch nhẹ); Phase 1 breakdown: Đã gửi lời mời / Đồng ý kết bạn / Từ chối / Đang chờ phản hồi; Phase 2 (Welcome → Follow-up): Đã gửi tin Welcome / Đang chạy bước tiếp / Hoàn tất chuỗi / Dừng (reply/block); **TOP 3 NICK THEO TỈ LỆ ACCEPT** (spec chữ ghi Top 5 — lệch nhẹ) bảng Nick/Gửi/Accept/%; nút "Mở trang chi tiết đầy đủ →".
+
+> ⚠️ Lệch nội bộ giữa spec chữ và ảnh: Top 5 vs **Top 3** nick; thẻ "Đã gửi" vs **"ĐÃ XỬ LÝ"**. Ảnh cũng cho thấy nhiều tham số cứng (60s/30 ngày/24h/48h/±5 điểm) không có trong spec chữ.
+> ✅ **User chốt 2026-07-14: "theo hình ảnh"** — khi lệch chữ vs ảnh thì lấy theo ẢNH (Top 3 nick theo tỉ lệ accept; thẻ "ĐÃ XỬ LÝ"; tham số cứng trong ảnh là chuẩn).
+> ✅ **User nói "xong" 2026-07-14** — kết thúc thu thập, bắt đầu đối chiếu spec ↔ code.
