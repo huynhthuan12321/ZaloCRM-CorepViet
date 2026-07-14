@@ -158,6 +158,7 @@ import { useChatOperations } from '@/composables/use-chat-operations';
 import { useZaloAccounts } from '@/composables/use-zalo-accounts';
 import { useWorkScope } from '@/composables/use-work-scope';
 import { shouldAdoptNickScope } from '@/composables/work-scope-logic';
+import { openContactChat } from '@/composables/use-open-contact-chat';
 import MobileChatView from '@/views/MobileChatView.vue';
 import { useMobile } from '@/composables/use-mobile';
 
@@ -625,19 +626,17 @@ const autoComposePhone = computed(() => {
   return typeof c === 'string' ? c : '';
 });
 
-// Watch query.contactId — khi nav từ Contacts/Friends qua /chat?contactId=xxx
-// Resolve sang convId qua conversations list, rồi redirect /chat/:convId.
+// Watch query.contactId — khi nav từ Contacts/Friends qua /chat?contactId=xxx (bookmark,
+// link cũ, hoặc fallback). Resolve TƯỜNG MINH ở BE (openContactChat) thay vì find() trong
+// list đã nạp — sửa bug KH đã KB chưa nhắn / conv ngoài trang-scope ra panel trống.
+// KHÔNG phụ thuộc `conversations` nữa (list partial/paginated không phải nguồn chân lý).
 watch(
-  [() => route.query.contactId, conversations],
-  ([contactId, convs]) => {
+  () => route.query.contactId,
+  (contactId) => {
     if (!contactId || typeof contactId !== 'string') return;
-    if (!Array.isArray(convs) || !convs.length) return;
-    const match = convs.find(c => c.contact?.id === contactId && c.threadType === 'user');
-    if (match) {
-      router.replace({ name: 'Chat', params: { convId: match.id } });
-    }
+    void openContactChat(router, contactId);
   },
-  { deep: false, immediate: false },
+  { immediate: true },
 );
 
 // Listener cho zalo-labels-synced custom event (dispatch từ MessageThread sau khi

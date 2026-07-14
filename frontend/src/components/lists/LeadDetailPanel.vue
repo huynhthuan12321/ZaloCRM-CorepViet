@@ -216,6 +216,7 @@ import { ref, computed, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api';
 import { useToast } from '@/composables/use-toast';
+import { openContactChat } from '@/composables/use-open-contact-chat';
 import { formatInOrgTz } from '@/composables/use-org-timezone';
 import SourceMetaRow from './SourceMetaRow.vue';
 import NickPickerPopup, { type NickPickerAccount } from '@/components/zalo-accounts/NickPickerPopup.vue';
@@ -280,6 +281,11 @@ async function onNickPicked(nick: NickPickerAccount) {
 // Mở chat Zalo → sang trang Chat, mở ô soạn tin điền sẵn SĐT (anh chốt)
 function openZaloChat() {
   if (data.value?.entry.hasZalo !== true) return;
+  // Có contactId → resolve tường minh (sửa bug ra /chat trống). Chỉ có SĐT → giữ ?compose=.
+  if (data.value.entry.contactId) {
+    void openContactChat(router, data.value.entry.contactId);
+    return;
+  }
   const phone = data.value.entry.phoneLocal || data.value.entry.phoneE164 || '';
   router.push({ path: '/chat', query: { compose: phone } });
 }

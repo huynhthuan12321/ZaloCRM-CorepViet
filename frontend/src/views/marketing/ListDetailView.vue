@@ -606,6 +606,7 @@
 <script setup lang="ts">
 import { onMounted, computed, watch, ref, nextTick, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { openContactChat } from '@/composables/use-open-contact-chat';
 import { useCustomerLists, saveEntryLimit, type CustomerListSummary, type CustomerListEntry } from '@/composables/use-customer-lists';
 import { formatInOrgTz } from '@/composables/use-org-timezone';
 // Phase Multi-Source Lead Ads Phase 2 2026-05-27 — Lead detail panel
@@ -675,6 +676,12 @@ function openContact(contactId: string) {
   window.open(`/contacts/${contactId}`, '_blank');
 }
 function openRowChat(entry: CustomerListEntry) {
+  // Có contactId → resolve tường minh (sửa bug ra /chat trống). Chỉ có SĐT (chưa gắn KH)
+  // → giữ luồng cũ ?compose=phone (dialog Tin nhắn mới tự lookup + tạo hội thoại).
+  if (entry.contactId) {
+    void openContactChat(router, entry.contactId);
+    return;
+  }
   const phone = entry.phoneLocal || entry.phoneE164 || '';
   router.push({ path: '/chat', query: { compose: phone } });
 }

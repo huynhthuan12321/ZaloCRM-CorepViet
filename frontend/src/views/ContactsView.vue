@@ -666,6 +666,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { openContactChat } from '@/composables/use-open-contact-chat';
 import ContactDetailPanel from '@/components/contacts/ContactDetailPanel.vue';
 import CustomerProfileDialog from '@/components/contacts/CustomerProfileDialog.vue';
 import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
@@ -1315,8 +1316,9 @@ async function goChat(c: Contact) {
       return;
     }
   }
-  // KH có Zalo → fallback flow cũ: push query.contactId để ChatView resolve.
-  router.push({ path: '/chat', query: { contactId: c.id } });
+  // KH có Zalo → resolve tường minh qua BE (openContactChat) — sửa bug ra panel trống
+  // khi KH đã KB chưa nhắn / conv ngoài trang-scope.
+  await openContactChat(router, c.id);
 }
 function onAutomation(_c: Contact) { toast.warning('Automation dialog: chưa implement'); }
 

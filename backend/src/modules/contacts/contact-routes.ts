@@ -15,7 +15,7 @@ import { isBlurContaminated } from '../privacy/redact.js';
 import { requireAnyGrant, requireGrant } from '../rbac/rbac-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { mergeContacts } from './merge-service.js';
-import { findExistingUserConversation } from '../chat/conversation-resolver.js';
+import { findExistingUserConversation, ensureUserConversation } from '../chat/conversation-resolver.js';
 import { runContactIntelligence } from './contact-intelligence.js';
 import { backfillGlobalId, backfillOrphanFriends } from './backfill-global-id.js';
 import { backfillMissingFriends } from './backfill-missing-friends.js';
@@ -1838,28 +1838,12 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       // threadType='user' vì Friend = 1-1 Zalo identity (group conv không qua đây).
       // CHỐNG XÉ globalId-aware (anh chốt 2026-06-22): mở chat theo Friend → nếu KH này đã có
       // hội thoại trên nick (UID khác do drift / cùng globalId) → mở cái đó, KHÔNG đẻ hội thoại 2.
-      const reuseId = await findExistingUserConversation({
+      // 2026-07-14: dùng hàm service ensureUserConversation (source of truth) — cùng nơi với
+      // POST /conversations/resolve (nhánh đã-KB-chưa-nhắn). KHÔNG inline create nữa.
+      const { convId, created } = await ensureUserConversation({
         orgId: user.orgId, nickId: friend.zaloAccountId, externalThreadId: friend.zaloUidInNick, contactId: friend.contactId,
       });
-      if (reuseId) return reply.send({ conversationId: reuseId, created: false });
-
-      const created = await prisma.conversation.create({
-        data: {
-          orgId: user.orgId,
-          zaloAccountId: friend.zaloAccountId,
-          contactId: friend.contactId,
-          threadType: 'user',
-          externalThreadId: friend.zaloUidInNick,
-          // 2026-05-28: NULL cho conv vừa tạo từ ensure-conversation (Lead Pool /
-          // Friend click "Bắt đầu chat") — KHÔNG set new Date() vì conv chưa có
-          // message thật → bug pin-top vĩnh viễn nếu set timestamp.
-          lastMessageAt: null,
-          unreadCount: 0,
-          isReplied: false,
-        },
-        select: { id: true },
-      });
-      return reply.send({ conversationId: created.id, created: true });
+      return reply.send({ conversationId: convId, created });
     } catch (err) {
       logger.error('[friends] ensure-conversation error:', err);
       return reply.status(500).send({ error: 'Ensure conversation failed', detail: String(err) });

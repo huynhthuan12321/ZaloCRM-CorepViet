@@ -10,7 +10,7 @@ import { prisma, tenantTransaction } from '../../shared/database/prisma-client.j
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
 import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
-import { DISPLAYABLE_NICK_WHERE } from '../zalo/zalo-scope.js';
+import { DISPLAYABLE_NICK_WHERE, getZaloScope } from '../zalo/zalo-scope.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { logger } from '../../shared/utils/logger.js';
@@ -25,6 +25,9 @@ import { triggerVirtualChatAiReply } from '../ai/ai-virtual-chat-service.js';
 import { attachContactCollaboratorByUser } from '../contacts/contact-scope.js';
 // Fix 2026-06-03 — M11 optimistic badge cache (Anh báo "Sale CRM · Staff")
 import { getUserFullName } from './chat-helpers.js';
+// 2026-07-14 — Resolve hội thoại theo contactId (deep-link từ hồ sơ KH → /chat).
+import { ensureUserConversation } from './conversation-resolver.js';
+import { resolveContactConversationPlan } from './contact-conversation-resolver.js';
 // 2026-06-07 — Gửi Khối Marketing thẳng vào hội thoại (cột 4 tab Automation).
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { sendNativeVideo } from '../../shared/video-processor.js';
@@ -984,6 +987,78 @@ export async function chatRoutes(app: FastifyInstance) {
       page: parseInt(page),
       limit: Math.min(parseInt(limit), 200),
     };
+  });
+
+  // ── POST /conversations/resolve — deep-link "mở chat" theo contactId ────────
+  // BUG 2026-07-14 (fix/chat-contact-deeplink): mở chat từ hồ sơ KH → /chat?contactId=xxx
+  // trước đây resolve ở FE bằng find() trong list đã nạp (partial, paginated, scope) → KH
+  // đã KB nhưng chưa nhắn (không có Conversation row) HOẶC conv ngoài trang/scope → trượt →
+  // panel trống, KHÔNG toast. Route này resolve TƯỜNG MINH ở BE (org + nick-scope), trả:
+  //   { convId }        — đã có conv, HOẶC vừa tạo conv rỗng (đã-KB-chưa-nhắn, KHÔNG gửi tin)
+  //   { none: true }    — KH chưa có Zalo / chưa KB với nick nào trong phạm vi xem
+  // POST (không GET) vì nhánh đã-KB-chưa-nhắn PHẢI ghi DB (tạo Conversation metadata rỗng).
+  app.post('/api/v1/conversations/resolve', { preHandler: requireGrant('conversation', 'access') }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user!;
+    const { contactId } = (request.body || {}) as { contactId?: string };
+    if (!contactId || typeof contactId !== 'string') {
+      return reply.status(400).send({ error: 'contactId required' });
+    }
+
+    // Org-scope: contact phải thuộc org user (org khác → 404, không leak tồn tại).
+    const contact = await prisma.contact.findFirst({
+      where: { id: contactId, orgId: user.orgId },
+      select: { id: true },
+    });
+    if (!contact) return reply.status(404).send({ error: 'Contact not found' });
+
+    // Nick-scope RBAC — cùng luật với list/detail chat.
+    const scope = await getZaloScope(user.id, user.orgId, user.role);
+    const restrictByNick = !scope.isOrgAdmin;
+
+    // Conversation của contact (user xem được = displayableIds, gồm nick xóa-có-uid đọc-only).
+    const convWhere: Prisma.ConversationWhereInput = {
+      orgId: user.orgId, contactId, threadType: 'user', deletedAt: null,
+      zaloAccount: DISPLAYABLE_NICK_WHERE,
+    };
+    if (restrictByNick) {
+      convWhere.zaloAccountId = scope.displayableIds.length > 0 ? { in: scope.displayableIds } : 'NO_MATCH';
+    }
+    const conversations = await prisma.conversation.findMany({
+      where: convWhere,
+      select: { id: true, lastMessageAt: true },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+
+    // Friend rows của contact — nhánh đã-KB-chưa-nhắn cần TẠO conv rỗng → chỉ nick còn GỬI được
+    // (accessibleIds: loại nick đã xóa/không kết nối). Không tạo conv trên nick chỉ đọc-only.
+    const friendWhere: Prisma.FriendWhereInput = { orgId: user.orgId, contactId };
+    if (restrictByNick) {
+      friendWhere.zaloAccountId = scope.accessibleIds.length > 0 ? { in: scope.accessibleIds } : 'NO_MATCH';
+    }
+    const friends = await prisma.friend.findMany({
+      where: friendWhere,
+      select: { id: true, zaloAccountId: true, zaloUidInNick: true, contactId: true, zaloGlobalId: true, lastInteractionAt: true },
+      orderBy: { lastInteractionAt: 'desc' },
+    });
+
+    const plan = resolveContactConversationPlan({ conversations, friends });
+
+    if (plan.kind === 'conversation') {
+      return reply.send({ convId: plan.convId, created: false });
+    }
+    if (plan.kind === 'friend') {
+      // Đã KB, chưa có Conversation → tạo conv rỗng (idempotent, globalId-aware chống-xé).
+      // KHÔNG gửi tin Zalo — chỉ metadata row (dry-run safe).
+      const { convId, created } = await ensureUserConversation({
+        orgId: user.orgId,
+        nickId: plan.nickId,
+        externalThreadId: plan.externalThreadId,
+        contactId: plan.contactId,
+        globalId: plan.globalId,
+      });
+      return reply.send({ convId, created });
+    }
+    return reply.send({ none: true, reason: 'Khách chưa có Zalo / chưa kết bạn với nick nào trong phạm vi xem' });
   });
 
   // ── Get single conversation ──────────────────────────────────────────────

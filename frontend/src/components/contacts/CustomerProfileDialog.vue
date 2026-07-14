@@ -428,6 +428,7 @@ import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
+import { openContactChat } from '@/composables/use-open-contact-chat';
 import { formatRecentDateTime, cleanPreview } from '@/composables/use-contacts';
 import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
 import TagCrmBar from '@/components/chat/TagCrmBar.vue';
@@ -738,7 +739,9 @@ function close() { emit('update:modelValue', false); }
 function goChat() {
   if (!c.value) return;
   close();
-  router.push({ path: '/chat', query: { contactId: c.value.id } });
+  // Resolve tường minh qua BE — sửa bug ra /chat trống khi KH đã KB chưa nhắn / conv
+  // ngoài trang-scope. openContactChat tự toast nếu không có hội thoại nào.
+  void openContactChat(router, c.value.id);
 }
 
 // ── Computed display ──

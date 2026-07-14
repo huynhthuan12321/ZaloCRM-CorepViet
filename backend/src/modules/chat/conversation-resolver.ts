@@ -97,3 +97,35 @@ export async function resolveOrCreateUserConversation(args: ResolveConvArgs): Pr
   });
   return created.id;
 }
+
+/**
+ * SOURCE OF TRUTH cho "mở/tạo hội thoại 1-1 rỗng theo (KH, nick)" — dùng chung cho
+ * POST /friends/:id/ensure-conversation VÀ POST /conversations/resolve (nhánh đã-KB-chưa-nhắn).
+ *
+ * Khác resolveOrCreateUserConversation: trả kèm cờ `created` (caller cần biết để toast /
+ * đếm) và set shape conv rỗng CHUẨN dry-run-safe:
+ *   - lastMessageAt: null   → KHÔNG pin-top vĩnh viễn (bug nếu set new Date() cho conv chưa có msg)
+ *   - unreadCount: 0, isReplied: false
+ * TUYỆT ĐỐI KHÔNG gửi tin Zalo — chỉ tạo metadata row.
+ */
+export async function ensureUserConversation(
+  args: ResolveConvArgs,
+): Promise<{ convId: string; created: boolean }> {
+  const existing = await findExistingUserConversation(args);
+  if (existing) return { convId: existing, created: false };
+
+  const created = await prisma.conversation.create({
+    data: {
+      orgId: args.orgId,
+      zaloAccountId: args.nickId,
+      contactId: args.contactId,
+      threadType: 'user',
+      externalThreadId: args.externalThreadId,
+      lastMessageAt: null,
+      unreadCount: 0,
+      isReplied: false,
+    },
+    select: { id: true },
+  });
+  return { convId: created.id, created: true };
+}
