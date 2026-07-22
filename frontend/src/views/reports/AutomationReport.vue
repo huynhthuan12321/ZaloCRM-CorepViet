@@ -207,7 +207,7 @@ async function load() {
   loading.value = true;
   try {
     const { from, to } = rangeDates();
-    const res = await api.get('/reports/automation', { params: { from, to } });
+    const res = await api.get('/reports/automation-summary', { params: { from, to } });
     data.value = res.data;
   } catch (e) {
     data.value = null;

@@ -51,7 +51,7 @@ function emptyBucket(): Bucket {
 export async function automationReportRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
-  app.get('/api/v1/reports/automation', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/api/v1/reports/automation-summary', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     if (user.role !== 'admin' && user.role !== 'owner') {
       return reply.status(403).send({ error: 'forbidden', code: 'automation_report_admin_only' });
