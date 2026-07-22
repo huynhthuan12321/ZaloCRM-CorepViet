@@ -22,6 +22,7 @@ import {
   stateFilterToWhere,
   type CareSessionRow,
 } from './care-session-list-helpers.js';
+import { processCareSessionStep } from './process-care-session-step.js';
 
 type UserCtx = { id: string; orgId: string; role: string };
 
@@ -312,8 +313,30 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
       : [];
     const seqMap = new Map(sequences.map((s) => [s.id, s]));
 
+    // Đếm step_sent + step_simulated theo phiên (tránh N+1).
+    const sessionIds = sessions.map((s) => s.id);
+    const [sentGroups, simulatedGroups] = await Promise.all([
+      sessionIds.length
+        ? prisma.careSessionEvent.groupBy({
+            by: ['sessionId'],
+            where: { sessionId: { in: sessionIds }, eventType: 'step_sent' },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ sessionId: string; _count: { _all: number } }>),
+      sessionIds.length
+        ? prisma.careSessionEvent.groupBy({
+            by: ['sessionId'],
+            where: { sessionId: { in: sessionIds }, eventType: 'step_simulated' },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ sessionId: string; _count: { _all: number } }>),
+    ]);
+    const sentMap = new Map(sentGroups.map((g) => [g.sessionId, g._count._all]));
+    const simMap = new Map(simulatedGroups.map((g) => [g.sessionId, g._count._all]));
+
     return {
       contactId,
+      dryRun: config.marketingDryRun,
       triggers: sessions
         .filter((s) => s.sourceType === 'sequence_manual' || s.sourceSequenceId)
         .map((s) => {
@@ -322,6 +345,9 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
           const snapshotSteps = asArray(s.stepsSnapshot);
           const totalSteps = snapshotSteps.length || (seq ? stepCountOf(seq) : null);
           const state = stateOf(s);
+          const stepsSent = sentMap.get(s.id) ?? 0;
+          const stepsSimulated = simMap.get(s.id) ?? 0;
+          const stepsProcessed = stepsSent + stepsSimulated;
           return {
             triggerId: s.id,
             triggerName: seq?.name ?? 'Theo dõi thủ công',
@@ -331,6 +357,9 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
             enrollSeq: s.enrollEpoch ?? 1,
             currentStep: state === 'completed' && totalSteps ? totalSteps : (s.currentStepIdx ?? 0),
             totalSteps,
+            stepsSent,
+            stepsSimulated,
+            stepsProcessed,
             latestEvent: s.closedReason
               ?? (s.lastReplyAt ? 'customer_reply' : s.lastSentAt ? 'step_sent' : 'manual_enroll'),
             latestAt: (s.closedAt ?? s.lastReplyAt ?? s.lastSentAt ?? s.openedAt).toISOString(),
@@ -345,6 +374,7 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
             holdReason: state === 'paused' ? 'waiting_reply' : state,
             allowedHourRange: null,
             lastError: s.lastError ?? null,
+            dryRun: config.marketingDryRun && state === 'active',
           };
         }),
     };
@@ -665,22 +695,52 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
     return { ok: true };
   });
 
-  // "Gửi bước tiếp theo ngay" — kéo nextRunAt về hiện tại + bỏ pause; care-session-cron
-  // gửi ở tick kế (vẫn tôn trọng khung giờ + rate limit, KHÔNG bypass luật an toàn).
+  // "Gửi bước tiếp theo ngay" — gọi processCareSessionStep trực tiếp (không chờ cron).
+  // Vẫn tôn trọng rate limit (KHÔNG bypass). Bỏ pause trước khi xử lý.
   app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/advance', async (
     request: FastifyRequest<{ Params: { triggerId: string; contactId: string } }>,
   ) => {
     const user = request.user as UserCtx;
-    const res = await prisma.careSession.updateMany({
+    const { triggerId, contactId } = request.params;
+
+    // Bỏ pause (nếu có) để service chung có thể claim.
+    await prisma.careSession.updateMany({
       where: {
-        id: request.params.triggerId,
+        id: triggerId,
         orgId: user.orgId,
-        contactId: request.params.contactId,
+        contactId,
         state: 'active',
-        nextRunAt: { not: null },
       },
-      data: { nextRunAt: new Date(), pausedUntil: null },
+      data: { pausedUntil: null },
     });
-    return { ok: true, promoted: res.count };
+
+    // Gọi service chung — xử lý bước ngay lập tức.
+    const result = await processCareSessionStep({
+      sessionId: triggerId,
+      orgId: user.orgId,
+      trigger: 'manual_run_now',
+      actorUserId: user.id,
+    });
+
+    // Log rõ kết quả bấm "Gửi bước tiếp ngay" — để về sau khỏi phải soi DB tìm lý do.
+    logger.info(
+      `[care-session][advance] session=${triggerId} contact=${contactId} by=${user.id} → ` +
+      `mode=${result.deliveryMode ?? '-'} deferReason=${result.deferReason ?? '-'} error=${result.error ?? '-'} ` +
+      `step=${(result.stepIdx ?? -1) + 1}/${result.totalSteps ?? '?'} completed=${result.completed ?? false}`,
+    );
+
+    return {
+      ok: result.ok,
+      promoted: result.processed ? 1 : 0,
+      actuallySent: result.deliveryMode === 'sent',
+      simulated: result.deliveryMode === 'simulated',
+      deferred: !result.processed && !!result.deferReason,
+      deferReason: result.deferReason ?? null,
+      stepIdx: result.stepIdx ?? null,
+      totalSteps: result.totalSteps ?? null,
+      deliveryMode: result.deliveryMode ?? null,
+      completed: result.completed ?? false,
+      error: result.error ?? null,
+    };
   });
 }

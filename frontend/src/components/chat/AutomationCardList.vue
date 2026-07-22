@@ -209,6 +209,10 @@ interface AutomationStatusCard extends FollowUpCardData {
   enrollmentId?: string;
   enrollSeq?: number;
   derivedState?: CardState; // BE truyền sẵn state per-run (không tự derive)
+  stepsSent?: number;
+  stepsSimulated?: number;
+  stepsProcessed?: number;
+  dryRun?: boolean;
   enrolledAt?: string;
   lastSentAt?: string | null;
   // YC3 timing (Đợt 2): BE trả 4 mốc per luồng.
@@ -406,27 +410,47 @@ async function onAction(
     if (card.advanceEnabled === false) return;
     card.busy = true;
     try {
-      const res = await api.post<{ ok: boolean; promoted: number; actuallySent?: boolean; deferred?: boolean; deferReason?: string | null }>(
+      const res = await api.post<{ ok: boolean; promoted: number; actuallySent?: boolean; simulated?: boolean; deliveryMode?: 'sent' | 'simulated' | null; completed?: boolean; deferred?: boolean; deferReason?: string | null; error?: string | null }>(
         `/automation/triggers/${card.triggerId}/contacts/${props.contactId}/advance`,
         { sequenceId: card.sequenceId ?? undefined },
       );
       await fetchStatus();
       const d = res.data;
+      // Nhãn tiếng Việt cho MỌI lý do backend trả (deferReason mềm = tự gửi lại;
+      // error = cần xử lý). Khớp đúng mã trong process-care-session-step.ts.
+      const reasonMsg: Record<string, string> = {
+        // deferReason (hoãn — hệ thống tự gửi lại khi đủ điều kiện, tone vàng)
+        outside_hour_window: 'Đang ngoài khung giờ gửi (8h–21h) — hệ thống sẽ tự gửi khi tới giờ',
+        quota_capped: 'Nick đã đạt giới hạn tin/ngày (hoặc gửi quá nhanh) — sẽ tự gửi lại sau',
+        sequence_disabled: 'Kịch bản đang TẮT — vào Luồng kịch bản bật lại để gửi',
+        // error (cần bạn để ý)
+        claim_failed_concurrent: 'Đang trùng nhịp gửi tự động — chờ vài giây rồi bấm lại',
+        uid_not_found: 'Chưa tìm thấy Zalo của khách với nick này — kiểm tra đã kết bạn / đổi nick chạy phiên',
+        no_steps: 'Kịch bản không còn bước nào để gửi',
+        session_not_active: 'Phiên bám đuổi không còn hoạt động',
+        session_not_found_or_inactive: 'Phiên bám đuổi không còn hoạt động',
+        // giữ tương thích các mã cũ (nếu EE trả)
+        nick_gap: 'Vừa gửi tin xong — chờ chút rồi hệ thống tự gửi tiếp',
+        nick_offline: 'Nick đang ngắt kết nối — sẽ tự gửi khi nick online lại',
+        awaiting_reply: 'Khách vừa nhắn lại — tạm dừng gửi tự động để bạn trả lời trước',
+      };
+      const softCodes = ['outside_hour_window', 'quota_capped', 'claim_failed_concurrent', 'nick_gap', 'nick_offline', 'awaiting_reply'];
+
       if (d.actuallySent) {
-        toast('Đã gửi bước tiếp cho khách');
-      } else if (d.deferred) {
-        // Job đã đẩy nhưng worker hoãn — KHÔNG phải lỗi (hệ thống tự gửi khi đủ điều kiện).
-        // Báo màu VÀNG + đúng 1 lý do cụ thể (BE trả deferReason) cho dễ hiểu.
-        const reasonMsg: Record<string, string> = {
-          nick_gap: 'Vừa gửi tin xong — chờ chút cho tự nhiên rồi hệ thống tự gửi tiếp',
-          outside_hour_window: 'Đang ngoài giờ gửi tin — hệ thống sẽ tự gửi khi tới giờ làm việc',
-          quota_capped: 'Nick này đã gửi đủ số tin trong ngày — sẽ tự gửi vào ngày mai',
-          nick_offline: 'Nick đang ngắt kết nối — sẽ tự gửi ngay khi nick online lại',
-          awaiting_reply: 'Khách vừa nhắn lại — tạm dừng gửi tự động để bạn trả lời trước',
-        };
-        toast(reasonMsg[d.deferReason ?? ''] ?? 'Đã ghi nhận — hệ thống đang chờ đủ điều kiện rồi tự gửi', 'warning');
+        toast('Đã gửi bước tiếp cho khách', 'success');
+      } else if (d.simulated) {
+        toast('Đã mô phỏng bước tiếp (dry-run — chưa gửi Zalo thật)', 'warning');
+      } else if (d.completed) {
+        toast('Kịch bản đã hoàn thành — không còn bước để gửi', 'success');
       } else {
-        toast('Đang gửi bước tiếp — hệ thống đang xử lý, tin sẽ hiện trong giây lát');
+        // Lấy lý do từ deferReason HOẶC error (trước đây bỏ sót error → báo chung chung).
+        const code = d.deferReason ?? d.error ?? '';
+        const known = reasonMsg[code];
+        const tone: 'warning' | 'error' = (d.deferReason || softCodes.includes(code)) ? 'warning' : 'error';
+        toast(
+          known ?? (code ? `Chưa gửi được — lý do: ${code}` : 'Đang xử lý — nếu chưa thấy tin, thử lại sau vài giây'),
+          tone,
+        );
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
