@@ -49,14 +49,16 @@ async function resolveStepBlocks(steps: SequenceDraftStep[], orgId: string): Pro
   if (!blockIds.length) return steps;
   const blocks = await prisma.contentBlock.findMany({
     where: { id: { in: blockIds }, orgId },
-    select: { id: true, messageText: true },
+    select: { id: true, messageText: true, imageUrl: true },
   });
-  const map = new Map(blocks.map((b) => [b.id, b.messageText]));
+  const map = new Map(blocks.map((b) => [b.id, b]));
   return steps.map((s) => {
     if (!s.blockId) return s;
-    const blockText = map.get(s.blockId);
-    if (blockText === undefined) return { ...s, blockId: null }; // block không còn → giữ text sẵn
-    return { ...s, text: s.text.trim() || blockText };
+    const block = map.get(s.blockId);
+    if (!block) return { ...s, blockId: null }; // block không còn → giữ text sẵn
+    // Freeze lúc lưu: text (giữ text sửa tay nếu có) + imageUrl từ khối. Backend tự lấy theo
+    // blockId → không phụ thuộc frontend có gửi imageUrl hay không.
+    return { ...s, text: s.text.trim() || block.messageText, imageUrl: block.imageUrl ?? null };
   });
 }
 
