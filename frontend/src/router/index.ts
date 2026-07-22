@@ -96,6 +96,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'audit',      name: 'Reports.Audit',      component: () => import('@/views/reports/AuditReport.vue'),      meta: { resource: 'engagement_score' } },
       // Broadcast tự động (🟢 Community extension 2026-07-06)
       { path: 'broadcast',  name: 'Reports.Broadcast',  component: () => import('@/views/reports/BroadcastReport.vue'),  meta: { resource: 'engagement_score' } },
+      // Automation — phễu kết bạn + bám đuổi theo Sale/Nick (🟢 Community extension 2026-07-22)
+      { path: 'automation', name: 'Reports.Automation', component: () => import('@/views/reports/AutomationReport.vue'), meta: { resource: 'engagement_score' } },
       ...eeReportsChildren,
     ],
   },

@@ -340,6 +340,8 @@ async function bootstrap() {
   await app.register(broadcastRoutes);
   const { broadcastReportRoutes } = await import('./modules/broadcast/broadcast-report-routes.js');
   await app.register(broadcastReportRoutes);
+  const { automationReportRoutes } = await import('./modules/automation/automation-report-routes.js');
+  await app.register(automationReportRoutes);
   // Khối nội dung (🟢 Community extension 2026-07-07)
   const { contentBlockRoutes } = await import('./modules/content-blocks/content-block-routes.js');
   await app.register(contentBlockRoutes);
