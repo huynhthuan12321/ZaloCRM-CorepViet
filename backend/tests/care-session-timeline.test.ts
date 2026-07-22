@@ -1,7 +1,8 @@
 /**
  * care-session-timeline.test.ts — Map CareSessionEvent → timeline (Phase 4 Marketing).
- * Kiểm chứng shape khớp FollowUpHistoryDialog: step_sent→'step', reply→'reply',
- * còn lại giữ kind, và stepsSent đếm đúng. Pure function nên test trực tiếp.
+ * Kiểm chứng shape khớp FollowUpHistoryDialog: step_sent→'step', step_simulated→'step',
+ * reply→'reply', còn lại giữ kind, và stepsSent/stepsSimulated/stepsProcessed đếm đúng.
+ * Pure function nên test trực tiếp.
  */
 import { describe, it, expect } from 'vitest';
 import { careEventToTimelineItem, buildFollowupHistory } from '../src/modules/automation/care-session-timeline.js';
@@ -39,6 +40,26 @@ describe('careEventToTimelineItem', () => {
     expect(it.kind).toBe('reaction_pos');
     expect(it.emoji).toBe('❤️');
   });
+
+  it('step_simulated → kind step + status simulated + deliveryMode dry_run', () => {
+    const it = careEventToTimelineItem({
+      eventType: 'step_simulated',
+      payload: { stepIdx: 0, text: '[dry-run] Hello', trigger: 'scheduled', deliveryMode: 'dry_run' },
+      createdAt: AT,
+    });
+    expect(it.kind).toBe('step');
+    expect(it.status).toBe('simulated');
+    expect(it.deliveryMode).toBe('dry_run');
+    expect(it.trigger).toBe('scheduled');
+    expect(it.content).toBe('[dry-run] Hello');
+  });
+
+  it('step_simulated thiếu payload → status simulated, deliveryMode dry_run mặc định', () => {
+    const it = careEventToTimelineItem({ eventType: 'step_simulated', payload: null, createdAt: AT });
+    expect(it.status).toBe('simulated');
+    expect(it.deliveryMode).toBe('dry_run');
+    expect(it.stepIdx).toBeNull();
+  });
 });
 
 describe('buildFollowupHistory', () => {
@@ -52,11 +73,29 @@ describe('buildFollowupHistory', () => {
     ];
     const res = buildFollowupHistory(events);
     expect(res.flow.stepsSent).toBe(2);
+    expect(res.flow.stepsSimulated).toBe(0);
+    expect(res.flow.stepsProcessed).toBe(2);
     expect(res.timeline).toHaveLength(5);
     expect(res.timeline.map((t) => t.kind)).toEqual(['opened', 'step', 'reply', 'step', 'closed']);
   });
 
-  it('rỗng → stepsSent 0, timeline rỗng', () => {
-    expect(buildFollowupHistory([])).toEqual({ flow: { stepsSent: 0 }, timeline: [] });
+  it('rỗng → stepsSent 0, stepsSimulated 0, stepsProcessed 0', () => {
+    const res = buildFollowupHistory([]);
+    expect(res).toEqual({ flow: { stepsSent: 0, stepsSimulated: 0, stepsProcessed: 0 }, timeline: [] });
+  });
+
+  it('dry-run: step_simulated đếm riêng, stepsProcessed = sent + simulated', () => {
+    const events = [
+      { eventType: 'opened', payload: {}, createdAt: new Date('2026-07-12T01:00:00Z') },
+      { eventType: 'step_simulated', payload: { stepIdx: 0, text: '[dry-run] A' }, createdAt: new Date('2026-07-12T02:00:00Z') },
+      { eventType: 'step_simulated', payload: { stepIdx: 1, text: '[dry-run] B' }, createdAt: new Date('2026-07-12T03:00:00Z') },
+    ];
+    const res = buildFollowupHistory(events);
+    expect(res.flow.stepsSent).toBe(0);
+    expect(res.flow.stepsSimulated).toBe(2);
+    expect(res.flow.stepsProcessed).toBe(2);
+    expect(res.timeline).toHaveLength(3);
+    expect(res.timeline[1].status).toBe('simulated');
+    expect(res.timeline[2].status).toBe('simulated');
   });
 });

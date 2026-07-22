@@ -26,7 +26,7 @@
       <div class="fh-sub">
         <b>{{ flowName }}</b>
         <template v-if="card?.nickName"> · Nick {{ card.nickName }}</template>
-        <span v-if="stepsSent != null" class="fh-cnt">{{ stepsSent }} bước đã gửi</span>
+        <span v-if="stepsProcessed != null" class="fh-cnt">{{ stepsProcessed }} bước đã {{ isDryRun ? 'mô phỏng' : 'gửi' }}</span>
       </div>
 
       <!-- body -->
@@ -103,6 +103,8 @@ interface TimelineItem {
   status?: string;
   text?: string | null;
   emoji?: string | null;
+  deliveryMode?: string | null;
+  trigger?: string | null;
 }
 
 const props = defineProps<{ open: boolean; contactId: string; card: FlowRef | null }>();
@@ -112,6 +114,8 @@ const loading = ref(false);
 const error = ref('');
 const timeline = ref<TimelineItem[]>([]);
 const stepsSent = ref<number | null>(null);
+const stepsProcessed = ref<number | null>(null);
+const isDryRun = computed(() => stepsProcessed.value != null && stepsProcessed.value > 0 && (stepsSent.value ?? 0) === 0);
 
 const flowName = computed(() => props.card?.sequenceName || props.card?.triggerName || 'Luồng bám đuổi');
 
@@ -124,12 +128,13 @@ async function load(): Promise<void> {
   timeline.value = [];
   stepsSent.value = null;
   try {
-    const res = await api.get<{ flow: { stepsSent: number }; timeline: TimelineItem[] }>(
+    const res = await api.get<{ flow: { stepsSent: number, stepsProcessed?: number }; timeline: TimelineItem[] }>(
       `/contacts/${props.contactId}/followup-history`,
       { params: { triggerId: props.card.triggerId, sequenceId: props.card.sequenceId ?? undefined } },
     );
     timeline.value = res.data.timeline ?? [];
     stepsSent.value = res.data.flow?.stepsSent ?? null;
+    stepsProcessed.value = res.data.flow?.stepsProcessed ?? res.data.flow?.stepsSent ?? null;
   } catch (e: unknown) {
     error.value = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
       ?? 'Không tải được lịch sử bám đuổi.';
@@ -175,6 +180,7 @@ function normFiles(it: TimelineItem): Array<{ url: string; name: string }> {
 }
 
 function statusLabel(s?: string): string {
+  if (s === 'simulated') return 'Mô phỏng';
   return s === 'seen' ? 'Đã đọc' : s === 'delivered' ? 'Đã nhận' : 'Đã gửi';
 }
 const MARK: Record<string, string> = {
@@ -280,4 +286,5 @@ function fmt(iso: string): string {
 .fh-mark.bad { color: var(--error, #c0392b); }
 .fh-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; opacity: .6; }
 .fh-mtime { font-size: 10px; color: var(--ink-4); margin-left: 2px; }
+.fh-st.simulated { color: #7c3aed; font-style: italic; }
 </style>

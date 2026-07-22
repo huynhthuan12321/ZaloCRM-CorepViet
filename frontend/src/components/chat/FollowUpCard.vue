@@ -193,6 +193,10 @@ export interface FollowUpCardData {
   byName?: string | null;
   byAvatarUrl?: string | null;
   canControl?: boolean;            // false → sale không-owner: chỉ xem, KHOÁ nút
+  stepsSent?: number;
+  stepsSimulated?: number;
+  stepsProcessed?: number;
+  dryRun?: boolean;
 }
 
 const props = defineProps<{ card: FollowUpCardData }>();
@@ -253,16 +257,17 @@ const sourceLabel = computed(() => {
   return `${src.slice(0, 2).join(', ')} (+${src.length - 2})`;
 });
 
-// currentStep = số bước ĐÃ GỬI (1-based từ BE). Progress = đã gửi / tổng.
-// Số bước ĐÃ GỬI THẬT (anh chốt 2026-06-07): khi còn job pending (active+nextRunAt),
-// currentStep = bước ĐANG CHỜ gửi → đã gửi = currentStep - 1. Tránh nhầm "3/3 đã xong"
-// trong khi mới gửi 2, bước 3 đang chờ.
+// Sử dụng stepsSent/stepsProcessed từ backend (đếm từ CareSessionEvent).
+// KHÔNG dùng heuristic currentStep - 1 (đã chứng minh sai).
 const sentSteps = computed(() => {
   const c = props.card;
-  if (c.currentStep == null || !c.totalSteps) return 0;
+  if (!c.totalSteps) return 0;
   if (c.state === 'completed') return c.totalSteps;
-  if (c.state === 'active' && c.nextRunAt) return Math.max(0, c.currentStep - 1); // bước đang chờ chưa tính
-  return Math.min(c.totalSteps, c.currentStep);
+  // Ưu tiên counter từ event: stepsProcessed = sent + simulated.
+  const fromEvents = (c.stepsProcessed ?? 0) || (c.stepsSent ?? 0);
+  if (fromEvents > 0) return Math.min(fromEvents, c.totalSteps);
+  // Fallback: currentStep = currentStepIdx = số bước đã xử lý (0-based index of NEXT step).
+  return Math.min(c.totalSteps, c.currentStep ?? 0);
 });
 const progressPct = computed(() => {
   const c = props.card;
@@ -273,9 +278,10 @@ const progressPct = computed(() => {
 const stepLabel = computed(() => {
   const c = props.card;
   if (c.currentStep == null || !c.totalSteps) return '';
-  // Đang chạy + chờ gửi bước tiếp → "Đã gửi X/N · chờ bước Y".
+  const verb = c.dryRun ? 'Đã mô phỏng' : 'Đã gửi';
+  // Đang chạy + chờ gửi bước tiếp → "Đã gửi/mô phỏng X/N · chờ bước Y".
   if (c.state === 'active' && c.nextRunAt && sentSteps.value < c.totalSteps) {
-    return `Đã gửi ${sentSteps.value}/${c.totalSteps} · chờ bước ${sentSteps.value + 1}`;
+    return `${verb} ${sentSteps.value}/${c.totalSteps} · chờ bước ${sentSteps.value + 1}`;
   }
   return `${sentSteps.value}/${c.totalSteps}`;
 });
