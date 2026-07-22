@@ -35,6 +35,7 @@ import { config } from '../../config/index.js';
 import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { renderMessage, isWithinSendWindow } from '../broadcast/broadcast-service.js';
+import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
 import { parseSequenceSteps, parseSnapshotRules, type SequenceDraftStep } from './sequence-snapshot.js';
 
 // ── Constants ──
@@ -187,8 +188,9 @@ export async function processCareSessionStep(opts: ProcessStepOpts): Promise<Ste
   try {
     if (config.marketingDryRun) {
       // DRY-RUN: KHÔNG gọi Zalo SDK. Tạo step_simulated (KHÔNG phải step_sent).
-      const eventOk = await advanceStep(session, steps, idx, now, `[dry-run] ${text}`, uid, 'step_simulated', trigger);
-      logger.info(`[care-session-step] [dry-run] session=${session.id} step=${idx + 1}/${steps.length} trigger=${trigger} uid=${uid}`);
+      const simText = step.imageUrl ? `[dry-run] (kèm ảnh) ${text}` : `[dry-run] ${text}`;
+      const eventOk = await advanceStep(session, steps, idx, now, simText, uid, 'step_simulated', trigger);
+      logger.info(`[care-session-step] [dry-run] session=${session.id} step=${idx + 1}/${steps.length} trigger=${trigger} uid=${uid}${step.imageUrl ? ' (kèm ảnh)' : ''}`);
       return {
         ok: true, processed: true,
         stepIdx: idx, totalSteps: steps.length,
@@ -199,8 +201,17 @@ export async function processCareSessionStep(opts: ProcessStepOpts): Promise<Ste
       };
     }
 
-    // LIVE: gọi Zalo SDK
-    await zaloOps.sendMessage(session.nickId, uid, 0, { msg: text });
+    // LIVE: gọi Zalo SDK. Có imageUrl → sendImage (caption = text); không có → sendMessage.
+    if (step.imageUrl) {
+      const media = await downloadMediaToTemp({ url: step.imageUrl }, 'image');
+      try {
+        await zaloOps.sendImage(session.nickId, uid, 0, [media.path], null, text);
+      } finally {
+        await media.cleanup().catch(() => {});
+      }
+    } else {
+      await zaloOps.sendMessage(session.nickId, uid, 0, { msg: text });
+    }
 
     // Zalo thành công → finalize DB. Nếu DB fail → CRITICAL + needs_attention.
     const eventOk = await advanceStep(session, steps, idx, now, text, uid, 'step_sent', trigger);

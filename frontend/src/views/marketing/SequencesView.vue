@@ -39,6 +39,7 @@
               <li v-for="(step, idx) in seq.steps.slice(0, 3)" :key="idx">
                 <span class="step-time">{{ idx === 0 ? 'Ngay' : delayLabel(step.delayMinutes) }}</span>
                 <span class="step-text">{{ step.text }}</span>
+                <span v-if="step.imageUrl" class="step-img-flag" title="Có ảnh kèm">🖼️</span>
               </li>
             </ol>
           </div>
@@ -118,6 +119,13 @@
           </div>
           <textarea v-model="step.text" class="f-input f-area" rows="3"
             placeholder="VD: Em chào Anh/Chị, bên em gửi thêm thông tin sản phẩm..."></textarea>
+          <div v-if="step.imageUrl" class="step-img-row">
+            <img :src="step.imageUrl" class="step-img-thumb" alt="Ảnh kèm bước" />
+            <span class="step-img-note">Ảnh kèm (gửi cùng chữ làm chú thích)</span>
+            <button type="button" class="btn btn-ghost btn-sm" @click="step.imageUrl = null">
+              <v-icon size="14">mdi-image-off-outline</v-icon> Bỏ ảnh
+            </button>
+          </div>
         </div>
 
         <div class="seq-modal-foot">
@@ -140,7 +148,7 @@ import { useConfirm } from '@/composables/use-confirm';
 const { push: toast } = useToast();
 const { confirm } = useConfirm();
 
-type StepRow = { text: string; delayMinutes: number; styles?: unknown[]; blockId?: string | null };
+type StepRow = { text: string; delayMinutes: number; styles?: unknown[]; blockId?: string | null; imageUrl?: string | null };
 type SequenceRow = {
   id: string;
   name: string;
@@ -149,7 +157,7 @@ type SequenceRow = {
   stepCount: number;
   steps: StepRow[];
 };
-type SendableBlock = { id: string; name: string; messageText: string };
+type SendableBlock = { id: string; name: string; messageText: string; imageUrl?: string | null };
 
 const sequences = ref<SequenceRow[]>([]);
 const sendableBlocks = ref<SendableBlock[]>([]);
@@ -160,7 +168,7 @@ const form = reactive<{ name: string; description: string; enabled: boolean; ste
   name: '',
   description: '',
   enabled: true,
-  steps: [{ text: '', delayMinutes: 0, blockId: null }],
+  steps: [{ text: '', delayMinutes: 0, blockId: null, imageUrl: null }],
 });
 
 // Khối nội dung loại 'gửi tin' đang BẬT — để ghép vào bước luồng. Lỗi tải khối không
@@ -168,18 +176,20 @@ const form = reactive<{ name: string; description: string; enabled: boolean; ste
 async function loadBlocks(): Promise<void> {
   try {
     const res = await api.get('/content-blocks', { params: { type: 'send_message', enabled: 'true' } });
-    sendableBlocks.value = (res.data.blocks ?? []).map((b: any) => ({ id: b.id, name: b.name, messageText: b.messageText ?? '' }));
+    sendableBlocks.value = (res.data.blocks ?? []).map((b: any) => ({ id: b.id, name: b.name, messageText: b.messageText ?? '', imageUrl: b.imageUrl ?? null }));
   } catch { sendableBlocks.value = []; }
 }
 
 // Chọn 1 khối cho bước: điền text từ khối (nếu bước đang trống) + gắn blockId để hiển thị
-// nguồn. Bỏ chọn (value rỗng) → gỡ blockId, giữ nguyên text đang có.
+// nguồn + gán ảnh theo khối (ảnh không gõ tay). Bỏ chọn (value rỗng) → gỡ blockId + ảnh,
+// giữ nguyên text đang có.
 function applyBlock(idx: number, blockId: string): void {
   const step = form.steps[idx];
   if (!step) return;
-  if (!blockId) { step.blockId = null; return; }
+  if (!blockId) { step.blockId = null; step.imageUrl = null; return; }
   const block = sendableBlocks.value.find((b) => b.id === blockId);
   step.blockId = blockId;
+  step.imageUrl = block?.imageUrl ?? null;
   if (block && !step.text.trim()) step.text = block.messageText;
 }
 
@@ -198,6 +208,7 @@ async function load(): Promise<void> {
         delayMinutes: Number(st.delayMinutes ?? 0) || 0,
         styles: Array.isArray(st.styles) ? st.styles : [],
         blockId: typeof st.blockId === 'string' ? st.blockId : null,
+        imageUrl: typeof st.imageUrl === 'string' ? st.imageUrl : null,
       })),
     }));
   } finally {
@@ -211,7 +222,7 @@ function openCreate(): void {
     name: '',
     description: '',
     enabled: true,
-    steps: [{ text: '', delayMinutes: 0, blockId: null }],
+    steps: [{ text: '', delayMinutes: 0, blockId: null, imageUrl: null }],
   });
   modal.open = true;
 }
@@ -222,13 +233,13 @@ function openEdit(seq: SequenceRow): void {
     name: seq.name,
     description: seq.description ?? '',
     enabled: seq.enabled,
-    steps: seq.steps.length ? seq.steps.map((s) => ({ ...s })) : [{ text: '', delayMinutes: 0, blockId: null }],
+    steps: seq.steps.length ? seq.steps.map((s) => ({ ...s })) : [{ text: '', delayMinutes: 0, blockId: null, imageUrl: null }],
   });
   modal.open = true;
 }
 
 function addStep(): void {
-  form.steps.push({ text: '', delayMinutes: form.steps.length === 0 ? 0 : 1440, blockId: null });
+  form.steps.push({ text: '', delayMinutes: form.steps.length === 0 ? 0 : 1440, blockId: null, imageUrl: null });
 }
 
 function removeStep(idx: number): void {
@@ -250,6 +261,7 @@ async function saveSequence(): Promise<void> {
     delayMinutes: idx === 0 ? 0 : Math.max(0, Number(s.delayMinutes) || 0),
     styles: s.styles ?? [],
     blockId: s.blockId ?? null,
+    imageUrl: s.imageUrl ?? null,
   })).filter((s) => s.text);
   if (!name) return void toast('Nhap ten luong', 'error');
   if (!steps.length) return void toast('Nhap it nhat 1 buoc tin nhan', 'error');
@@ -340,5 +352,9 @@ onMounted(() => { void load(); void loadBlocks(); });
 .step-block-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .f-block-pick { flex: 1; }
 .step-block-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; color: #0f6fa0; background: #eef6fb; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.step-img-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.step-img-thumb { width: 46px; height: 46px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border, #e5e4e7); }
+.step-img-note { font-size: 12px; color: var(--text-secondary, #666); flex: 1; }
+.step-img-flag { margin-left: 4px; font-size: 12px; }
 .seq-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>
