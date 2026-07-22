@@ -501,7 +501,7 @@
       </div>
       <div ref="aiKbMsgsEl" class="ai-kb-msgs">
         <div v-if="aiKbMsgs.length === 0" class="ai-kb-empty">
-          Ví dụ: "Dự án Emerald giá 2PN bao nhiêu?", "Chính sách chiết khấu hiện tại?", "Tiến độ bàn giao?"
+          Ví dụ: "Bột bánh crêpe có những quy cách nào?", "Giá sỉ hiện tại bao nhiêu?", "Chính sách giao hàng thế nào?"
           <div class="ai-kb-hint">Tài liệu quản lý ở Cài đặt → Trợ lý AI.</div>
         </div>
         <div v-for="(m, i) in aiKbMsgs" :key="i" class="ai-kb-msg" :class="m.role">

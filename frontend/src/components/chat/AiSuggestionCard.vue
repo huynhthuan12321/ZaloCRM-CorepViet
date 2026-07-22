@@ -59,13 +59,15 @@
 import { ref, computed, reactive } from 'vue';
 import { api } from '@/api/index';
 
-interface PropertyNeed {
+interface ProductNeed {
   type?: string;
   budgetMin?: number;
   budgetMax?: number;
   purpose?: string;
   decisionTimeline?: string;
   area?: string;
+  quantity?: string;
+  deliveryAddress?: string;
 }
 
 interface Entities {
@@ -77,7 +79,9 @@ interface Entities {
   province?: string;
   district?: string;
   ward?: string;
-  propertyNeed?: PropertyNeed;
+  productNeed?: ProductNeed;
+  /** Dữ liệu gợi ý cũ, chỉ đọc để chuyển tiếp sang productNeed khi sale áp dụng. */
+  propertyNeed?: ProductNeed;
   leadSource?: string;
   tags?: string[];
   confidenceScore?: number;
@@ -102,23 +106,18 @@ const confidencePercent = computed(() => {
   return typeof s === 'number' ? Math.round(s * 100) : null;
 });
 
-const PROPERTY_TYPE_LABEL: Record<string, string> = {
-  '1PN': 'Căn 1PN',
-  '2PN': 'Căn 2PN',
-  '3PN': 'Căn 3PN',
-  biet_thu: 'Biệt thự',
-  nha_pho: 'Nhà phố',
-  shophouse: 'Shophouse',
-};
-const PROPERTY_PURPOSE_LABEL: Record<string, string> = {
-  o_lien: 'Ở liền',
-  dau_tu: 'Đầu tư',
-  vua_o_vua_thue: 'Vừa ở vừa cho thuê',
+const PRODUCT_PURPOSE_LABEL: Record<string, string> = {
+  dung_thu: 'Dùng thử',
+  dung_thuong_xuyen: 'Dùng thường xuyên',
+  mua_si: 'Mua sỉ',
+  lam_dai_ly: 'Làm đại lý',
+  qua_tang: 'Quà tặng',
+  ban_thu: 'Nhập bán thử',
 };
 const TIMELINE_LABEL: Record<string, string> = {
-  '1_thang': '1 tháng',
-  '3_thang': '3 tháng',
-  '6_thang': '6 tháng',
+  hom_nay: 'Hôm nay',
+  tuan_nay: 'Tuần này',
+  thang_nay: 'Tháng này',
   chua_ro: 'Chưa rõ',
 };
 const LEAD_SOURCE_LABEL: Record<string, string> = {
@@ -180,22 +179,24 @@ const rows = computed<SuggestionRow[]>(() => {
     add('tags', 'Tags', e.tags, e.tags.join(', '));
   }
 
-  // M55.3 2026-05-30: propertyNeed → row checkable, BE lưu vào Contact.metadata.propertyNeed
-  // + tóm tắt vào Contact.notes. KHÔNG còn info-only nữa.
-  if (e.propertyNeed) {
-    const pn = e.propertyNeed;
+  // Nhu cầu sản phẩm được lưu vào metadata và tóm tắt trong ghi chú liên hệ.
+  const productNeed = e.productNeed ?? e.propertyNeed;
+  if (productNeed) {
+    const pn = productNeed;
     const parts: string[] = [];
-    if (pn.type) parts.push(PROPERTY_TYPE_LABEL[pn.type] ?? pn.type);
+    if (pn.type) parts.push(pn.type);
     if (pn.budgetMin || pn.budgetMax) {
-      const b = pn.budgetMax ? `${pn.budgetMin}-${pn.budgetMax} tỷ` : `${pn.budgetMin} tỷ`;
+      const b = pn.budgetMax ? `${pn.budgetMin ?? '?'}-${pn.budgetMax} triệu` : `${pn.budgetMin} triệu`;
       parts.push(b);
     }
-    if (pn.purpose) parts.push(PROPERTY_PURPOSE_LABEL[pn.purpose] ?? pn.purpose);
-    if (pn.area) parts.push(`tại ${pn.area}`);
+    if (pn.quantity) parts.push(`SL: ${pn.quantity}`);
+    if (pn.purpose) parts.push(PRODUCT_PURPOSE_LABEL[pn.purpose] ?? pn.purpose);
+    if (pn.deliveryAddress) parts.push(`giao tại ${pn.deliveryAddress}`);
+    else if (pn.area) parts.push(`khu vực ${pn.area}`);
     if (pn.decisionTimeline) parts.push(`(${TIMELINE_LABEL[pn.decisionTimeline] ?? pn.decisionTimeline})`);
     if (parts.length > 0) {
       result.push({
-        field: 'propertyNeed',
+        field: 'productNeed',
         label: 'Nhu cầu sản phẩm',
         value: pn, // gửi nguyên object cho BE serialize vào metadata
         displayValue: parts.join(' '),

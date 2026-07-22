@@ -59,6 +59,9 @@ trả về dạng JSON sau phần reply, ngăn cách bằng dòng \`---JSON---\`
 5. Trả ĐÚNG format: text reply trước, \`---JSON---\`, JSON sau.
 
 # Định dạng output
+Giá trị hợp lệ cho \`purpose\`: \`dung_thu\`, \`dung_thuong_xuyen\`, \`mua_si\`, \`lam_dai_ly\`, \`qua_tang\`, \`ban_thu\`.
+Giá trị hợp lệ cho \`decisionTimeline\`: \`hom_nay\`, \`tuan_nay\`, \`thang_nay\`, \`chua_ro\`.
+
 [Text reply markdown ngắn 2-4 câu]
 
 ---JSON---
@@ -70,13 +73,15 @@ trả về dạng JSON sau phần reply, ngăn cách bằng dòng \`---JSON---\`
   "incomeRange": "10-20" | "20-50" | "50+" | null,
   "province": "...",
   "district": "...",
-  "propertyNeed": {
-    "type": "san_pham",
+  "productNeed": {
+    "type": "tên sản phẩm hoặc nhóm hàng",
     "budgetMin": 2.5,
     "budgetMax": 3.5,
     "purpose": "mua_si",
     "decisionTimeline": "tuan_nay",
-    "area": "TP.HCM"
+    "area": "khu vực nhận hàng",
+    "quantity": "số lượng kèm đơn vị",
+    "deliveryAddress": "địa chỉ giao hàng nếu khách cung cấp"
   },
   "leadSource": "facebook",
   "tags": ["khach-tiem-nang"],
@@ -93,7 +98,7 @@ Em trả lời:
 Em ghi nhận: anh Nam, 45 tuổi, làm ngân hàng VCB, hiện ở Q.7, quan tâm bột bánh Cờ Rếp Việt và muốn lấy thử 10 túi. Anh hỏi thêm giúp em địa chỉ giao hàng và thời điểm anh Nam cần nhận hàng nhé.
 
 ---JSON---
-{"fullName":"Nam","gender":"M","birthYear":1981,"occupation":"Nhân viên ngân hàng VCB","incomeRange":"20-50","province":"TP.HCM","district":"Quận 7","propertyNeed":{"type":"Bột bánh Cờ Rếp Việt","budgetMin":null,"budgetMax":null,"purpose":"dung_thu","area":"Quận 7","quantity":"10 túi"},"confidenceScore":0.9,"missingFields":["decisionTimeline","leadSource","deliveryAddress"]}
+{"fullName":"Nam","gender":"M","birthYear":1981,"occupation":"Nhân viên ngân hàng VCB","incomeRange":"20-50","province":"TP.HCM","district":"Quận 7","productNeed":{"type":"Bột bánh Cờ Rếp Việt","purpose":"dung_thu","area":"Quận 7","quantity":"10 túi"},"confidenceScore":0.9,"missingFields":["decisionTimeline","leadSource","deliveryAddress"]}
 
 ## Ví dụ 2
 Sale gõ: "Chị Hoa được chị Lan giới thiệu, đang cân nhắc nhập hàng bán thử."
@@ -102,5 +107,5 @@ Em trả lời:
 Em ghi: chị Hoa được chị Lan giới thiệu, đang cân nhắc nhập hàng bán thử. Anh hỏi thêm chị Hoa quan tâm nhóm sản phẩm nào và muốn lấy số lượng khoảng bao nhiêu để em tư vấn phù hợp.
 
 ---JSON---
-{"fullName":"Hoa","gender":"F","propertyNeed":{"purpose":"ban_thu"},"leadSource":"gioi_thieu","tags":["gioi-thieu-tu-chi-Lan"],"confidenceScore":0.7,"missingFields":["birthYear","budgetMin","area","type","quantity"]}
+{"fullName":"Hoa","gender":"F","productNeed":{"purpose":"ban_thu"},"leadSource":"gioi_thieu","tags":["gioi-thieu-tu-chi-Lan"],"confidenceScore":0.7,"missingFields":["birthYear","budgetMin","area","type","quantity"]}
 `;

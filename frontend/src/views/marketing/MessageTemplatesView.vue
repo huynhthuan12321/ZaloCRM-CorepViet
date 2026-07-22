@@ -175,8 +175,7 @@ const {
   createFolder, updateFolder, deleteFolder,
 } = useMessageTemplates();
 
-// Tag dự án lấy ĐỘNG theo org (facade /marketing/project-tags) + merge tag đang có
-// trong mẫu đã nạp — KHÔNG hard-code branding bất động sản (ADR-001 Phase 1).
+// Tag sản phẩm lấy động theo tổ chức + merge tag đang có trong mẫu đã nạp.
 const { projectTags, fetchProjectTags } = useProjectTags();
 // 8 biến động — KHỚP backend render-template.ts + quick-template-popup.
 const VARS = [
@@ -200,7 +199,7 @@ const form = reactive<{ name: string; shortcut: string; folderId: string; visibi
   { name: '', shortcut: '', folderId: '', visibility: 'public', tagIds: [], content: '' },
 );
 
-function shortTag(tag: string): string { return tag.replace(/^Emerald\s+/, '').replace('Sài Gòn', 'SG'); }
+function shortTag(tag: string): string { return tag.length > 24 ? `${tag.slice(0, 23)}…` : tag; }
 function plainOf(t: MessageTemplate): string { return t.contentRich?.text ?? t.content ?? ''; }
 
 // Danh sách tag để lọc/gán: hợp nhất tag org (facade) + tag đang có trong mẫu đã nạp.

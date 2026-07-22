@@ -9,18 +9,19 @@
 
 export type Gender = 'M' | 'F' | null;
 export type IncomeRange = '0-10' | '10-20' | '20-50' | '50+' | null;
-export type PropertyType = '1PN' | '2PN' | '3PN' | 'biet_thu' | 'nha_pho' | 'shophouse';
-export type PropertyPurpose = 'o_lien' | 'dau_tu' | 'vua_o_vua_thue';
-export type DecisionTimeline = '1_thang' | '3_thang' | '6_thang' | 'chua_ro';
+export type ProductPurpose = 'dung_thu' | 'dung_thuong_xuyen' | 'mua_si' | 'lam_dai_ly' | 'qua_tang' | 'ban_thu';
+export type DecisionTimeline = 'hom_nay' | 'tuan_nay' | 'thang_nay' | 'chua_ro';
 export type LeadSource = 'facebook' | 'zalo' | 'gioi_thieu' | 'hotline' | 'website' | 'khac';
 
-export interface ExtractedPropertyNeed {
-  type?: PropertyType;
-  budgetMin?: number; // tỷ VND
+export interface ExtractedProductNeed {
+  type?: string;
+  budgetMin?: number; // triệu VND
   budgetMax?: number;
-  purpose?: PropertyPurpose;
+  purpose?: ProductPurpose;
   decisionTimeline?: DecisionTimeline;
   area?: string;
+  quantity?: string;
+  deliveryAddress?: string;
 }
 
 export interface ExtractedEntities {
@@ -32,16 +33,15 @@ export interface ExtractedEntities {
   province?: string;
   district?: string;
   ward?: string;
-  propertyNeed?: ExtractedPropertyNeed;
+  productNeed?: ExtractedProductNeed;
   leadSource?: LeadSource;
   tags?: string[];
   confidenceScore: number;
   missingFields: string[];
 }
 
-const ENUM_PROPERTY_TYPE = new Set(['1PN', '2PN', '3PN', 'biet_thu', 'nha_pho', 'shophouse']);
-const ENUM_PROPERTY_PURPOSE = new Set(['o_lien', 'dau_tu', 'vua_o_vua_thue']);
-const ENUM_DECISION_TIMELINE = new Set(['1_thang', '3_thang', '6_thang', 'chua_ro']);
+const ENUM_PRODUCT_PURPOSE = new Set(['dung_thu', 'dung_thuong_xuyen', 'mua_si', 'lam_dai_ly', 'qua_tang', 'ban_thu']);
+const ENUM_DECISION_TIMELINE = new Set(['hom_nay', 'tuan_nay', 'thang_nay', 'chua_ro']);
 const ENUM_LEAD_SOURCE = new Set(['facebook', 'zalo', 'gioi_thieu', 'hotline', 'website', 'khac']);
 const ENUM_INCOME = new Set(['0-10', '10-20', '20-50', '50+']);
 
@@ -84,18 +84,22 @@ export function safeParseEntities(input: unknown): { success: true; data: Extrac
       .slice(0, 10)
       .map((t) => (t as string).slice(0, 50));
   }
-  if (obj.propertyNeed && typeof obj.propertyNeed === 'object') {
-    const pn = obj.propertyNeed as Record<string, unknown>;
-    const need: ExtractedPropertyNeed = {};
-    if (typeof pn.type === 'string' && ENUM_PROPERTY_TYPE.has(pn.type)) need.type = pn.type as PropertyType;
-    if (typeof pn.budgetMin === 'number' && pn.budgetMin > 0 && pn.budgetMin < 1000) need.budgetMin = pn.budgetMin;
-    if (typeof pn.budgetMax === 'number' && pn.budgetMax > 0 && pn.budgetMax < 1000) need.budgetMax = pn.budgetMax;
-    if (typeof pn.purpose === 'string' && ENUM_PROPERTY_PURPOSE.has(pn.purpose)) need.purpose = pn.purpose as PropertyPurpose;
+  // Đọc cả khóa cũ để các gợi ý AI đã lưu trước khi đổi ngành vẫn mở được.
+  const rawProductNeed = obj.productNeed ?? obj.propertyNeed;
+  if (rawProductNeed && typeof rawProductNeed === 'object') {
+    const pn = rawProductNeed as Record<string, unknown>;
+    const need: ExtractedProductNeed = {};
+    if (typeof pn.type === 'string' && pn.type.trim()) need.type = pn.type.trim().slice(0, 200);
+    if (typeof pn.budgetMin === 'number' && pn.budgetMin >= 0 && pn.budgetMin < 1_000_000) need.budgetMin = pn.budgetMin;
+    if (typeof pn.budgetMax === 'number' && pn.budgetMax >= 0 && pn.budgetMax < 1_000_000) need.budgetMax = pn.budgetMax;
+    if (typeof pn.purpose === 'string' && ENUM_PRODUCT_PURPOSE.has(pn.purpose)) need.purpose = pn.purpose as ProductPurpose;
     if (typeof pn.decisionTimeline === 'string' && ENUM_DECISION_TIMELINE.has(pn.decisionTimeline)) {
       need.decisionTimeline = pn.decisionTimeline as DecisionTimeline;
     }
     if (typeof pn.area === 'string') need.area = pn.area.slice(0, 200);
-    if (Object.keys(need).length > 0) out.propertyNeed = need;
+    if (typeof pn.quantity === 'string') need.quantity = pn.quantity.slice(0, 100);
+    if (typeof pn.deliveryAddress === 'string') need.deliveryAddress = pn.deliveryAddress.slice(0, 300);
+    if (Object.keys(need).length > 0) out.productNeed = need;
   }
 
   return { success: true, data: out };

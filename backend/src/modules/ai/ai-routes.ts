@@ -395,10 +395,10 @@ export async function aiRoutes(app: FastifyInstance) {
         });
         if (!contact) return reply.status(404).send({ error: 'Contact not found' });
 
-        // M55.3 2026-05-30: Mở rộng whitelist — thêm tags + propertyNeed (lưu vào
-        // metadata.propertyNeed vì Contact schema chưa có cột riêng). Special handling:
+        // Mở rộng whitelist — thêm tags + productNeed (lưu vào metadata vì Contact
+        // chưa có cột nhu cầu sản phẩm riêng). Special handling:
         // - tags: MERGE với tags hiện tại (không overwrite, dedup)
-        // - propertyNeed: serialize vào Contact.metadata.propertyNeed + tóm tắt vào notes
+        // - productNeed: serialize vào Contact.metadata.productNeed + tóm tắt vào notes
         const ALLOWED_SCALAR = new Set([
           'fullName', 'gender', 'birthYear', 'occupation', 'incomeRange',
           'province', 'district', 'ward', 'source',
@@ -435,12 +435,12 @@ export async function aiRoutes(app: FastifyInstance) {
               }
             }
             acceptedLog.push(item);
-          } else if (item.field === 'propertyNeed' && item.value && typeof item.value === 'object') {
-            // Lưu vào metadata.propertyNeed — merge với existing metadata
+          } else if ((item.field === 'productNeed' || item.field === 'propertyNeed') && item.value && typeof item.value === 'object') {
+            // Lưu nhu cầu sản phẩm và giữ nguyên các metadata khác.
             const existingMeta = (contact.metadata && typeof contact.metadata === 'object')
               ? contact.metadata as Record<string, unknown>
               : {};
-            update.metadata = { ...existingMeta, propertyNeed: item.value };
+            update.metadata = { ...existingMeta, productNeed: item.value };
             // Bonus: append tóm tắt vào notes để sale đọc nhanh
             const pn = item.value as {
               type?: string;
@@ -449,21 +449,25 @@ export async function aiRoutes(app: FastifyInstance) {
               purpose?: string;
               area?: string;
               decisionTimeline?: string;
+              quantity?: string;
+              deliveryAddress?: string;
             };
             const parts: string[] = [];
             if (pn.type) parts.push(pn.type);
             if (pn.budgetMin || pn.budgetMax) {
-              parts.push(pn.budgetMax ? `${pn.budgetMin || '?'}-${pn.budgetMax} tỷ` : `${pn.budgetMin} tỷ`);
+              parts.push(pn.budgetMax ? `${pn.budgetMin ?? '?'}-${pn.budgetMax} triệu` : `${pn.budgetMin} triệu`);
             }
+            if (pn.quantity) parts.push(`SL ${pn.quantity}`);
             if (pn.purpose) parts.push(pn.purpose);
-            if (pn.area) parts.push(`tại ${pn.area}`);
-            if (pn.decisionTimeline) parts.push(`quyết định ${pn.decisionTimeline}`);
+            if (pn.deliveryAddress) parts.push(`giao tại ${pn.deliveryAddress}`);
+            else if (pn.area) parts.push(`khu vực ${pn.area}`);
+            if (pn.decisionTimeline) parts.push(`cần hàng ${pn.decisionTimeline}`);
             if (parts.length > 0) {
               const summary = `[AI ${new Date().toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}] Nhu cầu sản phẩm: ${parts.join(' · ')}`;
               const oldNotes = (contact.notes || '').trim();
               update.notes = oldNotes ? `${oldNotes}\n\n${summary}` : summary;
             }
-            acceptedLog.push(item);
+            acceptedLog.push({ field: 'productNeed', value: item.value });
           }
         }
 

@@ -63,10 +63,10 @@
         </div>
       </div>
 
-      <!-- Hàng 3: Dự án (thư mục) | Tag — 1 dòng cuộn ngang -->
+      <!-- Hàng 3: Danh mục (thư mục) | Tag — 1 dòng cuộn ngang -->
       <div v-if="folders.length || availableTags.length" class="mtp-row3">
         <template v-if="folders.length">
-          <span class="mtp-rlabel">Dự án</span>
+          <span class="mtp-rlabel">Danh mục</span>
           <button class="mtp-chip" :class="{ on: folderId === '' }" @click="setFolder('')">Tất cả</button>
           <button
             v-for="f in folders"
@@ -89,7 +89,7 @@
         </template>
       </div>
 
-      <!-- Lọc sâu (ẩn/hiện): chỉ Thời gian + Cỡ (Quyền + Dự án/Tag đã ra ngoài) -->
+      <!-- Lọc sâu (ẩn/hiện): chỉ Thời gian + Cỡ (Quyền + Danh mục/Tag đã ra ngoài) -->
       <div v-if="showFilter" class="mtp-filter">
         <div class="mtp-frow">
           <select v-model="sinceBy" class="mtp-sel" @change="applyFilters">
@@ -496,7 +496,7 @@ onMounted(async () => {
 .mtp-filtbtn:hover { border-color: var(--at-action); color: var(--at-action); }
 .mtp-filtbtn.on { background: var(--at-action); border-color: var(--at-action); color: #fff; }
 
-/* Hàng 2 (Quyền) + Hàng 3 (Dự án | Tag) — luôn hiện, mỗi nhóm 1 dòng cuộn ngang */
+/* Hàng 2 (Quyền) + Hàng 3 (Danh mục | Tag) — luôn hiện, mỗi nhóm 1 dòng cuộn ngang */
 .mtp-row2, .mtp-row3 {
   display: flex; gap: 5px; align-items: center; padding: 0 12px 7px; flex-shrink: 0;
   overflow-x: auto; scrollbar-width: none;

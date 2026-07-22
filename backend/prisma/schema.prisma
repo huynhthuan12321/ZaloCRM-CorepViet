@@ -1692,7 +1692,7 @@ model AiConfig {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Knowledge base RAG (Trợ lý AI Bất động sản) — Đợt 1 2026-07-11.
+// Knowledge base RAG (Trợ lý AI sản phẩm) — Đợt 1 2026-07-11.
 // Tài liệu BĐS → chunk → embedding (float[] lưu Json) → in-JS cosine search →
 // nhồi vào prompt AI. KHÔNG pgvector (không đụng Postgres image). orgId cột thường
 // (pattern extension, không FK core Organization qua Prisma; FK cascade ở migration).
@@ -2161,7 +2161,7 @@ model ScoreSignalRule {
   keywords Json @default("[]")
 
   // Vietnamese label cho Score Explainability Modal hiển thị.
-  // Vd "Hỏi giá rõ ràng", "Hoàn thành lịch xem nhà".
+  // Vd "Hỏi giá rõ ràng", "Hoàn thành lịch tư vấn".
   label String
 
   // Stage applicability — rule chỉ apply khi friend ở stage này.

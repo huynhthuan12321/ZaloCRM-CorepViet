@@ -90,8 +90,7 @@ const emit = defineEmits<{
 const selectedIndex = ref(0);
 const tagFilter = ref('');
 
-// Tag dự án lấy ĐỘNG từ chính các mẫu đã nạp của org — KHÔNG hard-code branding.
-// Phân tích Phase 1 (ADR-001): bỏ mảng bất động sản cố định.
+// Tag sản phẩm lấy động từ chính các mẫu đã nạp của tổ chức.
 const PROJECT_TAGS = computed<string[]>(() => {
   const set = new Set<string>();
   for (const t of props.templates) {
@@ -147,7 +146,7 @@ onBeforeUnmount(() => {
   }
 });
 
-function shortTag(tag: string): string { return tag.replace(/^Emerald\s+/, '').replace('Sài Gòn', 'SG'); }
+function shortTag(tag: string): string { return tag.length > 24 ? `${tag.slice(0, 23)}…` : tag; }
 
 // Chuẩn hóa query gõ tắt (giống normalizeShortcut backend) để so prefix với shortcut.
 function normQuery(q: string): string {

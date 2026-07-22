@@ -981,8 +981,8 @@ const smartLocation = computed<string | null>(() => {
 const LOCATION_PRESETS = [
   { icon: 'mdi-office-building-outline', value: 'Văn phòng' },
   { icon: 'mdi-home-outline', value: 'Nhà khách' },
-  { icon: 'mdi-crane', value: 'Dự án' },
-  { icon: 'mdi-home-city-outline', value: 'Nhà mẫu' },
+  { icon: 'mdi-store-outline', value: 'Cửa hàng' },
+  { icon: 'mdi-warehouse', value: 'Kho hàng' },
   { icon: 'mdi-coffee-outline', value: 'Quán cafe' },
 ];
 

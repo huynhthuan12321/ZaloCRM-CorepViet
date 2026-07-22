@@ -259,14 +259,14 @@ export async function parseAppointmentFromText(input: { orgId: string; text: str
     '',
     `Hôm nay là ${today} (${weekday}). Tính ngày tuyệt đối cho "thứ X" (sang tuần tới nếu thứ đã qua), "N ngày nữa", "mai"=ngày mai, "kia"=ngày kia.`,
     '"sáng"=09:00, "chiều"=14:00, "tối"=19:00. "trưa"=12:00.',
-    'type rules: "gọi"/"call"→call, "nhắn"→message, "gặp"/"ghé"/"đến"/"xem nhà"→meeting, fallback→follow_up.',
+    'type rules: "gọi"/"call"→call, "nhắn"→message, "gặp"/"ghé"/"đến"/"xem hàng"→meeting, fallback→follow_up.',
     'location: trích nguyên văn cụm địa điểm nếu có. KHÔNG có → null + thêm "location" vào missingFields.',
     'summary: 1 câu ≤120 ký tự mô tả việc cần làm.',
     '',
     'missingFields: liệt kê field thiếu trong ["date","time","location"] để FE prompt user điền tiếp.',
     'confidence: > 0.7 khi date+time+intent rõ, 0.4-0.7 khi 1-2 field có, < 0.4 khi mơ hồ.',
     '',
-    'CHỈ trả hasIntent=false khi note hoàn toàn KHÔNG liên quan hẹn (vd "khách thích nhà 3pn", "đã gửi báo giá").',
+    'CHỈ trả hasIntent=false khi note hoàn toàn KHÔNG liên quan hẹn (vd "khách quan tâm bột bánh", "đã gửi báo giá").',
     'Khi hasIntent=false → tất cả field null/empty array, confidence=0.',
   ].join('\n');
 
@@ -382,14 +382,14 @@ NGUYÊN TẮC FORMAT (chọn lọc, không bôi quá nhiều):
 MAX 15 ranges per response. Chọn lọc highlight quan trọng nhất. KHÔNG bôi bullet "- " / "+ ".
 
 VÍ DỤ INPUT:
-"- Dự án Sunshine City tọa lạc tại Q.7\\n- Giá từ 2.5 tỷ (giảm 200tr)\\n- Hotline: 0901-123-456"
+"- Bột bánh crêpe Cờ Rếp Việt gói 1 kg\\n- Giá 125.000đ (giảm 10%)\\n- Hotline: 0901-123-456"
 
 VÍ DỤ OUTPUT:
 {"ranges":[
-  {"phrase":"Sunshine City","styles":["b","c_db342e"]},
-  {"phrase":"Q.7","styles":["b","c_f27806"]},
-  {"phrase":"2.5 tỷ","styles":["b","c_db342e"]},
-  {"phrase":"giảm 200tr","styles":["b","c_db342e"]},
+  {"phrase":"Bột bánh crêpe Cờ Rếp Việt","styles":["b","c_db342e"]},
+  {"phrase":"gói 1 kg","styles":["b","c_f27806"]},
+  {"phrase":"125.000đ","styles":["b","c_db342e"]},
+  {"phrase":"giảm 10%","styles":["b","c_db342e"]},
   {"phrase":"0901-123-456","styles":["b","c_2962ff"]}
 ]}`;
 
@@ -401,7 +401,7 @@ function isValidStyleCode(st: string): boolean {
  * 2026-05-21 v4: Convert AI response ranges (phrase-based) → Zalo styles (offset-based).
  * Robust với Vietnamese diacritics — KHÔNG dùng AI offset, dùng JS String.indexOf chuẩn.
  *
- * AI return: [{phrase: "Sunshine City", styles: ["b", "c_db342e"]}, ...]
+ * AI return: [{phrase: "Bột bánh crêpe Cờ Rếp Việt", styles: ["b", "c_db342e"]}, ...]
  * Convert: text.indexOf(phrase) → start. phrase.length → len.
  *
  * Edge cases:

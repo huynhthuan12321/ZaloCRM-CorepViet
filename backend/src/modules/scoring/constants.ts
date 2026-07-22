@@ -111,8 +111,8 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     dimension: 'intent',
     ruleType: 'keyword',
     delta: 18,
-    keywords: ['hợp đồng', 'hđ', 'công chứng', 'sổ đỏ', 'sổ hồng', 'pháp lý', 'thủ tục'],
-    label: 'KH hỏi thủ tục pháp lý',
+    keywords: ['thành phần', 'nguồn gốc', 'chứng nhận', 'an toàn thực phẩm', 'hạn sử dụng', 'bảo quản', 'công bố'],
+    label: 'KH hỏi thành phần / chất lượng',
   },
   {
     signalKey: 'ask_promo',
@@ -135,8 +135,8 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     dimension: 'intent',
     ruleType: 'keyword',
     delta: 15,
-    keywords: ['khi nào bàn giao', 'tháng nào ký', 'năm sau', 'cuối năm', 'sang năm'],
-    label: 'KH đặt câu hỏi tương lai',
+    keywords: ['khi nào giao', 'bao giờ có hàng', 'còn hàng không', 'ngày mai', 'tuần này', 'tháng này'],
+    label: 'KH hỏi thời gian có hàng / giao hàng',
   },
 
   // ── INTENT — Action milestones (event-based) ────────────────────────────
@@ -146,14 +146,14 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     ruleType: 'action',
     delta: 25,
     capTotal: 50, // max +50 từ booking (tránh spam)
-    label: 'Đã đặt lịch xem nhà',
+    label: 'Đã đặt lịch tư vấn / xem hàng',
   },
   {
     signalKey: 'appointment_complete',
     dimension: 'intent',
     ruleType: 'action',
     delta: 35,
-    label: 'Hoàn thành lịch xem nhà',
+    label: 'Hoàn thành lịch tư vấn / xem hàng',
   },
   {
     signalKey: 'document_sent',
@@ -168,7 +168,7 @@ export const DEFAULT_SIGNAL_RULES: SignalRuleSeed[] = [
     dimension: 'intent',
     ruleType: 'action',
     delta: 50,
-    label: 'Đặt cọc giữ chỗ',
+    label: 'Đã xác nhận / đặt cọc đơn hàng',
   },
   {
     signalKey: 'sign_contract',
