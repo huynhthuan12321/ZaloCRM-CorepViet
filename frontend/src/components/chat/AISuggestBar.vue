@@ -25,6 +25,7 @@
     </div>
     <button class="ai-refresh" :disabled="loading" title="Làm mới gợi ý" @click="$emit('refresh')">↻</button>
   </div>
+  <div v-if="sourcesLine" class="ai-suggest-sources">Nguồn: {{ sourcesLine }}</div>
 </template>
 
 <script setup lang="ts">
@@ -34,6 +35,7 @@ const props = defineProps<{
   suggestion: string;
   loading?: boolean;
   error?: string;
+  sources?: string[];
 }>();
 defineEmits<{ use: [text: string]; refresh: [] }>();
 
@@ -46,6 +48,11 @@ const pills = computed<Pill[]>(() => {
 });
 
 const visible = computed(() => props.loading || pills.value.length > 0 || !!props.error);
+
+const sourcesLine = computed(() => {
+  if (!visible.value || props.loading || !pills.value.length) return '';
+  return (props.sources || []).join(', ');
+});
 
 function truncated(text: string) {
   if (text.length <= 90) return `"${text}"`;
@@ -107,4 +114,11 @@ function truncated(text: string) {
 }
 .ai-refresh:hover:not(:disabled) { background: var(--smax-grey-50); color: var(--smax-primary); }
 .ai-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+.ai-suggest-sources {
+  background: linear-gradient(90deg, rgba(156,39,176,0.04), rgba(33,150,243,0.04));
+  padding: 3px 17px 6px 57px;
+  font-size: 11px;
+  color: var(--smax-grey-700);
+  flex-shrink: 0;
+}
 </style>

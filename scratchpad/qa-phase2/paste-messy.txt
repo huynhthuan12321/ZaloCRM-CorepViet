@@ -1,0 +1,14 @@
+0902000001 Nguyễn Văn An
+0902000001 Nguyễn Văn An (trùng y hệt)
++84902000001 Trùng dạng +84
+p:+84902000002 Trần Thị Bích
+tel:0902000003 Lê Văn Cường
+sdt: 0902000004 Phạm Thị Dung
+090 200 0005 Hoàng Văn Em
+0902.000.006 Vũ Thị Phượng
+(090) 2000007 Đặng Văn Giang
+0902-000-008 Bùi Thị Hoa
+abc12345 Dòng rác không phải SĐT
+0123456 SĐT quá ngắn
+0202000009 Đầu số không hợp lệ (02 là cố định)
+0902000010!!@# Ngô Văn Ích

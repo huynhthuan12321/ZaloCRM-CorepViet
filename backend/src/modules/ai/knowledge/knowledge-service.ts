@@ -66,13 +66,19 @@ export async function deleteDoc(orgId: string, id: string): Promise<boolean> {
   return true;
 }
 
-/** Hỏi đáp RAG: embed câu hỏi → cosine top-K chunk → nhồi prompt → trả lời. */
-export async function ragAnswer(args: { orgId: string; question: string; topK?: number }): Promise<{ answer: string; sources: string[]; chunksUsed: number }> {
-  const question = (args.question ?? '').trim();
-  if (!question) throw new Error('EMPTY_QUESTION');
+export type RetrievedChunk = { content: string; docId: string; docTitle: string; score: number };
+
+/**
+ * Truy hồi top-K chunk liên quan (embed query → cosine in-JS → join tên tài liệu).
+ * Bản STRICT: throw EMBED_FAILED nếu embed lỗi — dùng nội bộ cho ragAnswer để giữ
+ * nguyên hành vi cũ của /ai/knowledge/ask. Trả [] nếu KB rỗng.
+ */
+async function retrieveChunksStrict(args: { orgId: string; query: string; topK?: number }): Promise<RetrievedChunk[]> {
+  const query = (args.query ?? '').trim();
+  if (!query) return [];
   const topK = args.topK ?? 6;
 
-  const { vectors } = await embedTexts(args.orgId, [question]);
+  const { vectors } = await embedTexts(args.orgId, [query]);
   const qvec = vectors[0];
   if (!qvec || qvec.length === 0) throw new Error('EMBED_FAILED');
 
@@ -80,16 +86,48 @@ export async function ragAnswer(args: { orgId: string; question: string; topK?: 
     where: { orgId: args.orgId },
     select: { id: true, docId: true, content: true, embedding: true },
   });
-  if (chunks.length === 0) {
-    return { answer: 'Chưa có tài liệu nào trong knowledge base. Vào Cài đặt → Trợ lý AI để thêm tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...).', sources: [], chunksUsed: 0 };
-  }
+  if (chunks.length === 0) return [];
 
   const scored = chunks
     .map((c) => ({ c, score: cosineSim(qvec, (c.embedding as unknown as number[]) ?? []) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
 
-  const context = scored.map((s, i) => `[Đoạn ${i + 1}]\n${s.c.content}`).join('\n\n');
+  const docIds = [...new Set(scored.map((s) => s.c.docId))];
+  const docs = await prisma.knowledgeDoc.findMany({ where: { orgId: args.orgId, id: { in: docIds } }, select: { id: true, title: true } });
+  const titleById = new Map(docs.map((d) => [d.id, d.title]));
+
+  return scored.map((s) => ({
+    content: s.c.content,
+    docId: s.c.docId,
+    docTitle: titleById.get(s.c.docId) ?? 'Tài liệu',
+    score: s.score,
+  }));
+}
+
+/**
+ * Bản BEST-EFFORT cho các luồng khác (vd reply_draft): KHÔNG BAO GIỜ throw.
+ * KB rỗng / chưa cấu hình embedding / embed lỗi → trả [].
+ */
+export async function retrieveRelevantChunks(args: { orgId: string; query: string; topK?: number }): Promise<RetrievedChunk[]> {
+  try {
+    return await retrieveChunksStrict(args);
+  } catch {
+    return [];
+  }
+}
+
+/** Hỏi đáp RAG: embed câu hỏi → cosine top-K chunk → nhồi prompt → trả lời. */
+export async function ragAnswer(args: { orgId: string; question: string; topK?: number }): Promise<{ answer: string; sources: string[]; chunksUsed: number }> {
+  const question = (args.question ?? '').trim();
+  if (!question) throw new Error('EMPTY_QUESTION');
+
+  const scored = await retrieveChunksStrict({ orgId: args.orgId, query: question, topK: args.topK ?? 6 });
+  if (scored.length === 0) {
+    return { answer: 'Chưa có tài liệu nào trong knowledge base. Vào Cài đặt → Trợ lý AI để thêm tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...).', sources: [], chunksUsed: 0 };
+  }
+
+  const context = scored.map((s, i) => `[Đoạn ${i + 1}]\n${s.content}`).join('\n\n');
 
   const cfg = await getAiConfig(args.orgId);
   const apiKey = await getProviderApiKey(args.orgId, cfg.provider);
@@ -103,6 +141,6 @@ export async function ragAnswer(args: { orgId: string; question: string; topK?: 
   ].join('\n');
 
   const answer = await generateText(cfg.provider, apiKey, cfg.model, RAG_SYSTEM_PROMPT, prompt, 700, baseUrl);
-  const sources = [...new Set(scored.map((s) => s.c.docId))];
+  const sources = [...new Set(scored.map((s) => s.docId))];
   return { answer: (answer ?? '').trim(), sources, chunksUsed: scored.length };
 }

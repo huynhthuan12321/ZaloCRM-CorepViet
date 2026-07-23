@@ -334,6 +334,7 @@ export function useChat() {
   const aiSuggestion = ref('');
   const aiSuggestionLoading = ref(false);
   const aiSuggestionError = ref('');
+  const aiSuggestionSources = ref<string[]>([]);
   const aiSummary = ref('');
   const aiSummaryLoading = ref(false);
   const aiSentiment = ref<AiSentiment | null>(null);
@@ -381,6 +382,7 @@ export function useChat() {
   function clearAiState() {
     aiSuggestion.value = '';
     aiSuggestionError.value = '';
+    aiSuggestionSources.value = [];
     aiSummary.value = '';
     aiSentiment.value = null;
   }
@@ -616,6 +618,7 @@ export function useChat() {
     try {
       const res = await api.post('/ai/suggest', { conversationId: selectedConvId.value });
       aiSuggestion.value = res.data.content || '';
+      aiSuggestionSources.value = Array.isArray(res.data.sources) ? res.data.sources : [];
       await fetchAiUsage();
     } catch (err: any) {
       aiSuggestionError.value = err.response?.data?.error || 'Không thể tạo gợi ý AI';
@@ -1187,6 +1190,7 @@ export function useChat() {
     aiSuggestion,
     aiSuggestionLoading,
     aiSuggestionError,
+    aiSuggestionSources,
     aiSummary,
     aiSummaryLoading,
     aiSentiment,

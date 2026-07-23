@@ -11,6 +11,7 @@ import { buildReplyDraftPrompt } from './prompts/reply-draft.js';
 import { buildSummaryPrompt } from './prompts/summary.js';
 import { buildSentimentPrompt } from './prompts/sentiment.js';
 import { parseAppointmentRuleBased } from './appointment-fallback-parser.js';
+import { retrieveRelevantChunks } from './knowledge/knowledge-service.js';
 
 export type AiTaskType = 'reply_draft' | 'summary' | 'sentiment';
 
@@ -24,7 +25,8 @@ function detectLanguage(text: string): 'vi' | 'en' {
 }
 
 function escapeXmlBoundary(text: string): string {
-  return text.replace(/<\/?conversation_context>/gi, '');
+  // Strip mọi tag ranh giới prompt để chống injection từ nội dung động.
+  return text.replace(/<\/?(conversation_context|company_guidance|customer_profile|company_docs)>/gi, '');
 }
 
 function buildConversationContext(messages: MessageContext[]) {
@@ -90,7 +92,14 @@ async function loadConversation(conversationId: string, orgId: string) {
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, orgId },
     include: {
-      contact: { select: { fullName: true } },
+      // Hồ sơ + nhu cầu khách cho reply_draft (metadata.productNeed nếu có).
+      contact: {
+        select: {
+          fullName: true, phone: true, gender: true, birthYear: true,
+          occupation: true, incomeRange: true, province: true, district: true,
+          source: true, metadata: true,
+        },
+      },
       messages: {
         where: { isDeleted: false },
         orderBy: { sentAt: 'desc' },
@@ -157,12 +166,62 @@ export async function generateAiOutput(input: { orgId: string; conversationId: s
   const contextText = buildConversationContext(conversation.messages);
   const language = detectLanguage(contextText);
   const customerName = conversation.contact?.fullName || 'customer';
-  const userPrompt = [
-    `<conversation_context>`,
-    `Customer: ${customerName}`,
-    contextText,
-    `</conversation_context>`,
-  ].join('\n');
+
+  let userPrompt: string;
+  let kbSources: string[] = [];
+
+  if (input.type === 'reply_draft') {
+    // ── KB retrieval: query từ ~6 tin gần nhất của KHÁCH (fallback: tin cuối bất kỳ).
+    const customerMsgs = conversation.messages.filter((m) => m.senderType !== 'self' && m.content?.trim());
+    const queryMsgs = customerMsgs.length > 0
+      ? customerMsgs.slice(-6)
+      : conversation.messages.filter((m) => m.content?.trim()).slice(-1);
+    const kbQuery = queryMsgs.map((m) => m.content!.trim()).join('\n');
+
+    // Best-effort: KB rỗng / chưa cấu hình embedding / embed lỗi → [].
+    const kbChunks = kbQuery ? await retrieveRelevantChunks({ orgId: input.orgId, query: kbQuery, topK: 10 }) : [];
+    const cappedChunks = kbChunks.slice(0, 10).map((c) => ({ ...c, content: c.content.slice(0, 800) }));
+    kbSources = [...new Set(cappedChunks.map((c) => c.docTitle))];
+
+    // ── Hồ sơ + nhu cầu khách.
+    const contact = conversation.contact;
+    const meta = (contact?.metadata ?? {}) as Record<string, unknown>;
+    const profile = {
+      fullName: contact?.fullName ?? null,
+      phone: contact?.phone ?? null,
+      gender: contact?.gender ?? null,
+      birthYear: contact?.birthYear ?? null,
+      occupation: contact?.occupation ?? null,
+      incomeRange: contact?.incomeRange ?? null,
+      province: contact?.province ?? null,
+      district: contact?.district ?? null,
+      source: contact?.source ?? null,
+      productNeed: meta.productNeed ?? null,
+    };
+
+    const docsBlock = cappedChunks.length > 0
+      ? cappedChunks.map((c) => `[Tài liệu: ${escapeXmlBoundary(c.docTitle)}]\n${escapeXmlBoundary(c.content)}`).join('\n\n')
+      : 'Không có tài liệu công ty liên quan.';
+
+    const parts: string[] = [];
+    const guidance = (currentConfig.aiAssistantPromptTemplate ?? '').trim();
+    if (guidance) {
+      parts.push('<company_guidance>', escapeXmlBoundary(guidance), '</company_guidance>');
+    }
+    parts.push(
+      '<customer_profile>', escapeXmlBoundary(JSON.stringify(profile)), '</customer_profile>',
+      '<company_docs>', docsBlock, '</company_docs>',
+      '<conversation_context>', `Customer: ${customerName}`, contextText, '</conversation_context>',
+    );
+    userPrompt = parts.join('\n');
+  } else {
+    userPrompt = [
+      `<conversation_context>`,
+      `Customer: ${customerName}`,
+      contextText,
+      `</conversation_context>`,
+    ].join('\n');
+  }
 
   const system = input.type === 'reply_draft'
     ? buildReplyDraftPrompt(language)
@@ -204,6 +263,9 @@ export async function generateAiOutput(input: { orgId: string; conversationId: s
     content: text,
     confidence: 0.8,
   });
+  if (input.type === 'reply_draft') {
+    return { content: text, confidence: 0.8, sources: kbSources };
+  }
   return { content: text, confidence: 0.8 };
 }
 

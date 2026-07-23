@@ -515,6 +515,7 @@
         :suggestion="aiSuggestion"
         :loading="aiSuggestionLoading"
         :error="aiSuggestionError"
+        :sources="aiSuggestionSources"
         @use="applySuggestion"
         @refresh="$emit('ask-ai')"
       />
@@ -1049,6 +1050,7 @@ const props = defineProps<{
   aiSuggestion: string;
   aiSuggestionLoading: boolean;
   aiSuggestionError: string;
+  aiSuggestionSources?: string[];
   allConversations?: Conversation[];
   replyingTo?: Message | null;
   editingMessage?: Message | null;
