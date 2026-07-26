@@ -3,21 +3,14 @@
 /**
  * use-contact-profile.ts — Composable cho tab "Hồ sơ KH tổng hợp".
  *
- * STATUS: SKELETON STUB — Phase Y (future). Backend endpoint
- *   GET /api/v1/contacts/:id/profile chưa implement.
- *   Composable này chỉ define API contract + return mock data để
- *   ContactProfileView render được skeleton UI.
- *
- * Khi backend sẵn sàng:
- *   1. Bỏ MOCK in fetchContactProfile(), uncomment api.get(...)
- *   2. Verify response shape khớp ContactProfileResponse
- *   3. Wire pagination cho friends list nếu KH có > 50 nick
- *   4. Cache 60s/contact để tránh refetch quá nhiều
+ * Backend: GET /api/v1/contacts/:id/profile (contact-routes.ts) — org-scope +
+ * RBAC như các route contact khác. Cache in-memory 60s/contact để tránh refetch
+ * khi sale chuyển qua lại giữa các KH.
  */
 import { ref } from 'vue';
-// import { api } from '@/api/index'; // TODO(phase-Y): uncomment khi backend sẵn sàng
+import { api } from '@/api/index';
 
-// ─── Types: API contract (cần backend implement) ────────────────────────
+// ─── Types: API contract (backend trả đúng shape này) ───────────────────
 
 export interface ContactProfileResponse {
   contact: {
@@ -72,6 +65,11 @@ export interface ContactProfileResponse {
   } | null;
 }
 
+// ─── Cache nhẹ 60s/contact ──────────────────────────────────────────────
+
+const CACHE_TTL_MS = 60_000;
+const cache = new Map<string, { at: number; data: ContactProfileResponse }>();
+
 // ─── Composable ─────────────────────────────────────────────────────────
 
 export function useContactProfile() {
@@ -80,17 +78,19 @@ export function useContactProfile() {
   const error = ref<string | null>(null);
 
   async function fetchContactProfile(contactId: string): Promise<ContactProfileResponse | null> {
+    const hit = cache.get(contactId);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      profile.value = hit.data;
+      error.value = null;
+      return hit.data;
+    }
     loading.value = true;
     error.value = null;
     try {
-      // TODO(phase-Y): Uncomment khi backend GET /api/v1/contacts/:id/profile sẵn sàng
-      // const { data } = await api.get(`/contacts/${contactId}/profile`);
-      // profile.value = data;
-
-      // MOCK: response shape hiện tại — backend chưa có endpoint này.
-      // Trả dữ liệu placeholder để ContactProfileView render được skeleton.
-      profile.value = mockProfileResponse(contactId);
-      return profile.value;
+      const { data } = await api.get<ContactProfileResponse>(`/contacts/${contactId}/profile`);
+      profile.value = data;
+      cache.set(contactId, { at: Date.now(), data });
+      return data;
     } catch (err: any) {
       error.value = err?.response?.data?.error || err?.message || 'failed';
       return null;
@@ -105,37 +105,4 @@ export function useContactProfile() {
   }
 
   return { profile, loading, error, fetchContactProfile, clear };
-}
-
-// ─── MOCK placeholder (xoá khi backend sẵn sàng) ────────────────────────
-
-function mockProfileResponse(contactId: string): ContactProfileResponse {
-  return {
-    contact: {
-      id: contactId,
-      displayName: 'Đang tải hồ sơ tổng hợp...',
-      fullName: null,
-      crmName: null,
-      email: null,
-      addressLine: null,
-      occupation: null,
-      phone: null,
-      phone2: null,
-      phone3: null,
-      gender: null,
-      birthDate: null,
-      birthYear: null,
-      province: null,
-      district: null,
-      ward: null,
-      leadScore: 0,
-      statusId: null,
-      statusName: null,
-      avatarUrl: null,
-    },
-    friends: [],
-    aggregateScore: 0,
-    aggregateTags: [],
-    primaryOwner: null,
-  };
 }

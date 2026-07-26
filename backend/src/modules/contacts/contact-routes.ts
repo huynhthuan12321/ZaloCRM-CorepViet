@@ -2628,6 +2628,134 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ error: 'Backfill failed', detail: String(err) });
     }
   });
+  // ── GET /api/v1/contacts/:id/profile — Hồ sơ KH tổng hợp (read-only) ──────
+  // Contract: frontend/src/composables/use-contact-profile.ts → ContactProfileResponse.
+  // Gộp Contact + MỌI Friend row (per-nick) thành 1 payload cho trang
+  // /contacts/:id/profile. Score = MAX(Friend.leadScore) theo architecture Phase 6.
+  // Chỉ ĐỌC — không ghi gì. Org-scope + RBAC y hệt GET /contacts/:id.
+  app.get('/api/v1/contacts/:id/profile', {
+    config: { contentClass: 'mixed' as const, rbacResource: 'contact' as const, rbacAction: 'access' as const },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { id } = request.params as { id: string };
+
+      const visible = await assertContactVisible({
+        userId: user.id,
+        orgId: user.orgId,
+        legacyRole: user.role,
+        contactId: id,
+      });
+      if (!visible) return reply.status(404).send({ error: 'Contact not found' });
+
+      let contact = await prisma.contact.findFirst({
+        where: { id, orgId: user.orgId },
+        include: { statusRef: { select: { name: true } } },
+      });
+      if (!contact) return reply.status(404).send({ error: 'Contact not found' });
+
+      // KH đã merge → chuyển sang bản ghi canonical, dùng id đó cho phần còn lại.
+      if (contact.mergedInto) {
+        const canonical = await prisma.contact.findFirst({
+          where: { id: contact.mergedInto, orgId: user.orgId },
+          include: { statusRef: { select: { name: true } } },
+        });
+        if (canonical) contact = canonical;
+      }
+
+      const friendRows = await prisma.friend.findMany({
+        where: { contactId: contact.id, orgId: user.orgId },
+        include: {
+          statusRef: { select: { name: true } },
+          zaloAccount: { select: { displayName: true, ownerUserId: true } },
+        },
+      });
+
+      const friends = friendRows
+        .map((f) => ({
+          id: f.id,
+          zaloUid: f.zaloUidInNick ?? null,
+          accountId: f.zaloAccountId,
+          accountName: f.zaloAccount?.displayName ?? null,
+          displayName: f.zaloDisplayName ?? null,
+          aliasInNick: f.aliasInNick ?? null,
+          leadScore: f.leadScore ?? 0,
+          statusName: f.statusRef?.name ?? null,
+          relationshipKind: f.relationshipKind,
+          totalInbound: f.totalInbound,
+          totalOutbound: f.totalOutbound,
+          lastInboundAt: f.lastInboundAt ? f.lastInboundAt.toISOString() : null,
+        }))
+        .sort((a, b) => {
+          if (b.leadScore !== a.leadScore) return b.leadScore - a.leadScore;
+          return (b.lastInboundAt ?? '').localeCompare(a.lastInboundAt ?? '');
+        });
+
+      // Score tổng hợp = MAX điểm trên các nick; không có nick → điểm ở Contact.
+      const aggregateScore = friends.length
+        ? Math.max(...friends.map((f) => f.leadScore))
+        : (contact.leadScore ?? 0);
+
+      // Tags = UNION(Contact.tags, mọi Friend.crmTagsPerNick), dedupe, bỏ rỗng.
+      const tagSet = new Set<string>();
+      const collectTags = (raw: unknown): void => {
+        if (!Array.isArray(raw)) return;
+        for (const t of raw) {
+          if (typeof t === 'string' && t.trim()) tagSet.add(t.trim());
+        }
+      };
+      collectTags(contact.tags);
+      for (const f of friendRows) collectTags(f.crmTagsPerNick);
+
+      // Phụ trách chính: nick điểm cao nhất còn tương tác trong 14 ngày → chủ nick đó.
+      const CUTOFF = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const recent = friendRows
+        .filter((f) => f.lastInboundAt && f.lastInboundAt >= CUTOFF && f.zaloAccount?.ownerUserId)
+        .sort((a, b) => (b.leadScore ?? 0) - (a.leadScore ?? 0));
+      const ownerUserId = recent[0]?.zaloAccount?.ownerUserId ?? contact.assignedUserId ?? null;
+
+      let primaryOwner: { userId: string; userName: string } | null = null;
+      if (ownerUserId) {
+        const owner = await prisma.user.findFirst({
+          where: { id: ownerUserId, orgId: user.orgId },
+          select: { id: true, fullName: true },
+        });
+        if (owner) primaryOwner = { userId: owner.id, userName: owner.fullName };
+      }
+
+      return {
+        contact: {
+          id: contact.id,
+          displayName: contact.crmName || contact.fullName || 'KH',
+          fullName: contact.fullName ?? null,
+          crmName: contact.crmName ?? null,
+          email: contact.email ?? null,
+          addressLine: contact.addressLine ?? null,
+          occupation: contact.occupation ?? null,
+          phone: contact.phone ?? null,
+          phone2: contact.phone2 ?? null,
+          phone3: contact.phone3 ?? null,
+          gender: contact.gender ?? null,
+          birthDate: contact.birthDate ? contact.birthDate.toISOString() : null,
+          birthYear: contact.birthYear ?? null,
+          province: contact.province ?? null,
+          district: contact.district ?? null,
+          ward: contact.ward ?? null,
+          leadScore: contact.leadScore ?? 0,
+          statusId: contact.statusId ?? null,
+          statusName: contact.statusRef?.name ?? null,
+          avatarUrl: contact.avatarUrl ?? null,
+        },
+        friends,
+        aggregateScore,
+        aggregateTags: [...tagSet],
+        primaryOwner,
+      };
+    } catch (err) {
+      logger.error('[contacts] Profile error:', err);
+      return reply.status(500).send({ error: 'Failed to fetch contact profile' });
+    }
+  });
 }
 
 // M55.3 2026-05-30 — AI dup-alert message #2 cho virtual chat.
