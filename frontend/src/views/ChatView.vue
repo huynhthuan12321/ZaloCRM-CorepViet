@@ -79,6 +79,7 @@
       :ai-suggestion-loading="aiSuggestionLoading"
       :ai-suggestion-error="aiSuggestionError"
       :ai-suggestion-sources="aiSuggestionSources"
+      :ai-needs-review-reason="aiNeedsReviewReason"
       :all-conversations="conversations"
       :replying-to="replyingTo"
       :editing-message="editingMessage"
@@ -170,7 +171,7 @@ const router = useRouter();
 const {
   conversations, selectedConvId, selectedConv, messages,
   loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
-  aiSuggestion, aiSuggestionLoading, aiSuggestionError, aiSuggestionSources,
+  aiSuggestion, aiSuggestionLoading, aiSuggestionError, aiSuggestionSources, aiNeedsReviewReason,
   aiSummary, aiSummaryLoading, aiSentiment, aiSentimentLoading,
   fetchConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
   generateAiSuggestion, generateAiSummary, generateAiSentiment,

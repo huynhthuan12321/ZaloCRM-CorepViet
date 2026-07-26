@@ -28,6 +28,11 @@ export const AI_CAPABILITIES = {
   update_conversation_meta: { requireApproval: false },
   create_suggestion: { requireApproval: false },
   notify_internal: { requireApproval: false },
+  // Auto-tư vấn Mức A (2026-07-25): gửi 1 tin trả lời tự động cho ĐÚNG 1 hội thoại
+  // đã được sale bật công tắc. KHÁC hoàn toàn 'mass_message' (vẫn nằm trong
+  // DANGEROUS_ACTIONS → không bao giờ cấp). Câu nhạy cảm giá/cọc/chốt đơn đã bị
+  // chặn ở tầng service trước khi tới đây.
+  send_auto_reply: { requireApproval: false },
 } as const;
 
 export type AiCapability = keyof typeof AI_CAPABILITIES;

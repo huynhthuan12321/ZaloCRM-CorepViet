@@ -335,6 +335,9 @@ export function useChat() {
   const aiSuggestionLoading = ref(false);
   const aiSuggestionError = ref('');
   const aiSuggestionSources = ref<string[]>([]);
+  // Auto-tư vấn Mức A 2026-07-25: khách hỏi chuyện nhạy cảm (giá/cọc/chốt đơn) →
+  // BE KHÔNG gửi, chỉ bắn 'chat:ai-needs-review'. Lý do hiện trên thanh ✨.
+  const aiNeedsReviewReason = ref('');
   const aiSummary = ref('');
   const aiSummaryLoading = ref(false);
   const aiSentiment = ref<AiSentiment | null>(null);
@@ -383,6 +386,7 @@ export function useChat() {
     aiSuggestion.value = '';
     aiSuggestionError.value = '';
     aiSuggestionSources.value = [];
+    aiNeedsReviewReason.value = '';
     aiSummary.value = '';
     aiSentiment.value = null;
   }
@@ -615,6 +619,7 @@ export function useChat() {
     if (!selectedConvId.value) return;
     aiSuggestionLoading.value = true;
     aiSuggestionError.value = '';
+    aiNeedsReviewReason.value = ''; // sale bấm gợi ý tay → bỏ cảnh báo cũ
     try {
       const res = await api.post('/ai/suggest', { conversationId: selectedConvId.value });
       aiSuggestion.value = res.data.content || '';
@@ -1052,6 +1057,18 @@ export function useChat() {
       fetchConversations({ bypassCache: true });
     });
 
+    // Auto-tư vấn Mức A 2026-07-25 — AI đã soạn nháp nhưng KHÔNG gửi (nhạy cảm /
+    // thiếu nguồn / confidence thấp). Chỉ hiện cho hội thoại đang mở: đổ nháp vào
+    // thanh ✨ + lý do để sale sửa rồi tự gửi.
+    socket.on('chat:ai-needs-review', (data: { conversationId: string; messageId?: string; draft?: string; reason?: string; sources?: string[] }) => {
+      if (!data?.conversationId || data.conversationId !== selectedConvId.value) return;
+      aiSuggestion.value = data.draft || '';
+      aiSuggestionSources.value = Array.isArray(data.sources) ? data.sources : [];
+      aiNeedsReviewReason.value = data.reason || 'cần duyệt';
+      aiSuggestionError.value = '';
+      aiSuggestionLoading.value = false;
+    });
+
     // Thông tin nhóm đổi (avatar/tên/sĩ số) — BE (group-info-refresh) bắn khi nhận
     // group_event 'update_avatar'/'update' hoặc cron 6h refresh. Patch conversation
     // IN-PLACE (không refetch cả list) → avatar/tên mới hiện ngay, không cần F5.
@@ -1191,6 +1208,7 @@ export function useChat() {
     aiSuggestionLoading,
     aiSuggestionError,
     aiSuggestionSources,
+    aiNeedsReviewReason,
     aiSummary,
     aiSummaryLoading,
     aiSentiment,

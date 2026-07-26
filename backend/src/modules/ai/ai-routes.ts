@@ -7,6 +7,8 @@ import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
 import { getAiConfig, getAiUsage, updateAiConfig, generateAiOutput, aiFormatRichText, aiGenerateSalesHandoffMessage } from './ai-service.js';
 // M53 2026-05-30 — Trợ Lý AI Virtual Chat
 import { DEFAULT_VIRTUAL_CHAT_PROMPT } from './prompts/virtual-chat-assistant.js';
+// Auto-tư vấn Mức A 2026-07-25 — pattern nhạy cảm mặc định (hiện placeholder ở Settings).
+import { DEFAULT_SENSITIVE_PATTERN } from './ai-auto-reply-service.js';
 import {
   getAvailableProviders,
   getProviderBaseUrl,
@@ -329,6 +331,14 @@ export async function aiRoutes(app: FastifyInstance) {
         model: cfg.model,
         maxDaily: cfg.maxDaily,
         enabled: cfg.enabled,
+        // Auto-tư vấn Mức A (2026-07-25).
+        aiAutoReplyGlobalEnabled: cfg.aiAutoReplyGlobalEnabled,
+        aiAutoReplySensitivePattern: cfg.aiAutoReplySensitivePattern,
+        aiAutoReplyStartHour: cfg.aiAutoReplyStartHour,
+        aiAutoReplyEndHour: cfg.aiAutoReplyEndHour,
+        aiAutoReplyMaxConsecutive: cfg.aiAutoReplyMaxConsecutive,
+        aiAutoReplyMinConfidence: cfg.aiAutoReplyMinConfidence,
+        defaultSensitivePattern: DEFAULT_SENSITIVE_PATTERN,
       };
     } catch (err) {
       logger.error('[ai] assistant-config GET error:', err);
@@ -346,6 +356,13 @@ export async function aiRoutes(app: FastifyInstance) {
           aiAssistantEnabled?: boolean;
           aiAssistantPromptTemplate?: string | null;
           aiAssistantSkipNoisePattern?: string;
+          // Auto-tư vấn Mức A.
+          aiAutoReplyGlobalEnabled?: boolean;
+          aiAutoReplySensitivePattern?: string | null;
+          aiAutoReplyStartHour?: number;
+          aiAutoReplyEndHour?: number;
+          aiAutoReplyMaxConsecutive?: number;
+          aiAutoReplyMinConfidence?: number;
         };
         // Validate regex
         if (body.aiAssistantSkipNoisePattern) {
@@ -355,21 +372,88 @@ export async function aiRoutes(app: FastifyInstance) {
             return reply.status(400).send({ error: 'Regex không hợp lệ' });
           }
         }
+        if (body.aiAutoReplySensitivePattern) {
+          try {
+            new RegExp(body.aiAutoReplySensitivePattern);
+          } catch {
+            return reply.status(400).send({ error: 'Regex từ khóa nhạy cảm không hợp lệ' });
+          }
+        }
+        const isHour = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 23;
+        if (body.aiAutoReplyStartHour !== undefined && !isHour(body.aiAutoReplyStartHour)) {
+          return reply.status(400).send({ error: 'Giờ bắt đầu phải từ 0 đến 23' });
+        }
+        if (body.aiAutoReplyEndHour !== undefined && !isHour(body.aiAutoReplyEndHour)) {
+          return reply.status(400).send({ error: 'Giờ kết thúc phải từ 0 đến 23' });
+        }
+        if (
+          body.aiAutoReplyMaxConsecutive !== undefined &&
+          (!Number.isInteger(body.aiAutoReplyMaxConsecutive) || body.aiAutoReplyMaxConsecutive < 1)
+        ) {
+          return reply.status(400).send({ error: 'Số tin AI liên tiếp tối đa phải ≥ 1' });
+        }
+        if (
+          body.aiAutoReplyMinConfidence !== undefined &&
+          (!Number.isFinite(body.aiAutoReplyMinConfidence) ||
+            body.aiAutoReplyMinConfidence < 0 ||
+            body.aiAutoReplyMinConfidence > 1)
+        ) {
+          return reply.status(400).send({ error: 'Ngưỡng tin cậy phải trong khoảng 0..1' });
+        }
         const updated = await prisma.aiConfig.update({
           where: { orgId: request.user!.orgId },
           data: {
             aiAssistantEnabled: body.aiAssistantEnabled,
             aiAssistantPromptTemplate: body.aiAssistantPromptTemplate,
             aiAssistantSkipNoisePattern: body.aiAssistantSkipNoisePattern,
+            aiAutoReplyGlobalEnabled: body.aiAutoReplyGlobalEnabled,
+            // '' → NULL để quay về pattern mặc định trong code.
+            ...(body.aiAutoReplySensitivePattern !== undefined
+              ? { aiAutoReplySensitivePattern: body.aiAutoReplySensitivePattern || null }
+              : {}),
+            aiAutoReplyStartHour: body.aiAutoReplyStartHour,
+            aiAutoReplyEndHour: body.aiAutoReplyEndHour,
+            aiAutoReplyMaxConsecutive: body.aiAutoReplyMaxConsecutive,
+            aiAutoReplyMinConfidence: body.aiAutoReplyMinConfidence,
           },
         });
-        return { ok: true, aiAssistantEnabled: updated.aiAssistantEnabled };
+        return { ok: true, aiAssistantEnabled: updated.aiAssistantEnabled, aiAutoReplyGlobalEnabled: updated.aiAutoReplyGlobalEnabled };
       } catch (err) {
         logger.error('[ai] assistant-config PUT error:', err);
         return reply.status(500).send({ error: 'Failed to update AI assistant config' });
       }
     },
   );
+
+  // ── Auto-tư vấn Mức A 2026-07-25 ─────────────────────────────────────────
+  // PATCH /conversations/:id/ai-auto-reply — sale bật/tắt "AI tự tư vấn" cho 1 hội thoại.
+  // RBAC: owner/admin, hoặc sale có quyền trên nick của hội thoại đó.
+  app.patch('/api/v1/conversations/:id/ai-auto-reply', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const { enabled } = (request.body ?? {}) as { enabled?: unknown };
+      if (typeof enabled !== 'boolean') {
+        return reply.status(400).send({ error: 'enabled phải là boolean' });
+      }
+      const conversation = await assertConversationReadAccess(request, reply, id);
+      if (!conversation) return;
+
+      // Hội thoại ảo (KH chưa có Zalo) không auto-gửi được → chặn bật.
+      const conv = await prisma.conversation.findFirst({
+        where: { id, orgId: request.user!.orgId },
+        select: { isVirtual: true },
+      });
+      if (enabled && conv?.isVirtual) {
+        return reply.status(400).send({ error: 'Hội thoại ảo không dùng được auto-tư vấn' });
+      }
+
+      await prisma.conversation.update({ where: { id }, data: { aiAutoReplyEnabled: enabled } });
+      return { ok: true, enabled };
+    } catch (err) {
+      logger.error('[ai] ai-auto-reply PATCH error:', err);
+      return reply.status(500).send({ error: 'Không cập nhật được công tắc AI tự tư vấn' });
+    }
+  });
 
   // PATCH /contacts/:contactId/apply-ai-suggestion — sale apply field từ AiSuggestionCard
   // Body: { messageId, acceptedFields: [{field, value}], rejectedFields?: string[] }

@@ -1,9 +1,13 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <template>
-  <div v-if="visible" class="ai-suggest-bar">
+  <!-- Auto-tư vấn Mức A 2026-07-25: AI đã soạn nháp nhưng KHÔNG tự gửi → sale duyệt. -->
+  <div v-if="needsReviewReason && suggestion" class="ai-review-warn">
+    ⚠ Khách hỏi <strong>{{ needsReviewReason }}</strong> — cần bạn duyệt. AI đã soạn nháp bên dưới, KHÔNG tự gửi.
+  </div>
+  <div v-if="visible" class="ai-suggest-bar" :class="{ 'needs-review': needsReviewReason && suggestion }">
     <div class="ai-suggest-icon">✨</div>
-    <span class="ai-suggest-label">AI gợi ý:</span>
+    <span class="ai-suggest-label">{{ needsReviewReason && suggestion ? 'Nháp chờ duyệt:' : 'AI gợi ý:' }}</span>
     <div class="ai-suggest-pills">
       <div
         v-for="(s, i) in pills"
@@ -36,6 +40,8 @@ const props = defineProps<{
   loading?: boolean;
   error?: string;
   sources?: string[];
+  /** Mức A: lý do phải sale duyệt ('giá/chốt đơn' | 'độ tin cậy thấp' | 'thiếu nguồn tài liệu'). */
+  needsReviewReason?: string;
 }>();
 defineEmits<{ use: [text: string]; refresh: [] }>();
 
@@ -114,6 +120,23 @@ function truncated(text: string) {
 }
 .ai-refresh:hover:not(:disabled) { background: var(--smax-grey-50); color: var(--smax-primary); }
 .ai-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Mức A: dải cảnh báo "cần duyệt" trên thanh gợi ý */
+.ai-review-warn {
+  background: #fff7ed;
+  border-top: 1px solid #fdba74;
+  color: #9a3412;
+  font-size: 12px;
+  padding: 6px 17px;
+  flex-shrink: 0;
+}
+.ai-suggest-bar.needs-review {
+  background: linear-gradient(90deg, rgba(249,115,22,0.07), rgba(234,179,8,0.07));
+}
+.ai-suggest-bar.needs-review .ai-suggest-pill {
+  border-color: #fdba74;
+  color: #7c2d12;
+}
+.ai-suggest-bar.needs-review .ai-suggest-pill:hover { background: #fff7ed; border-color: #f97316; }
 .ai-suggest-sources {
   background: linear-gradient(90deg, rgba(156,39,176,0.04), rgba(33,150,243,0.04));
   padding: 3px 17px 6px 57px;

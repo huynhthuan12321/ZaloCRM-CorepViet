@@ -757,6 +757,22 @@ export function attachZaloListener(ctx: ListenerContext): void {
           }).catch((err) =>
             logger.error(`[zalo:${accountId}] push notify error:`, err),
           );
+
+          // Auto-tư vấn Mức A (2026-07-25) — fire-and-forget, KHÔNG await (không block
+          // nhận tin). Dynamic import tránh circular (ai → zalo-operations → zalo pool).
+          // Service tự nuốt lỗi; mặc định TẮT nên hầu hết trường hợp thoát ngay bước 2.
+          try {
+            void import('../ai/ai-auto-reply-service.js')
+              .then((m) => m.triggerAutoReply({
+                accountId,
+                conversationId: result.conversationId,
+                incomingMessageId: result.message.id,
+                orgId: result.orgId,
+              }, io))
+              .catch((err) => logger.error(`[zalo:${accountId}] ai-auto-reply error:`, err));
+          } catch (err) {
+            logger.error(`[zalo:${accountId}] ai-auto-reply dispatch error:`, err);
+          }
         }
       }
     } catch (err) {

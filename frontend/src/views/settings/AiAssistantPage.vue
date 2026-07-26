@@ -79,6 +79,64 @@
         </div>
       </div>
 
+      <!-- ── Auto-tư vấn Mức A (2026-07-25) ── -->
+      <div class="auto-section">
+        <h2 class="auto-title">⚡ Tự động tư vấn (Mức A — bán tự động)</h2>
+        <p class="auto-desc">
+          AI tự trả lời câu hỏi <b>thông tin/FAQ</b> dựa trên Kho tài liệu. Câu hỏi
+          <b>giá / cọc / chốt đơn / thanh toán</b> hoặc thiếu nguồn → AI chỉ soạn nháp,
+          <b>KHÔNG tự gửi</b>, sale duyệt tay. Phải bật thêm công tắc trên từng hội thoại.
+        </p>
+
+        <div class="toggle-card">
+          <label class="toggle-row">
+            <input type="checkbox" v-model="config.aiAutoReplyGlobalEnabled" />
+            <div>
+              <div class="toggle-label">Bật công tắc tổng auto-tư vấn</div>
+              <div class="toggle-hint">
+                Tắt = không hội thoại nào tự trả lời, kể cả đã bật riêng. Mặc định TẮT.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            Từ khóa nhạy cảm (regex)
+            <span class="field-meta">(khớp = KHÔNG tự gửi, chuyển nháp cho sale duyệt)</span>
+          </label>
+          <textarea
+            v-model="config.aiAutoReplySensitivePattern"
+            class="prompt-editor"
+            rows="4"
+            spellcheck="false"
+            :placeholder="config.defaultSensitivePattern"
+          />
+          <div class="field-hint">
+            Để trống = dùng bộ mặc định trong code (giá, cọc, chốt đơn, chuyển khoản, ship, hoá đơn...).
+          </div>
+        </div>
+
+        <div class="auto-grid">
+          <div class="field-group">
+            <label class="field-label">Giờ bắt đầu <span class="field-meta">(giờ VN)</span></label>
+            <input v-model.number="config.aiAutoReplyStartHour" type="number" min="0" max="23" class="regex-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Giờ kết thúc <span class="field-meta">(giờ VN, không bao gồm)</span></label>
+            <input v-model.number="config.aiAutoReplyEndHour" type="number" min="0" max="23" class="regex-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Số tin AI liên tiếp tối đa</label>
+            <input v-model.number="config.aiAutoReplyMaxConsecutive" type="number" min="1" max="20" class="regex-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Ngưỡng tin cậy <span class="field-meta">(0..1)</span></label>
+            <input v-model.number="config.aiAutoReplyMinConfidence" type="number" min="0" max="1" step="0.05" class="regex-input" />
+          </div>
+        </div>
+      </div>
+
       <!-- Actions -->
       <div class="actions">
         <button class="btn-danger-ghost" @click="restoreDefault" :disabled="saving">
@@ -176,6 +234,14 @@ interface AiAssistantConfig {
   model: string;
   maxDaily: number;
   enabled: boolean;
+  // Auto-tư vấn Mức A (2026-07-25)
+  aiAutoReplyGlobalEnabled: boolean;
+  aiAutoReplySensitivePattern: string | null;
+  aiAutoReplyStartHour: number;
+  aiAutoReplyEndHour: number;
+  aiAutoReplyMaxConsecutive: number;
+  aiAutoReplyMinConfidence: number;
+  defaultSensitivePattern: string;
 }
 
 interface AiUsage {
@@ -229,10 +295,28 @@ async function save() {
       saving.value = false;
       return;
     }
+    // Mức A: regex nhạy cảm (rỗng = dùng bộ mặc định trong code)
+    const sensitive = (config.value.aiAutoReplySensitivePattern ?? '').trim();
+    if (sensitive) {
+      try {
+        new RegExp(sensitive);
+      } catch {
+        saveMessage.value = 'Regex từ khóa nhạy cảm không hợp lệ';
+        saveOk.value = false;
+        saving.value = false;
+        return;
+      }
+    }
     await api.put('/ai/assistant-config', {
       aiAssistantEnabled: config.value.aiAssistantEnabled,
       aiAssistantPromptTemplate: config.value.aiAssistantPromptTemplate,
       aiAssistantSkipNoisePattern: config.value.aiAssistantSkipNoisePattern,
+      aiAutoReplyGlobalEnabled: config.value.aiAutoReplyGlobalEnabled,
+      aiAutoReplySensitivePattern: sensitive,
+      aiAutoReplyStartHour: Number(config.value.aiAutoReplyStartHour),
+      aiAutoReplyEndHour: Number(config.value.aiAutoReplyEndHour),
+      aiAutoReplyMaxConsecutive: Number(config.value.aiAutoReplyMaxConsecutive),
+      aiAutoReplyMinConfidence: Number(config.value.aiAutoReplyMinConfidence),
     });
     saveMessage.value = '✓ Đã lưu cài đặt';
     saveOk.value = true;
@@ -502,8 +586,12 @@ onMounted(() => { load(); loadKb(); });
 .modal-hint { font-size: 13px; color: #64748b; line-height: 1.6; }
 
 /* ── Knowledge base section ── */
-.kb-section { border-top: 2px solid #e2e8f0; padding-top: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 12px; }
-.kb-title { font-size: 15px; font-weight: 700; margin: 0; }
+/* Auto-tư vấn Mức A (2026-07-25) */
+.auto-section { border-top: 2px solid #e2e8f0; padding-top: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 12px; }
+.auto-title { font-size: 15px; font-weight: 700; margin: 0; }
+.auto-desc { font-size: 12.5px; color: #64748b; margin: 0; line-height: 1.5; }
+.auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.kb-section { border-top: 2px solid #e2e8f0; padding-top: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 12px; }.kb-title { font-size: 15px; font-weight: 700; margin: 0; }
 .kb-desc { font-size: 12.5px; color: #64748b; margin: 0; line-height: 1.5; }
 .kb-desc code, .field-hint code { background: #f1f5f9; padding: 0 5px; border-radius: 4px; font-size: 11px; }
 .kb-embed-row { display: flex; gap: 8px; align-items: center; }

@@ -783,6 +783,11 @@ model Conversation {
   // 2026-06-11 — Xóa mềm hội thoại từ cột 2 (anh chốt: ẩn đi, khôi phục được).
   // Khi != null → mọi query list/count loại trừ. KHÔNG xóa Message vật lý.
   deletedAt         DateTime? @map("deleted_at")
+  // Auto-tư vấn Mức A (2026-07-25): sale bật per-hội-thoại → AI tự trả lời câu hỏi
+  // thông tin/FAQ dựa trên Knowledge Base. Câu NHẠY CẢM (giá/cọc/chốt đơn/thanh toán)
+  // hoặc confidence thấp → KHÔNG gửi, chỉ lưu nháp + cờ "cần duyệt". Default false
+  // → chưa ai bật thì hành vi hệ thống y hệt trước.
+  aiAutoReplyEnabled Boolean  @default(false) @map("ai_auto_reply_enabled")
   createdAt         DateTime  @default(now()) @map("created_at")
 
   org           Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -1683,6 +1688,18 @@ model AiConfig {
   // key per-org của provider tương ứng. NULL = chưa cấu hình → knowledge search tắt.
   embedProvider               String?  @map("embed_provider")
   embedModel                  String?  @map("embed_model")
+  // ── Auto-tư vấn Mức A (2026-07-25) — công tắc tổ chức + hàng rào an toàn.
+  // Master switch org: phải BẬT cùng Conversation.aiAutoReplyEnabled mới auto-gửi.
+  aiAutoReplyGlobalEnabled    Boolean  @default(false) @map("ai_auto_reply_global_enabled")
+  // Regex từ khóa nhạy cảm (giá/cọc/chốt đơn/thanh toán). NULL → dùng default trong code.
+  aiAutoReplySensitivePattern String?  @map("ai_auto_reply_sensitive_pattern")
+  // Khung giờ được auto-gửi (giờ VN, [start, end)). Ngoài khung → không gửi đêm.
+  aiAutoReplyStartHour        Int      @default(8) @map("ai_auto_reply_start_hour")
+  aiAutoReplyEndHour          Int      @default(21) @map("ai_auto_reply_end_hour")
+  // Số tin AI liên tiếp tối đa kể từ tin người thật cuối → chống loop/spam.
+  aiAutoReplyMaxConsecutive   Int      @default(3) @map("ai_auto_reply_max_consecutive")
+  // Ngưỡng confidence tối thiểu để auto-gửi; thấp hơn → chuyển sang "cần duyệt".
+  aiAutoReplyMinConfidence    Float    @default(0.55) @map("ai_auto_reply_min_confidence")
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
 

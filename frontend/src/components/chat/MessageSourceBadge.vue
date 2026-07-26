@@ -51,7 +51,9 @@ const emit = defineEmits<{
 // Derive kind từ sentVia + metadata.sender
 // ✨ Anh chốt 2026-06-02: hợp nhất user_native vào user_crm (icon 🔄 trailing).
 // Variants còn lại: user_crm (CRM hoặc Native sync) | bot_automation | bot_ai | bot_system.
-type BadgeKind = 'user_crm' | 'bridge' | 'bot_automation' | 'bot_ai' | 'bot_system' | null;
+// Auto-tư vấn Mức A 2026-07-25: thêm 'bot_ai_auto' — AI TỰ GỬI ra Zalo thật
+// (khác 'bot_ai' vốn là reply trong virtual chat / gợi ý).
+type BadgeKind = 'user_crm' | 'bridge' | 'bot_automation' | 'bot_ai' | 'bot_ai_auto' | 'bot_system' | null;
 
 const badgeKind = computed<BadgeKind>(() => {
   // ── Fix 2026-06-03 (Anh báo bug ảnh 2 chat nhóm + Minh Pháp) ──
@@ -68,6 +70,9 @@ const badgeKind = computed<BadgeKind>(() => {
     return null;
   }
 
+  // Auto-tư vấn Mức A: cờ metadata.aiAuto thắng mọi suy luận khác.
+  if (props.message.metadata?.aiAuto === true) return 'bot_ai_auto';
+
   const meta = props.message.metadata?.sender;
   if (meta?.kind) {
     // Legacy 'user_native' → map về 'user_crm' (giữ syncedFromNative flag)
@@ -76,6 +81,7 @@ const badgeKind = computed<BadgeKind>(() => {
   }
 
   const via = props.message.sentVia;
+  if (via === 'ai_auto') return 'bot_ai_auto';
   // 'user' + 'user_native' đều map về 'user_crm', distinguish qua syncedFromNative
   if (via === 'user' || via === 'user_native') return 'user_crm';
   if (via === 'automation') return 'bot_automation';
@@ -204,6 +210,18 @@ const labelData = computed(() => {
         showSyncIcon: false,
       };
     }
+    case 'bot_ai_auto': {
+      const dry = props.message.metadata?.dryRun === true;
+      return {
+        icon: '⚡',
+        label: dry ? 'AI tự gửi (dry-run)' : 'AI tự gửi',
+        tooltip: dry
+          ? 'Chế độ thử: AI soạn và lưu, KHÔNG gửi thật ra Zalo'
+          : 'AI tự tư vấn đã gửi tin này (dựa trên Kho tài liệu) — click audit',
+        clickable: true,
+        showSyncIcon: false,
+      };
+    }
     case 'bot_ai':
       return {
         icon: '✨',
@@ -252,6 +270,7 @@ function handleClick(): void {
       if (meta?.sequenceId) emit('open-sequence', meta.sequenceId);
       break;
     case 'bot_ai':
+    case 'bot_ai_auto':
       emit('audit-ai');
       break;
   }
@@ -339,6 +358,13 @@ function handleClick(): void {
   color: #1e3a8a;
   background: #eff6ff;
   border-color: rgba(59, 130, 246, 0.45);
+}
+
+/* 4b. Bot AI Auto — tím đậm: AI tự gửi thẳng ra Zalo (Mức A 2026-07-25) */
+.source-badge--bot_ai_auto {
+  color: #5b21b6;
+  background: #f5f3ff;
+  border-color: rgba(124, 58, 237, 0.5);
 }
 
 /* 5. Bot System — gray (system/infrastructure trung tính) */

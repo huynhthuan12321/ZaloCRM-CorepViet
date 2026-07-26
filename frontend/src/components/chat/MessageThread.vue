@@ -221,6 +221,21 @@
                 {{ lastOnlineLabel }}
               </span>
             </template>
+            <!-- Auto-tư vấn Mức A 2026-07-25: công tắc per-hội-thoại. Chỉ hội thoại
+                 Zalo THẬT (không virtual). Câu giá/cọc/chốt đơn vẫn luôn chờ sale duyệt. -->
+            <template v-if="!isVirtualConv">
+              <span class="ch-sep">|</span>
+              <label class="ai-auto-toggle" :title="aiAutoReplyTooltip">
+                <input
+                  type="checkbox"
+                  :checked="aiAutoReplyOn"
+                  :disabled="aiAutoReplySaving || isArchivedNick"
+                  @change="toggleAiAutoReply"
+                />
+                <span class="aat-track"><span class="aat-knob" /></span>
+                <span class="aat-label">AI tự tư vấn</span>
+              </label>
+            </template>
           </div>
         </div>
         <!-- ch-actions: nút Kết bạn / menu ⋮ / ⓘ — đẩy phải dòng 1 (gom 2 dòng 2026-06-06) -->
@@ -516,6 +531,7 @@
         :loading="aiSuggestionLoading"
         :error="aiSuggestionError"
         :sources="aiSuggestionSources"
+        :needs-review-reason="aiNeedsReviewReason"
         @use="applySuggestion"
         @refresh="$emit('ask-ai')"
       />
@@ -1051,6 +1067,8 @@ const props = defineProps<{
   aiSuggestionLoading: boolean;
   aiSuggestionError: string;
   aiSuggestionSources?: string[];
+  /** Mức A: lý do nháp AI cần sale duyệt (rỗng = gợi ý bình thường). */
+  aiNeedsReviewReason?: string;
   allConversations?: Conversation[];
   replyingTo?: Message | null;
   editingMessage?: Message | null;
@@ -1619,6 +1637,42 @@ const showOnlineIndicator = computed(() => {
 const isVirtualConv = computed(() => {
   return Boolean((props.conversation as { isVirtual?: boolean } | undefined)?.isVirtual);
 });
+
+// ── Auto-tư vấn Mức A 2026-07-25 ───────────────────────────────────────────
+// Công tắc per-hội-thoại. BẬT → AI tự trả lời câu hỏi thông tin dựa trên Knowledge
+// Base. Câu NHẠY CẢM (giá/cọc/chốt đơn/thanh toán) hoặc thiếu nguồn → KHÔNG gửi,
+// chỉ hiện cảnh báo "cần bạn duyệt" trên thanh ✨.
+const aiAutoReplyLocal = ref<boolean | null>(null);
+const aiAutoReplySaving = ref(false);
+const aiAutoReplyOn = computed(() =>
+  aiAutoReplyLocal.value ?? Boolean((props.conversation as { aiAutoReplyEnabled?: boolean } | undefined)?.aiAutoReplyEnabled),
+);
+const aiAutoReplyTooltip = computed(() =>
+  aiAutoReplyOn.value
+    ? 'AI đang tự trả lời câu hỏi thông tin. Câu về giá/cọc/chốt đơn vẫn chờ bạn duyệt.'
+    : 'Bật để AI tự trả lời câu hỏi thông tin (dựa trên Kho tài liệu). Giá/cọc/chốt đơn luôn cần bạn duyệt.',
+);
+watch(() => props.conversation?.id, () => { aiAutoReplyLocal.value = null; });
+
+async function toggleAiAutoReply(e: Event) {
+  const target = e.target as HTMLInputElement;
+  const next = target.checked;
+  const convId = props.conversation?.id;
+  if (!convId || aiAutoReplySaving.value) { target.checked = aiAutoReplyOn.value; return; }
+  aiAutoReplySaving.value = true;
+  const prev = aiAutoReplyOn.value;
+  aiAutoReplyLocal.value = next; // optimistic
+  try {
+    await api.patch(`/conversations/${convId}/ai-auto-reply`, { enabled: next });
+    if (props.conversation) (props.conversation as { aiAutoReplyEnabled?: boolean }).aiAutoReplyEnabled = next;
+  } catch (err) {
+    aiAutoReplyLocal.value = prev; // rollback
+    target.checked = prev;
+    console.error('[chat] toggle AI tự tư vấn lỗi:', err);
+  } finally {
+    aiAutoReplySaving.value = false;
+  }
+}
 
 // T11 2026-06-20: nick của conversation ĐÃ BỊ XÓA (ẩn-mềm) → badge "Đã xóa" + banner + khóa ô
 // soạn tin (khóa mềm UX, KHÔNG thay guard server). CHỈ dùng archivedAt!=null — KHÔNG suy từ
@@ -3434,6 +3488,42 @@ watch(() => props.editingMessage?.id, async (id) => {
   0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.20); }
   50%      { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.05); }
 }
+
+/* Auto-tư vấn Mức A 2026-07-25: switch nhỏ trong header chat */
+.ai-auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: #64748b;
+}
+.ai-auto-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.ai-auto-toggle .aat-track {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.18s ease;
+  flex: 0 0 auto;
+}
+.ai-auto-toggle .aat-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.18s ease;
+}
+.ai-auto-toggle input:checked + .aat-track { background: #7c3aed; }
+.ai-auto-toggle input:checked + .aat-track .aat-knob { transform: translateX(12px); }
+.ai-auto-toggle input:focus-visible + .aat-track { outline: 2px solid #7c3aed; outline-offset: 2px; }
+.ai-auto-toggle input:disabled ~ * { opacity: 0.55; }
+.ai-auto-toggle input:checked ~ .aat-label { color: #6d28d9; font-weight: 600; }
 
 /* M53 2026-05-30: Banner cam virtual conv */
 .virtual-banner {
