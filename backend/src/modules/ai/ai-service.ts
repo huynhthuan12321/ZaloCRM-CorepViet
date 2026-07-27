@@ -26,7 +26,7 @@ function detectLanguage(text: string): 'vi' | 'en' {
 
 function escapeXmlBoundary(text: string): string {
   // Strip mọi tag ranh giới prompt để chống injection từ nội dung động.
-  return text.replace(/<\/?(conversation_context|company_guidance|customer_profile|company_docs)>/gi, '');
+  return text.replace(/<\/?(conversation_context|company_guidance|customer_profile|customer_memory|company_docs)>/gi, '');
 }
 
 function buildConversationContext(messages: MessageContext[]) {
@@ -210,6 +210,11 @@ export async function generateAiOutput(input: { orgId: string; conversationId: s
     }
     parts.push(
       '<customer_profile>', escapeXmlBoundary(JSON.stringify(profile)), '</customer_profile>',
+    );
+    if (meta.customerSummary) {
+      parts.push('<customer_memory>', escapeXmlBoundary(JSON.stringify(meta.customerSummary)), '</customer_memory>');
+    }
+    parts.push(
       '<company_docs>', docsBlock, '</company_docs>',
       '<conversation_context>', `Customer: ${customerName}`, contextText, '</conversation_context>',
     );

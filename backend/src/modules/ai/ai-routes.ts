@@ -24,7 +24,7 @@ async function assertConversationReadAccess(request: FastifyRequest, reply: Fast
   const user = request.user!;
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, orgId: user.orgId },
-    select: { id: true, zaloAccountId: true },
+    select: { id: true, zaloAccountId: true, contactId: true },
   });
   if (!conversation) {
     reply.status(404).send({ error: 'Conversation not found' });
@@ -166,7 +166,17 @@ export async function aiRoutes(app: FastifyInstance) {
       const access = await assertConversationReadAccess(request, reply, body.conversationId);
       if (!access) return;
       if (!(await assertPrivacyAllowsAi(request, reply, body.conversationId))) return;
-      return await generateAiOutput({ orgId: request.user!.orgId, conversationId: body.conversationId, messageId: body.messageId, type: 'reply_draft' });
+      const result = await generateAiOutput({ orgId: request.user!.orgId, conversationId: body.conversationId, messageId: body.messageId, type: 'reply_draft' });
+      if (access.contactId) {
+        void import('./customer-summary-service.js')
+          .then(({ updateCustomerSummary }) => updateCustomerSummary({
+            orgId: request.user!.orgId,
+            contactId: access.contactId!,
+            conversationId: body.conversationId!,
+          }))
+          .catch(() => {});
+      }
+      return result;
     } catch (err) {
       logger.error('[ai] Suggest error:', err);
       return sendHandledError(reply, err, 'Failed to generate AI suggestion');

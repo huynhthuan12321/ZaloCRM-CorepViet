@@ -90,7 +90,7 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     const conv = await prisma.conversation.findFirst({
       where: { id: conversationId, orgId },
       select: {
-        id: true, zaloAccountId: true, externalThreadId: true, threadType: true,
+        id: true, contactId: true, zaloAccountId: true, externalThreadId: true, threadType: true,
         isVirtual: true, deletedAt: true, aiAutoReplyEnabled: true,
         zaloAccount: { select: { privacyMode: true, ownerUserId: true, zaloUid: true, archivedAt: true } },
       },
@@ -155,6 +155,7 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     });
     if (reason) {
       await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason, sources, io });
+      scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
       return;
     }
 
@@ -266,9 +267,17 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     ).catch(() => {});
 
     logger.info(`[ai-auto-reply] Đã gửi conv=${conversationId} msg=${message.id} delay=${Math.round(delayMs / 1000)}s`);
+    scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
   } catch (err) {
     logger.error('[ai-auto-reply] Lỗi xử lý:', err);
   }
+}
+
+function scheduleCustomerSummaryUpdate(orgId: string, contactId: string | null, conversationId: string): void {
+  if (!contactId) return;
+  void import('./customer-summary-service.js')
+    .then(({ updateCustomerSummary }) => updateCustomerSummary({ orgId, contactId, conversationId }))
+    .catch(() => {});
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
