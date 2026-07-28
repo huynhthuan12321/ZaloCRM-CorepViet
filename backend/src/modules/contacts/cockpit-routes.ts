@@ -23,12 +23,52 @@ type GetflyLinkStatus = {
   linkedAt: string | null;
 };
 
+const CUSTOMER_STAGES = new Set([
+  'moi_hoi',
+  'dang_tim_hieu',
+  'phan_van',
+  'sap_chot',
+  'da_chot',
+  'nguoi_lanh',
+  'chua_ro',
+]);
+
+type CockpitCustomerSummary = {
+  stage: string | null;
+  nextStep: string | null;
+  summary: string | null;
+  concerns: string[];
+  updatedAt: string | null;
+};
+
 function readGetflyLink(metadata: unknown): GetflyLinkStatus {
   if (!metadata || typeof metadata !== 'object') return { linked: false, getflyId: null, linkedAt: null };
   const meta = metadata as Record<string, unknown>;
   const getflyId = meta.getflyId != null ? String(meta.getflyId) : null;
   const linkedAt = meta.getflyLinkedAt != null ? String(meta.getflyLinkedAt) : null;
   return { linked: !!getflyId, getflyId, linkedAt };
+}
+
+function readCustomerSummary(metadata: unknown): CockpitCustomerSummary | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).customerSummary;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  const stringOrNull = (field: unknown): string | null => {
+    if (typeof field !== 'string') return null;
+    const normalized = field.trim();
+    return normalized || null;
+  };
+  const stage = stringOrNull(value.stage);
+  return {
+    stage: stage && CUSTOMER_STAGES.has(stage) ? stage : null,
+    nextStep: stringOrNull(value.nextStep),
+    summary: stringOrNull(value.summary),
+    concerns: Array.isArray(value.concerns)
+      ? value.concerns.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
+      : [],
+    updatedAt: stringOrNull(value.updatedAt),
+  };
 }
 
 export async function cockpitRoutes(app: FastifyInstance): Promise<void> {
@@ -128,6 +168,7 @@ export async function cockpitRoutes(app: FastifyInstance): Promise<void> {
         autoTags: contact.autoTags,
         assignedUser: contact.assignedUser,
         getflyLink: readGetflyLink(contact.metadata),
+        customerSummary: readCustomerSummary(contact.metadata),
         // Phase 8 — 3 score system
         priorityScore: contact.priorityScore,
         priorityUpdatedAt: contact.priorityUpdatedAt,

@@ -18,6 +18,15 @@ import { api } from '@/api/index';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
+export type CustomerStage =
+  | 'moi_hoi'
+  | 'dang_tim_hieu'
+  | 'phan_van'
+  | 'sap_chot'
+  | 'da_chot'
+  | 'nguoi_lanh'
+  | 'chua_ro';
+
 export interface CockpitData {
   contactId: string;
   fullName: string | null;
@@ -33,6 +42,13 @@ export interface CockpitData {
   autoTags: string[];
   assignedUser: { id: string; fullName: string } | null;
   getflyLink: { linked: boolean; getflyId: string | null; linkedAt: string | null };
+  customerSummary: {
+    stage: CustomerStage | null;
+    nextStep: string | null;
+    summary: string | null;
+    concerns: string[];
+    updatedAt: string | null;
+  } | null;
   // Phase 8 score
   priorityScore: number | null;
   priorityUpdatedAt: string | null;

@@ -221,6 +221,11 @@
 
       <!-- ══════ TAB 2: QUAN HỆ (per-nick) ══════ -->
       <div v-show="activeTab === 'crm'" class="tab-pane crm-tab">
+        <div v-if="customerStage" class="customer-stage-row">
+          <span class="customer-stage-label">Giai đoạn KH</span>
+          <span :class="['customer-stage-chip', customerStage.cssClass]">{{ customerStage.label }}</span>
+        </div>
+
         <!-- Widget 1: Liên kết CRM (placeholder) -->
         <section class="crm-widget crm-w-getfly">
           <div class="crm-w-row">
@@ -242,6 +247,15 @@
             <span class="crm-w-icon">⚡</span>
             <span class="crm-w-title">Hành động đề xuất</span>
             <button class="crm-w-refresh" :disabled="suggestLoading" title="Đổi gợi ý" @click="onRefreshSuggest">↻</button>
+          </div>
+          <div
+            v-if="cockpit?.customerSummary?.nextStep"
+            :class="['customer-next-step', { priority: cockpit.customerSummary.stage === 'sap_chot' }]"
+          >
+            <div class="customer-next-step-title">🎯 Nước đi kế tiếp</div>
+            <div class="customer-next-step-text">
+              <span v-if="cockpit.customerSummary.stage === 'sap_chot'">🔥 </span>{{ cockpit.customerSummary.nextStep }}
+            </div>
           </div>
           <div v-if="suggestLoading" class="crm-w-loading">
             <div class="crm-spinner" /><span>AI đang gợi ý...</span>
@@ -1071,6 +1085,21 @@ const teammatesFiltered = computed<Teammate[]>(() => {
 
 const teammatesLoading = computed(() => cockpitLoading.teammates);
 
+const CUSTOMER_STAGE_DISPLAY = {
+  moi_hoi: { label: 'Mới hỏi', cssClass: 'stage-new' },
+  dang_tim_hieu: { label: 'Đang tìm hiểu', cssClass: 'stage-learning' },
+  phan_van: { label: 'Phân vân', cssClass: 'stage-hesitant' },
+  sap_chot: { label: 'Sắp chốt', cssClass: 'stage-closing' },
+  da_chot: { label: 'Đã chốt', cssClass: 'stage-closed' },
+  nguoi_lanh: { label: 'Nguội', cssClass: 'stage-cold' },
+  chua_ro: { label: 'Chưa rõ', cssClass: 'stage-unknown' },
+} as const;
+
+const customerStage = computed(() => {
+  const stage = cockpit.value?.customerSummary?.stage;
+  return stage ? CUSTOMER_STAGE_DISPLAY[stage] : null;
+});
+
 // M55 2026-05-30 — Cùng chăm theo ContactAccess (primary + collaborator).
 // Cover cả KH có Zalo (đã có teammatesFiltered từ Friend) + KH no-Zalo (Friend=[]).
 interface CungChamRow {
@@ -1879,6 +1908,33 @@ async function onRegenerateHandoff() {
   flex-direction: column;
   gap: 8px;
 }
+.customer-stage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 2px 2px 0;
+}
+.customer-stage-label {
+  color: var(--smax-grey-600);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.customer-stage-chip {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 5px 9px;
+}
+.customer-stage-chip.stage-new { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
+.customer-stage-chip.stage-learning { background: #dbeafe; border-color: #bfdbfe; color: #1d4ed8; }
+.customer-stage-chip.stage-hesitant { background: #fef3c7; border-color: #fde68a; color: #b45309; }
+.customer-stage-chip.stage-closing { background: #dcfce7; border-color: #86efac; color: #15803d; box-shadow: 0 0 0 1px rgb(34 197 94 / 8%); }
+.customer-stage-chip.stage-closed { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+.customer-stage-chip.stage-cold { background: #e2e8f0; border-color: #cbd5e1; color: #475569; }
+.customer-stage-chip.stage-unknown { background: #f8fafc; border-color: #e2e8f0; color: #94a3b8; }
 .crm-w-row {
   display: flex;
   align-items: center;
@@ -1949,6 +2005,32 @@ async function onRegenerateHandoff() {
 .crm-btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Widget 2: AI suggest ── */
+.customer-next-step {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.customer-next-step.priority {
+  background: linear-gradient(180deg, #f0fdf4, #ecfdf5);
+  border-color: #86efac;
+  box-shadow: 0 0 0 1px rgb(34 197 94 / 8%);
+}
+.customer-next-step-title {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+.customer-next-step.priority .customer-next-step-title { color: #15803d; }
+.customer-next-step-text {
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.customer-next-step.priority .customer-next-step-text { color: #166534; font-weight: 600; }
 .crm-suggest-box {
   background: linear-gradient(180deg, #faf5ff, #f5f3ff);
   border: 1px solid #ddd6fe;
