@@ -17,6 +17,61 @@
       </div>
     </div>
 
+    <!-- Giai đoạn 3 (2026-07-28) — Đòn bẩy ③: cấu hình tự bám đuổi theo giai đoạn KH -->
+    <div class="sf-card">
+      <div class="sf-head">
+        <div>
+          <div class="sf-title">🎯 Tự bám đuổi khách ấm/nóng</div>
+          <div class="sf-sub">
+            Khách ở giai đoạn <b>Sắp chốt</b> / <b>Phân vân</b> (AI tự nhận diện) mà im lặng đủ lâu sẽ được
+            tự gắn luồng bám đuổi tương ứng. Khách trả lời là luồng tự tạm dừng — không spam.
+          </div>
+        </div>
+        <label class="sf-switch">
+          <input v-model="sfConfig.enabled" type="checkbox" />
+          <span>{{ sfConfig.enabled ? 'Đang bật' : 'Đang tắt' }}</span>
+        </label>
+      </div>
+      <div class="sf-grid">
+        <div>
+          <label class="f-label">🔥 Sắp chốt → gắn luồng</label>
+          <select v-model="sfConfig.sequenceByStage.sap_chot" class="f-input">
+            <option value="">— Không kích —</option>
+            <option v-for="s in enabledSequences" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="f-label">🤔 Phân vân → gắn luồng</label>
+          <select v-model="sfConfig.sequenceByStage.phan_van" class="f-input">
+            <option value="">— Không kích —</option>
+            <option v-for="s in enabledSequences" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="f-label">Khách im lặng</label>
+          <select v-model.number="sfConfig.silenceHours" class="f-input">
+            <option :value="12">12 giờ</option>
+            <option :value="24">24 giờ</option>
+            <option :value="48">48 giờ</option>
+          </select>
+        </div>
+        <div>
+          <label class="f-label">Nghỉ giữa 2 lần bám đuổi</label>
+          <select v-model.number="sfConfig.cooldownDays" class="f-input">
+            <option :value="7">7 ngày</option>
+            <option :value="14">14 ngày</option>
+            <option :value="30">30 ngày</option>
+          </select>
+        </div>
+      </div>
+      <div class="sf-foot">
+        <span class="sf-note">Chỉ bám đuổi khách đã từng nhắn tin trong 30 ngày; mỗi khách tối đa 1 lần mỗi giai đoạn trong thời gian nghỉ.</span>
+        <button class="btn btn-primary btn-sm" :disabled="sfSaving" @click="saveSfConfig">
+          {{ sfSaving ? 'Đang lưu...' : 'Lưu cấu hình' }}
+        </button>
+      </div>
+    </div>
+
     <div class="seq-body">
       <div v-if="loading" class="seq-empty">Đang tải...</div>
       <div v-else-if="sequences.length === 0" class="seq-empty">
@@ -140,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import { useConfirm } from '@/composables/use-confirm';
@@ -170,6 +225,57 @@ const form = reactive<{ name: string; description: string; enabled: boolean; ste
   enabled: true,
   steps: [{ text: '', delayMinutes: 0, blockId: null, imageUrl: null }],
 });
+
+// ── Giai đoạn 3 (2026-07-28) — cấu hình tự bám đuổi theo giai đoạn KH ─────────
+const sfSaving = ref(false);
+const sfConfig = reactive<{
+  enabled: boolean;
+  silenceHours: number;
+  cooldownDays: number;
+  sequenceByStage: { sap_chot: string; phan_van: string };
+}>({
+  enabled: false,
+  silenceHours: 24,
+  cooldownDays: 14,
+  sequenceByStage: { sap_chot: '', phan_van: '' },
+});
+
+const enabledSequences = computed(() => sequences.value.filter((s) => s.enabled));
+
+async function loadSfConfig(): Promise<void> {
+  try {
+    const res = await api.get('/automation/stage-followup-config');
+    const c = res.data?.config ?? {};
+    sfConfig.enabled = c.enabled === true;
+    sfConfig.silenceHours = Number(c.silenceHours) || 24;
+    sfConfig.cooldownDays = Number(c.cooldownDays) || 14;
+    sfConfig.sequenceByStage.sap_chot = c.sequenceByStage?.sap_chot ?? '';
+    sfConfig.sequenceByStage.phan_van = c.sequenceByStage?.phan_van ?? '';
+  } catch { /* giữ mặc định — lỗi tải không chặn CRUD luồng */ }
+}
+
+async function saveSfConfig(): Promise<void> {
+  if (sfConfig.enabled && !sfConfig.sequenceByStage.sap_chot && !sfConfig.sequenceByStage.phan_van) {
+    return void toast('Chon it nhat 1 luong cho 1 giai doan truoc khi bat', 'error');
+  }
+  sfSaving.value = true;
+  try {
+    const sequenceByStage: Record<string, string> = {};
+    if (sfConfig.sequenceByStage.sap_chot) sequenceByStage.sap_chot = sfConfig.sequenceByStage.sap_chot;
+    if (sfConfig.sequenceByStage.phan_van) sequenceByStage.phan_van = sfConfig.sequenceByStage.phan_van;
+    await api.put('/automation/stage-followup-config', {
+      enabled: sfConfig.enabled,
+      silenceHours: sfConfig.silenceHours,
+      cooldownDays: sfConfig.cooldownDays,
+      sequenceByStage,
+    });
+    toast('Da luu cau hinh tu bam duoi', 'success');
+  } catch (err: any) {
+    toast(`Loi: ${err?.response?.data?.error ?? 'khong luu duoc cau hinh'}`, 'error');
+  } finally {
+    sfSaving.value = false;
+  }
+}
 
 // Khối nội dung loại 'gửi tin' đang BẬT — để ghép vào bước luồng. Lỗi tải khối không
 // chặn CRUD luồng (vẫn nhập tay được) nên nuốt lỗi, chỉ để danh sách rỗng.
@@ -305,7 +411,7 @@ function delayLabel(minutes: number): string {
   return `${Math.round(minutes / 1440)} ngay`;
 }
 
-onMounted(() => { void load(); void loadBlocks(); });
+onMounted(() => { void load(); void loadBlocks(); void loadSfConfig(); });
 </script>
 
 <style scoped>
@@ -315,6 +421,14 @@ onMounted(() => { void load(); void loadBlocks(); });
 .mts { font-size: 13px; color: var(--text-secondary, #666); margin-top: 2px; max-width: 760px; line-height: 1.5; }
 .actions { display: flex; gap: 8px; flex-shrink: 0; }
 .seq-body { padding: 16px 20px; }
+.sf-card { margin: 14px 20px 0; border: 1px solid #bfdbfe; border-radius: 12px; background: linear-gradient(180deg, #f0f9ff, #f8fbff); padding: 14px 16px; }
+.sf-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.sf-title { font-size: 14.5px; font-weight: 700; }
+.sf-sub { font-size: 12.5px; color: var(--text-secondary, #556); margin-top: 3px; line-height: 1.5; max-width: 680px; }
+.sf-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: #1d4ed8; white-space: nowrap; cursor: pointer; }
+.sf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 14px; margin-top: 8px; }
+.sf-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.sf-note { font-size: 11.5px; color: var(--text-secondary, #667); line-height: 1.4; max-width: 620px; }
 .seq-empty { text-align: center; color: var(--text-secondary, #888); padding: 42px 0; }
 .seq-list { display: flex; flex-direction: column; gap: 10px; }
 .seq-card { display: flex; justify-content: space-between; gap: 14px; border: 1px solid var(--border, #e5e4e7); border-radius: 10px; padding: 12px 14px; background: var(--surface, #fff); }

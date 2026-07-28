@@ -70,7 +70,7 @@ export async function runCareSessionTick(): Promise<void> {
     prisma.careSession.findMany({
       where: {
         state: 'active',
-        sourceType: { in: ['sequence_manual', 'target_followup'] },
+        sourceType: { in: ['sequence_manual', 'target_followup', 'stage_followup'] },
         nextRunAt: { lte: now },
         OR: [{ pausedUntil: null }, { pausedUntil: { lte: now } }],
       },

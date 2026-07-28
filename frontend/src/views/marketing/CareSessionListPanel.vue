@@ -113,7 +113,7 @@ const props = defineProps<{
   title: string;
   description: string;
   emptyText: string;
-  sourceType?: 'sequence_manual' | 'target_followup';
+  sourceType?: 'sequence_manual' | 'target_followup' | 'stage_followup';
 }>();
 
 const { push: toast } = useToast();

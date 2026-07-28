@@ -13,7 +13,7 @@ export interface CareSummary {
   total: number; running: number; paused: number; completed: number; stopped: number;
 }
 
-export function useCareSessions(defaultSourceType?: 'sequence_manual' | 'target_followup') {
+export function useCareSessions(defaultSourceType?: 'sequence_manual' | 'target_followup' | 'stage_followup') {
   const sessions = ref<CareSessionItem[]>([]);
   const summary = ref<CareSummary>({ total: 0, running: 0, paused: 0, completed: 0, stopped: 0 });
   const dryRun = ref(true);

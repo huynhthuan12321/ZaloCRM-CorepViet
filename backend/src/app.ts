@@ -435,6 +435,11 @@ async function bootstrap() {
       startCareSessionCron();
       const { startCareSessionListener } = await import('./modules/automation/care-session-listener.js');
       startCareSessionListener();
+      // Giai đoạn 3 (2026-07-28) — Đòn bẩy ③: khách ấm/nóng (customerSummary.stage)
+      // im lặng đủ lâu → tự enroll CareSession 'stage_followup'. Org phải bật cấu hình
+      // trong Marketing → Luồng kịch bản thì cron mới quét.
+      const { startStageFollowupCron } = await import('./modules/automation/stage-followup-cron.js');
+      startStageFollowupCron();
     }
     // Group info refresh periodic (mỗi 6h) — làm tươi avatar/tên/sĩ số nhóm chống
     // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).

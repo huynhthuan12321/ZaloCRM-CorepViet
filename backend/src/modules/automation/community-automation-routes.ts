@@ -23,6 +23,11 @@ import {
   type CareSessionRow,
 } from './care-session-list-helpers.js';
 import { processCareSessionStep } from './process-care-session-step.js';
+import {
+  STAGE_FOLLOWUP_SETTING_KEY,
+  STAGE_FOLLOWUP_ALLOWED_STAGES,
+  parseStageFollowupConfig,
+} from './stage-followup-cron.js';
 
 type UserCtx = { id: string; orgId: string; role: string };
 
@@ -434,9 +439,9 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
     const scope = await getOwnerScope({ userId: user.id, orgId: user.orgId, legacyRole: user.role });
 
     // Chỉ phiên bám đuổi (gắn luồng) — loại 'manual_listen' (chỉ nghe, không phải chăm sóc chuỗi).
-    const allowedSources = sourceType && ['sequence_manual', 'target_followup'].includes(sourceType)
+    const allowedSources = sourceType && ['sequence_manual', 'target_followup', 'stage_followup'].includes(sourceType)
       ? [sourceType]
-      : ['sequence_manual', 'target_followup'];
+      : ['sequence_manual', 'target_followup', 'stage_followup'];
 
     const stateWhere = stateFilterToWhere(state, now);
     const where = {
@@ -661,6 +666,47 @@ export async function communityAutomationRoutes(app: FastifyInstance): Promise<v
     }).catch((err) => logger.warn('[community-automation] create enroll event failed:', err));
 
     return { ok: true, enrollmentId: created.id, sequenceId, sequenceName: sequence.name, stepCount: stepCountOf(sequence) };
+  });
+
+  // ── Giai đoạn 3 (2026-07-28) — Cấu hình auto bám đuổi theo giai đoạn KH ──────
+  // Lưu AppSetting(orgId, 'stage_followup_config') dạng JSON plain. Cron
+  // stage-followup-cron đọc mỗi tick — đổi cấu hình có hiệu lực ngay tick sau.
+  app.get('/api/v1/automation/stage-followup-config', async (request: FastifyRequest) => {
+    const user = request.user as UserCtx;
+    const row = await prisma.appSetting.findUnique({
+      where: { orgId_settingKey: { orgId: user.orgId, settingKey: STAGE_FOLLOWUP_SETTING_KEY } },
+      select: { valuePlain: true },
+    });
+    let parsed: unknown = {};
+    try { parsed = JSON.parse(row?.valuePlain ?? '{}'); } catch { parsed = {}; }
+    return { config: parseStageFollowupConfig(parsed) };
+  });
+
+  app.put('/api/v1/automation/stage-followup-config', async (
+    request: FastifyRequest<{ Body: { enabled?: boolean; silenceHours?: number; cooldownDays?: number; sequenceByStage?: Record<string, string> } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const config = parseStageFollowupConfig(request.body ?? {});
+
+    // Sequence được map phải thuộc org + đang bật — chặn map nhầm id org khác.
+    const ids = [...new Set(Object.values(config.sequenceByStage))];
+    if (ids.length) {
+      const found = await prisma.automationSequence.count({ where: { id: { in: ids }, orgId: user.orgId } });
+      if (found !== ids.length) return reply.status(400).send({ error: 'Sequence not found in this organization' });
+    }
+    if (config.enabled && !ids.length) {
+      return reply.status(400).send({ error: 'Chọn ít nhất 1 luồng kịch bản cho 1 giai đoạn trước khi bật' });
+    }
+
+    const valuePlain = JSON.stringify(config);
+    await prisma.appSetting.upsert({
+      where: { orgId_settingKey: { orgId: user.orgId, settingKey: STAGE_FOLLOWUP_SETTING_KEY } },
+      create: { orgId: user.orgId, settingKey: STAGE_FOLLOWUP_SETTING_KEY, valuePlain },
+      update: { valuePlain },
+    });
+    logger.info(`[community-automation] stage-followup-config updated org=${user.orgId} by=${user.id} enabled=${config.enabled} stages=${Object.keys(config.sequenceByStage).join(',') || '-'}`);
+    return { ok: true, config, allowedStages: STAGE_FOLLOWUP_ALLOWED_STAGES };
   });
 
   app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/pause', async (

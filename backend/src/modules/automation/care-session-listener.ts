@@ -23,7 +23,9 @@ import { withTenant } from '../../shared/tenant/tenant-context.js';
 import { automationEventBus, type AutomationEvent } from '../../shared/ee-registry/event-bus.js';
 import { parseSequenceSteps, parseSnapshotRules } from './sequence-snapshot.js';
 
-const FOLLOWUP_SOURCES = ['sequence_manual', 'target_followup'];
+// Giai đoạn 3 (2026-07-28): thêm 'stage_followup' — phiên auto bám đuổi theo giai đoạn KH
+// cũng phải pause/đóng khi khách trả lời (chống spam khi khách đã quay lại chat).
+const FOLLOWUP_SOURCES = ['sequence_manual', 'target_followup', 'stage_followup'];
 /** Bước đầu delay 0 vẫn chờ tối thiểu 3 phút — nhường tin chào (target-cron) đi trước. */
 const FOLLOWUP_MIN_FIRST_DELAY_MINUTES = 3;
 
