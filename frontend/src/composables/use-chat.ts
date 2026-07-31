@@ -231,7 +231,7 @@ const messagesCache = new Map<string, Message[]>();
 // Stale-while-revalidate: chuyển tab → paint từ cache NGAY (0ms lag), bg fetch update.
 // Trước fix: mỗi lần chuyển tab user chờ 1-3s HTTP+DB roundtrip → loading spinner.
 // Cache key encode toàn bộ filter params (tab, threadType, accountIds, search, ...).
-const conversationsCache = new Map<string, { data: Conversation[]; fetchedAt: number }>();
+const conversationsCache = new Map<string, { data: Conversation[]; fetchedAt: number; hasMore: boolean }>();
 const CONV_CACHE_MAX_ENTRIES = 16;  // ~4 tabs × ~4 filter variants
 
 // Debug hook (DEV only) — expose cache state via window.__zaloCRMConvCache để
@@ -313,6 +313,9 @@ export function useChat() {
   // (giữ tin socket đến trong lúc HTTP fly).
   const messagesConvId = ref<string | null>(null);
   const loadingConvs = ref(false);
+  const convPage = ref(1);
+  const convHasMore = ref(true);
+  const convLoadingMore = ref(false);
   const loadingMsgs = ref(false);
   const sendingMsg = ref(false);
   // Wave 1 (2026-05-21) — KH đang gõ realtime. Key = conversationId (FE map từ
@@ -392,14 +395,24 @@ export function useChat() {
   }
 
   const extraFilters = ref<Record<string, string>>({});
+  let convRequestVersion = 0;
 
-  async function fetchConversations(opts?: { bypassCache?: boolean }) {
-    const params = {
+  function buildConversationParams(pageNumber: number) {
+    return {
       limit: 100,
+      page: pageNumber,
       search: searchQuery.value,
       accountId: accountFilter.value || undefined,
       ...extraFilters.value,
     };
+  }
+
+  async function fetchConversations(opts?: { bypassCache?: boolean }) {
+    const requestVersion = ++convRequestVersion;
+    convPage.value = 1;
+    convHasMore.value = true;
+    convLoadingMore.value = false;
+    const params = buildConversationParams(1);
     const cacheKey = JSON.stringify(params);
     const cached = opts?.bypassCache ? null : conversationsCache.get(cacheKey);
 
@@ -424,6 +437,7 @@ export function useChat() {
     if (cached) {
       logCacheEvent('hit', cacheKey);
       conversations.value = mergeConvListPreserveDetail(conversations.value, cached.data, preserveIds);
+      convHasMore.value = cached.hasMore;
     } else {
       if (!opts?.bypassCache) logCacheEvent('miss', cacheKey);
       // Spinner chỉ hiện khi state thực sự rỗng (first load). bypassCache khi
@@ -433,19 +447,50 @@ export function useChat() {
 
     try {
       const res = await api.get('/conversations', { params });
+      if (requestVersion !== convRequestVersion) return;
       // Apply pending optimistic mutations (tag assigns chưa được BE confirm) trước khi
       // replace state — tránh fetchConversations chạy giữa lúc BE đang sync wipe UI optimistic.
       const fresh = applyPendingTags(res.data.conversations as Conversation[]);
-      conversationsCache.set(cacheKey, { data: fresh, fetchedAt: Date.now() });
+      const hasMore = typeof res.data.hasMore === 'boolean' ? res.data.hasMore : fresh.length === 100;
+      conversationsCache.set(cacheKey, { data: fresh, fetchedAt: Date.now(), hasMore });
       logCacheEvent('set', cacheKey);
       evictOldConvCacheIfNeeded();
       // Merge để giữ detail fields (Contact full ~50 field từ /conversations/:id)
       // không bị wipe bởi narrow list response (14 field).
       conversations.value = mergeConvListPreserveDetail(conversations.value, fresh, preserveIds);
+      convHasMore.value = hasMore;
     } catch (err) {
-      console.error('Failed to fetch conversations:', err);
+      if (requestVersion === convRequestVersion) console.error('Failed to fetch conversations:', err);
     } finally {
-      loadingConvs.value = false;
+      if (requestVersion === convRequestVersion) loadingConvs.value = false;
+    }
+  }
+
+  async function loadMoreConversations() {
+    if (convLoadingMore.value || !convHasMore.value) return;
+
+    const requestVersion = convRequestVersion;
+    const nextPage = convPage.value + 1;
+    const params = buildConversationParams(nextPage);
+    convLoadingMore.value = true;
+
+    try {
+      // Older pages intentionally bypass the page-1 stale-while-revalidate cache.
+      const res = await api.get('/conversations', { params });
+      if (requestVersion !== convRequestVersion) return;
+
+      const pageRows = applyPendingTags(res.data.conversations as Conversation[]);
+      const existingIds = new Set(conversations.value.map((conversation) => conversation.id));
+      const uniqueRows = pageRows.filter((conversation) => !existingIds.has(conversation.id));
+      conversations.value = conversations.value.concat(uniqueRows);
+      convPage.value = nextPage;
+      convHasMore.value = typeof res.data.hasMore === 'boolean'
+        ? res.data.hasMore
+        : pageRows.length === 100;
+    } catch {
+      // Keep the current list and page intact so a later scroll can retry this page.
+    } finally {
+      if (requestVersion === convRequestVersion) convLoadingMore.value = false;
     }
   }
 
@@ -1199,6 +1244,9 @@ export function useChat() {
     selectedConv,
     messages,
     loadingConvs,
+    convPage,
+    convHasMore,
+    convLoadingMore,
     loadingMsgs,
     sendingMsg,
     searchQuery,
@@ -1216,6 +1264,7 @@ export function useChat() {
     aiUsage,
     aiConfig,
     fetchConversations,
+    loadMoreConversations,
     fetchAiConfig,
     saveAiConfig,
     fetchAiUsage,

@@ -801,8 +801,13 @@ export async function chatRoutes(app: FastifyInstance) {
     // (ensure-conversation từ Lead Pool / Friend click tạo conv với lastMessageAt=null).
     const orderByClause: any =
       sortMode === 'unread-first'
-        ? [{ unreadCount: 'desc' }, { lastMessageAt: { sort: 'desc', nulls: 'last' } }]
-        : { lastMessageAt: { sort: 'desc', nulls: 'last' } };
+        ? [{ unreadCount: 'desc' }, { lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }]
+        : [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }];
+
+    // Normalize pagination once so query + response always agree. The id tie-breaker
+    // above keeps offset pages deterministic when multiple conversations share a timestamp.
+    const pageNumber = Math.max(1, parseInt(page, 10) || 1);
+    const pageLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
 
     const [conversations, total] = await Promise.all([
       prisma.conversation.findMany({
@@ -856,8 +861,8 @@ export async function chatRoutes(app: FastifyInstance) {
           },
         },
         orderBy: orderByClause,
-        skip: (parseInt(page) - 1) * Math.min(parseInt(limit), 200),
-        take: Math.min(parseInt(limit), 200),
+        skip: (pageNumber - 1) * pageLimit,
+        take: pageLimit,
       }),
       prisma.conversation.count({ where }),
     ]);
@@ -984,8 +989,9 @@ export async function chatRoutes(app: FastifyInstance) {
         return redactedConv;
       }),
       total,
-      page: parseInt(page),
-      limit: Math.min(parseInt(limit), 200),
+      page: pageNumber,
+      limit: pageLimit,
+      hasMore: conversations.length === pageLimit,
     };
   });
 

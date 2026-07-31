@@ -78,7 +78,7 @@
     </div>
 
     <!-- ════════ Conv items ════════ -->
-    <div ref="scrollContainer" class="conv-scroll">
+    <div ref="scrollContainer" class="conv-scroll" @scroll.passive="onConversationScroll">
       <div v-if="loading && conversations.length === 0" class="loading">Đang tải…</div>
 
       <!-- Phase A perf fix v2 (2026-05-21) — Re-thêm TransitionGroup nhưng với
@@ -227,6 +227,16 @@
       </div>
       </TransitionGroup>
 
+      <div
+        v-if="conversations.length > 0"
+        ref="loadMoreSentinel"
+        class="conv-load-more"
+        aria-live="polite"
+      >
+        <span v-if="loadingMore">Đang tải thêm…</span>
+        <span v-else-if="hasMore === false" class="conv-load-more--done">Đã tải hết hội thoại</span>
+      </div>
+
       <div v-if="!loading && conversations.length === 0" class="empty-state">
         Chưa có hội thoại nào
       </div>
@@ -301,7 +311,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, computed, nextTick } from 'vue';
+import { ref, reactive, watch, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
 import type { Conversation, AiSentiment } from '@/composables/use-chat';
 import { api } from '@/api/index';
 // Icon chrome — Lucide line (anh chốt 2026-06-08, bỏ ký tự thô).
@@ -325,6 +335,8 @@ const props = defineProps<{
   conversations: Conversation[];
   selectedId: string | null;
   loading: boolean;
+  hasMore?: boolean;
+  loadingMore?: boolean;
   search: string;
   accounts?: Array<{
     id: string;
@@ -361,6 +373,7 @@ const emit = defineEmits<{
   'compose-opened': [conversationId: string];
   /** Theo dõi (anh chốt 2026-06-15) — toggle follow từ menu → cập nhật chuông cột 2 ngay. */
   'follow-changed': [contactId: string, nickId: string, following: boolean];
+  'load-more': [];
 }>();
 
 // ── Compose new message ─────────────────────────────────────────────────────
@@ -850,7 +863,38 @@ onMounted(async () => {
  * append (first-time chat ensure-conversation).
  * Ref map: convId → row HTMLElement (registerRow gọi mỗi lần Vue mount row). */
 const scrollContainer = ref<HTMLElement | null>(null);
+const loadMoreSentinel = ref<HTMLElement | null>(null);
 const rowRefs = new Map<string, HTMLElement>();
+let loadMoreObserver: IntersectionObserver | null = null;
+
+function requestLoadMore() {
+  if (props.hasMore === false || props.loadingMore) return;
+  emit('load-more');
+}
+
+function onConversationScroll() {
+  const container = scrollContainer.value;
+  if (!container) return;
+  if (container.scrollHeight - container.scrollTop - container.clientHeight < 200) {
+    requestLoadMore();
+  }
+}
+
+function setupLoadMoreObserver() {
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
+  const root = scrollContainer.value;
+  const target = loadMoreSentinel.value;
+  if (!root || !target || typeof IntersectionObserver === 'undefined') return;
+  loadMoreObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) requestLoadMore();
+  }, { root, rootMargin: '0px 0px 200px 0px', threshold: 0 });
+  loadMoreObserver.observe(target);
+}
+
+watch(loadMoreSentinel, () => { nextTick(setupLoadMoreObserver); });
+onMounted(() => { nextTick(setupLoadMoreObserver); });
+onBeforeUnmount(() => { loadMoreObserver?.disconnect(); });
 
 function registerRow(id: string, el: HTMLElement | null) {
   if (el) rowRefs.set(id, el);
@@ -1351,6 +1395,15 @@ function onPatternLeave() {
 
 .conv-scroll { flex: 1; overflow-y: auto; }
 .conv-list-inner { display: flex; flex-direction: column; }
+.conv-load-more {
+  min-height: 34px;
+  padding: 9px 12px;
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--smax-grey-600);
+  font-size: 12px;
+}
+.conv-load-more--done { opacity: 0.72; }
 /* Reorder animation Phase A v2 (2026-05-21) — rút 0.25s → 0.15s cho feel snappier.
    Enter/leave vẫn none vì conv mới (filter match) ko cần animate fade-in. */
 .conv-list-move { transition: transform 0.15s ease; }

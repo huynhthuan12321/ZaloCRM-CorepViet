@@ -43,6 +43,8 @@
         :conversations="conversations"
         :selected-id="selectedConvId"
         :loading="loadingConvs"
+        :has-more="convHasMore"
+        :loading-more="convLoadingMore"
         :accounts="accountList"
         :selected-account-ids="selectedAccountIds"
         :active-tab-key="inboxFilters.state.activeTab"
@@ -56,6 +58,7 @@
         @conversation-deleted="onConversationDeleted"
         @compose-opened="onComposeOpened"
         @follow-changed="onFollowChanged"
+        @load-more="loadMoreConversations"
       >
         <template #filters>
           <ConversationFilterBar
@@ -170,10 +173,10 @@ const router = useRouter();
 
 const {
   conversations, selectedConvId, selectedConv, messages,
-  loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
+  loadingConvs, convHasMore, convLoadingMore, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
   aiSuggestion, aiSuggestionLoading, aiSuggestionError, aiSuggestionSources, aiNeedsReviewReason,
   aiSummary, aiSummaryLoading, aiSentiment, aiSentimentLoading,
-  fetchConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
+  fetchConversations, loadMoreConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
   generateAiSuggestion, generateAiSummary, generateAiSentiment,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
@@ -733,10 +736,9 @@ watch(searchQuery, () => {
 </script>
 
 <style scoped>
-/* ════════ Responsive chat layout — adaptive 4 tier + filter collapse ════════
-   Filter rail có 2 mode: expanded (default tier width) hoặc collapsed (56px).
-   Collapse state qua :has(.filter-rail.collapsed) — auto sync khi FilterRail
-   toggle localStorage. Grid template column 1 thay đổi theo. */
+/* ════════ Responsive chat layout — adaptive 4 tier + sidebar collapse ════════
+   ConversationFilterSidebar có 2 mode: expanded hoặc collapsed (56px).
+   Grid template column 1 tự thay đổi theo class .filter-sidebar.collapsed. */
 .smax-chat-grid {
   display: grid;
   grid-template-columns: 290px 380px 1fr 350px;
@@ -750,13 +752,10 @@ watch(searchQuery, () => {
 .smax-chat-grid:not(:has(.smax-info-col)) {
   grid-template-columns: 290px 380px 1fr;
 }
-/* Khi filter rail collapsed → col 1 = 56px (cả new sidebar lẫn legacy) */
-.smax-chat-grid:has(.filter-rail.collapsed),
+/* Khi filter sidebar collapsed → col 1 = 56px */
 .smax-chat-grid:has(.filter-sidebar.collapsed) {
   grid-template-columns: 56px 380px 1fr 350px;
 }
-.smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)),
 .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
   grid-template-columns: 56px 380px 1fr;
 }
@@ -828,26 +827,22 @@ watch(searchQuery, () => {
   .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 260px 340px 1fr;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed),
   .smax-chat-grid:has(.filter-sidebar.collapsed) {
     grid-template-columns: 56px 340px 1fr 310px;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
   .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
     grid-template-columns: 56px 340px 1fr;
   }
 }
-/* Tight: filter rail vẫn show nhưng compact */
+/* Tight: filter sidebar vẫn show nhưng compact */
 @media (max-width: 1440px) {
   .smax-chat-grid { grid-template-columns: 240px 320px 1fr 280px; }
   .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 240px 320px 1fr;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed),
   .smax-chat-grid:has(.filter-sidebar.collapsed) {
     grid-template-columns: 56px 320px 1fr 280px;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
   .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
     grid-template-columns: 56px 320px 1fr;
   }
@@ -858,11 +853,9 @@ watch(searchQuery, () => {
   .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 220px 296px 1fr;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed),
   .smax-chat-grid:has(.filter-sidebar.collapsed) {
     grid-template-columns: 56px 296px 1fr 288px;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
   .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
     grid-template-columns: 56px 296px 1fr;
   }
@@ -873,16 +866,14 @@ watch(searchQuery, () => {
   .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 208px 280px 1fr;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed),
   .smax-chat-grid:has(.filter-sidebar.collapsed) {
     grid-template-columns: 56px 280px 1fr 280px;
   }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
   .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
     grid-template-columns: 56px 280px 1fr;
   }
 }
-/* < 1200: drop filter rail */
+/* < 1200: drop filter sidebar */
 @media (max-width: 1200px) {
   .smax-chat-grid { grid-template-columns: 0 320px 1fr 280px; }
   .smax-chat-grid:not(:has(.smax-info-col)) {
