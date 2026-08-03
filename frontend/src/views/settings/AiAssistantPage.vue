@@ -81,11 +81,10 @@
 
       <!-- ── Auto-tư vấn Mức A (2026-07-25) ── -->
       <div class="auto-section">
-        <h2 class="auto-title">⚡ Tự động tư vấn (Mức A — bán tự động)</h2>
+        <h2 class="auto-title">⚡ Tự động tư vấn theo phạm vi</h2>
         <p class="auto-desc">
-          AI tự trả lời câu hỏi <b>thông tin/FAQ</b> dựa trên Kho tài liệu. Câu hỏi
-          <b>giá / cọc / chốt đơn / thanh toán</b> hoặc thiếu nguồn → AI chỉ soạn nháp,
-          <b>KHÔNG tự gửi</b>, sale duyệt tay. Phải bật thêm công tắc trên từng hội thoại.
+          Chọn phạm vi khách mà trợ lý được tự phản hồi dựa trên Kho tài liệu. Mặc định, nội dung
+          <b>giá / cọc / chốt đơn / thanh toán</b> vẫn chuyển cho sale duyệt; chỉ gửi thẳng khi bật chế độ trọn.
         </p>
 
         <div class="toggle-card">
@@ -101,9 +100,33 @@
         </div>
 
         <div class="field-group">
+          <label class="field-label" for="ai-auto-reply-scope">Trợ lý tự động phản hồi cho</label>
+          <select id="ai-auto-reply-scope" v-model="config.aiAutoReplyScope" class="regex-input scope-select">
+            <option value="manual">Chỉ khách tôi bật thủ công</option>
+            <option value="new_customers">Khách mới</option>
+            <option value="all">Mọi khách</option>
+          </select>
+          <div class="field-hint">
+            “Khách mới” là hội thoại chưa từng có nhân viên trả lời. Công tắc bật riêng từng hội thoại luôn được ưu tiên.
+          </div>
+        </div>
+
+        <div class="toggle-card" :class="{ 'toggle-card--warning': config.aiAutoReplyFullAuto }">
+          <label class="toggle-row">
+            <input type="checkbox" v-model="config.aiAutoReplyFullAuto" />
+            <div>
+              <div class="toggle-label">Chế độ trọn (trả lời cả giá &amp; đơn hàng)</div>
+              <div class="toggle-hint warning-hint">
+                Khi bật, trợ lý gửi luôn cả phần giá/đơn hàng. Hãy giám sát và thu hồi nếu có tin sai.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="field-group">
           <label class="field-label">
             Từ khóa nhạy cảm (regex)
-            <span class="field-meta">(khớp = KHÔNG tự gửi, chuyển nháp cho sale duyệt)</span>
+            <span class="field-meta">(khớp = chuyển nháp cho sale duyệt khi chế độ trọn đang tắt)</span>
           </label>
           <textarea
             v-model="config.aiAutoReplySensitivePattern"
@@ -236,6 +259,8 @@ interface AiAssistantConfig {
   enabled: boolean;
   // Auto-tư vấn Mức A (2026-07-25)
   aiAutoReplyGlobalEnabled: boolean;
+  aiAutoReplyScope: 'manual' | 'new_customers' | 'all';
+  aiAutoReplyFullAuto: boolean;
   aiAutoReplySensitivePattern: string | null;
   aiAutoReplyStartHour: number;
   aiAutoReplyEndHour: number;
@@ -271,7 +296,14 @@ async function load() {
       api.get<AiAssistantConfig>('/ai/assistant-config'),
       api.get<AiUsage>('/ai/usage'),
     ]);
-    config.value = cfgRes.data;
+    const cfg = cfgRes.data;
+    config.value = {
+      ...cfg,
+      aiAutoReplyScope: ['manual', 'new_customers', 'all'].includes(cfg.aiAutoReplyScope)
+        ? cfg.aiAutoReplyScope
+        : 'manual',
+      aiAutoReplyFullAuto: cfg.aiAutoReplyFullAuto === true,
+    };
     usage.value = usageRes.data;
   } catch (e: any) {
     saveMessage.value = e?.response?.data?.error || e?.message || 'Lỗi tải cài đặt';
@@ -312,6 +344,8 @@ async function save() {
       aiAssistantPromptTemplate: config.value.aiAssistantPromptTemplate,
       aiAssistantSkipNoisePattern: config.value.aiAssistantSkipNoisePattern,
       aiAutoReplyGlobalEnabled: config.value.aiAutoReplyGlobalEnabled,
+      aiAutoReplyScope: config.value.aiAutoReplyScope,
+      aiAutoReplyFullAuto: config.value.aiAutoReplyFullAuto,
       aiAutoReplySensitivePattern: sensitive,
       aiAutoReplyStartHour: Number(config.value.aiAutoReplyStartHour),
       aiAutoReplyEndHour: Number(config.value.aiAutoReplyEndHour),
@@ -434,6 +468,9 @@ onMounted(() => { load(); loadKb(); });
   border-radius: 8px;
   padding: 14px;
 }
+.toggle-card--warning { border-color: #f59e0b; background: #fffbeb; }
+.warning-hint { color: #b45309; }
+.scope-select { font-family: inherit; }
 .toggle-row {
   display: flex;
   gap: 10px;

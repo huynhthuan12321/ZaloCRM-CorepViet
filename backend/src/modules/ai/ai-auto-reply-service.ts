@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Huỳnh Ngọc Thuận — Community extension
 /**
- * ai-auto-reply-service.ts — Auto-tư vấn MỨC A (bán tự động, 2026-07-25).
+ * ai-auto-reply-service.ts — Auto-tư vấn theo phạm vi (2026-08-03).
  *
- * Sale bật công tắc "AI tự tư vấn" trên TỪNG hội thoại Zalo THẬT. Khi khách nhắn:
+ * Hội thoại được nhận theo bật tay hoặc scope tổ chức (manual/new_customers/all). Khi khách nhắn:
  *   - Câu hỏi THÔNG TIN / FAQ, có nguồn Knowledge Base, đủ tự tin → AI tự gửi.
- *   - Câu NHẠY CẢM (giá / cọc / chốt đơn / thanh toán) hoặc thiếu nguồn / confidence
- *     thấp → KHÔNG gửi. Lưu nháp + emit 'chat:ai-needs-review' để sale duyệt tay.
+ *   - Khi full-auto tắt, câu nhạy cảm/thiếu nguồn/confidence thấp → lưu nháp chờ duyệt.
+ *   - Khi full-auto bật, nháp hợp lệ được gửi luôn; prompt chống bịa số vẫn luôn áp dụng.
  *
  * Bất biến (KHÔNG được phá):
  *   - Fire-and-forget: hàm này KHÔNG BAO GIỜ throw ra ngoài (mọi lỗi → log + return).
  *   - Mặc định TẮT (Conversation.aiAutoReplyEnabled=false + AiConfig.aiAutoReplyGlobalEnabled=false)
  *     → khi chưa ai bật, hành vi hệ thống y hệt trước.
  *   - MARKETING_DRY_RUN=true → KHÔNG gọi Zalo SDK.
- *   - Giá/cọc/chốt đơn/thanh toán KHÔNG BAO GIỜ được auto-gửi (cửa nhạy cảm bước 7).
+ *   - Kill switch tổ chức, giờ hoạt động, chống lặp, rate-limit và chống gửi lỗi thời luôn áp dụng.
  *   - Chỉ hội thoại THẬT (isVirtual=false) — virtual chat vẫn dùng ai-virtual-chat-service.
  *
  * Đường gửi: zaloOps.sendMessage (đi qua rate-limiter + reconnect + retry giống
@@ -55,6 +55,7 @@ export const DEFAULT_SENSITIVE_PATTERN =
   '|hoá đơn|hóa đơn|hoa don|xuất hoá đơn|xuat hoa don';
 
 export type NeedsReviewReason = 'giá/chốt đơn' | 'độ tin cậy thấp' | 'thiếu nguồn tài liệu';
+type AiAutoReplyScope = 'manual' | 'new_customers' | 'all';
 
 export interface TriggerAutoReplyInput {
   accountId: string;
@@ -96,13 +97,17 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
       },
     });
     if (!conv || conv.deletedAt) return;
-    if (conv.aiAutoReplyEnabled !== true) return;   // ← mặc định TẮT: thoát ngay
     if (conv.isVirtual) return;                     // virtual chat có luồng riêng
     if (conv.zaloAccount?.archivedAt) return;
     if (!conv.externalThreadId) return;
 
     const aiCfg = await getAiConfig(orgId);
     if (!aiCfg.enabled || !aiCfg.aiAutoReplyGlobalEnabled) return;
+    if (!(await isConversationEligibleForAutoReply(
+      conversationId,
+      conv.aiAutoReplyEnabled,
+      normalizeAutoReplyScope(aiCfg.aiAutoReplyScope),
+    ))) return;
 
     // ── 3. Tin đến: phải là tin KHÁCH, text, đủ dài, không phải noise ──
     const incoming = await prisma.message.findFirst({
@@ -144,19 +149,21 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     const sources = Array.isArray(draft.sources) ? draft.sources : [];
 
     // ── 7. CỬA NHẠY CẢM — trái tim Mức A ──
-    const sensitiveRe = buildSensitiveRegex(aiCfg.aiAutoReplySensitivePattern);
-    const reason = evaluateNeedsReview({
-      customerText,
-      draftText,
-      confidence: draft.confidence ?? 0,
-      sources,
-      minConfidence: aiCfg.aiAutoReplyMinConfidence,
-      sensitiveRe,
-    });
-    if (reason) {
-      await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason, sources, io });
-      scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
-      return;
+    if (!aiCfg.aiAutoReplyFullAuto) {
+      const sensitiveRe = buildSensitiveRegex(aiCfg.aiAutoReplySensitivePattern);
+      const reason = evaluateNeedsReview({
+        customerText,
+        draftText,
+        confidence: draft.confidence ?? 0,
+        sources,
+        minConfidence: aiCfg.aiAutoReplyMinConfidence,
+        sensitiveRe,
+      });
+      if (reason) {
+        await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason, sources, io });
+        scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
+        return;
+      }
     }
 
     // ── 8. Nhánh an toàn → tự gửi ──
@@ -182,11 +189,37 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
       }
     }
     // Công tắc có thể bị tắt trong lúc chờ.
-    const stillOn = await prisma.conversation.findFirst({
-      where: { id: conversationId, orgId },
-      select: { aiAutoReplyEnabled: true },
-    });
-    if (stillOn?.aiAutoReplyEnabled !== true) return;
+    const [stillOn, latestAiCfg] = await Promise.all([
+      prisma.conversation.findFirst({
+        where: { id: conversationId, orgId },
+        select: { aiAutoReplyEnabled: true },
+      }),
+      getAiConfig(orgId),
+    ]);
+    if (!stillOn || !latestAiCfg.enabled || !latestAiCfg.aiAutoReplyGlobalEnabled) return;
+    if (!(await isConversationEligibleForAutoReply(
+      conversationId,
+      stillOn.aiAutoReplyEnabled,
+      normalizeAutoReplyScope(latestAiCfg.aiAutoReplyScope),
+    ))) return;
+
+    // Full-auto may have been switched off during the human-like delay. Re-apply
+    // the review gate before sending so the current organization setting wins.
+    if (!latestAiCfg.aiAutoReplyFullAuto) {
+      const reason = evaluateNeedsReview({
+        customerText,
+        draftText,
+        confidence: draft.confidence ?? 0,
+        sources,
+        minConfidence: latestAiCfg.aiAutoReplyMinConfidence,
+        sensitiveRe: buildSensitiveRegex(latestAiCfg.aiAutoReplySensitivePattern),
+      });
+      if (reason) {
+        await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason, sources, io });
+        scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
+        return;
+      }
+    }
 
     // 8c. Gửi thật (hoặc mô phỏng khi DRY_RUN) — capability deny-by-default.
     assertAiCapability('send_auto_reply');
@@ -330,6 +363,37 @@ function isAiAutoMessage(m: { sentVia?: string | null; metadata?: unknown }): bo
   if (m.sentVia === 'ai_auto') return true;
   const meta = m.metadata as { aiAuto?: unknown } | null | undefined;
   return meta?.aiAuto === true;
+}
+
+function normalizeAutoReplyScope(scope: string): AiAutoReplyScope {
+  return scope === 'new_customers' || scope === 'all' ? scope : 'manual';
+}
+
+/**
+ * Manual enable always wins. Organization scope can additionally admit all
+ * conversations or only conversations that have never received a human self reply.
+ * AI-auto rows are excluded by both supported markers for legacy compatibility.
+ */
+async function isConversationEligibleForAutoReply(
+  conversationId: string,
+  manuallyEnabled: boolean,
+  scope: AiAutoReplyScope,
+): Promise<boolean> {
+  if (manuallyEnabled) return true;
+  if (scope === 'all') return true;
+  if (scope !== 'new_customers') return false;
+
+  const rows = await prisma.$queryRaw<Array<{ hasHumanReply: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM "messages"
+      WHERE "conversation_id" = ${conversationId}
+        AND "sender_type" = 'self'
+        AND "sent_via" <> 'ai_auto'
+        AND ("metadata"->>'aiAuto') IS DISTINCT FROM 'true'
+    ) AS "hasHumanReply"
+  `;
+  return rows[0]?.hasHumanReply !== true;
 }
 
 /**

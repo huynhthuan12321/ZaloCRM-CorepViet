@@ -1689,8 +1689,12 @@ model AiConfig {
   embedProvider               String?  @map("embed_provider")
   embedModel                  String?  @map("embed_model")
   // ── Auto-tư vấn Mức A (2026-07-25) — công tắc tổ chức + hàng rào an toàn.
-  // Master switch org: phải BẬT cùng Conversation.aiAutoReplyEnabled mới auto-gửi.
+  // Master switch org: kill switch — TẮT là dừng mọi auto-reply bất kể scope/manual.
   aiAutoReplyGlobalEnabled    Boolean  @default(false) @map("ai_auto_reply_global_enabled")
+  // Phạm vi org: manual | new_customers | all. Manual giữ nguyên hành vi cũ.
+  aiAutoReplyScope            String   @default("manual") @map("ai_auto_reply_scope")
+  // true = bỏ bước chờ duyệt, gửi cả giá/đơn hàng; prompt chống bịa giá vẫn giữ nguyên.
+  aiAutoReplyFullAuto         Boolean  @default(false) @map("ai_auto_reply_full_auto")
   // Regex từ khóa nhạy cảm (giá/cọc/chốt đơn/thanh toán). NULL → dùng default trong code.
   aiAutoReplySensitivePattern String?  @map("ai_auto_reply_sensitive_pattern")
   // Khung giờ được auto-gửi (giờ VN, [start, end)). Ngoài khung → không gửi đêm.

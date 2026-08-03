@@ -343,6 +343,8 @@ export async function aiRoutes(app: FastifyInstance) {
         enabled: cfg.enabled,
         // Auto-tư vấn Mức A (2026-07-25).
         aiAutoReplyGlobalEnabled: cfg.aiAutoReplyGlobalEnabled,
+        aiAutoReplyScope: cfg.aiAutoReplyScope,
+        aiAutoReplyFullAuto: cfg.aiAutoReplyFullAuto,
         aiAutoReplySensitivePattern: cfg.aiAutoReplySensitivePattern,
         aiAutoReplyStartHour: cfg.aiAutoReplyStartHour,
         aiAutoReplyEndHour: cfg.aiAutoReplyEndHour,
@@ -368,6 +370,8 @@ export async function aiRoutes(app: FastifyInstance) {
           aiAssistantSkipNoisePattern?: string;
           // Auto-tư vấn Mức A.
           aiAutoReplyGlobalEnabled?: boolean;
+          aiAutoReplyScope?: 'manual' | 'new_customers' | 'all';
+          aiAutoReplyFullAuto?: boolean;
           aiAutoReplySensitivePattern?: string | null;
           aiAutoReplyStartHour?: number;
           aiAutoReplyEndHour?: number;
@@ -388,6 +392,15 @@ export async function aiRoutes(app: FastifyInstance) {
           } catch {
             return reply.status(400).send({ error: 'Regex từ khóa nhạy cảm không hợp lệ' });
           }
+        }
+        if (
+          body.aiAutoReplyScope !== undefined &&
+          !['manual', 'new_customers', 'all'].includes(body.aiAutoReplyScope)
+        ) {
+          return reply.status(400).send({ error: 'Phạm vi auto-reply không hợp lệ' });
+        }
+        if (body.aiAutoReplyFullAuto !== undefined && typeof body.aiAutoReplyFullAuto !== 'boolean') {
+          return reply.status(400).send({ error: 'Chế độ trọn phải là boolean' });
         }
         const isHour = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 23;
         if (body.aiAutoReplyStartHour !== undefined && !isHour(body.aiAutoReplyStartHour)) {
@@ -417,6 +430,8 @@ export async function aiRoutes(app: FastifyInstance) {
             aiAssistantPromptTemplate: body.aiAssistantPromptTemplate,
             aiAssistantSkipNoisePattern: body.aiAssistantSkipNoisePattern,
             aiAutoReplyGlobalEnabled: body.aiAutoReplyGlobalEnabled,
+            aiAutoReplyScope: body.aiAutoReplyScope,
+            aiAutoReplyFullAuto: body.aiAutoReplyFullAuto,
             // '' → NULL để quay về pattern mặc định trong code.
             ...(body.aiAutoReplySensitivePattern !== undefined
               ? { aiAutoReplySensitivePattern: body.aiAutoReplySensitivePattern || null }
@@ -427,7 +442,13 @@ export async function aiRoutes(app: FastifyInstance) {
             aiAutoReplyMinConfidence: body.aiAutoReplyMinConfidence,
           },
         });
-        return { ok: true, aiAssistantEnabled: updated.aiAssistantEnabled, aiAutoReplyGlobalEnabled: updated.aiAutoReplyGlobalEnabled };
+        return {
+          ok: true,
+          aiAssistantEnabled: updated.aiAssistantEnabled,
+          aiAutoReplyGlobalEnabled: updated.aiAutoReplyGlobalEnabled,
+          aiAutoReplyScope: updated.aiAutoReplyScope,
+          aiAutoReplyFullAuto: updated.aiAutoReplyFullAuto,
+        };
       } catch (err) {
         logger.error('[ai] assistant-config PUT error:', err);
         return reply.status(500).send({ error: 'Failed to update AI assistant config' });
