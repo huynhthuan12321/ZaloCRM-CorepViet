@@ -350,6 +350,10 @@ export async function aiRoutes(app: FastifyInstance) {
         aiAutoReplyEndHour: cfg.aiAutoReplyEndHour,
         aiAutoReplyMaxConsecutive: cfg.aiAutoReplyMaxConsecutive,
         aiAutoReplyMinConfidence: cfg.aiAutoReplyMinConfidence,
+        aiFollowupEnabled: cfg.aiFollowupEnabled,
+        aiFollowupSilenceHours: cfg.aiFollowupSilenceHours,
+        aiFollowupMax: cfg.aiFollowupMax,
+        aiFollowupCooldownHours: cfg.aiFollowupCooldownHours,
         defaultSensitivePattern: DEFAULT_SENSITIVE_PATTERN,
       };
     } catch (err) {
@@ -377,6 +381,10 @@ export async function aiRoutes(app: FastifyInstance) {
           aiAutoReplyEndHour?: number;
           aiAutoReplyMaxConsecutive?: number;
           aiAutoReplyMinConfidence?: number;
+          aiFollowupEnabled?: boolean;
+          aiFollowupSilenceHours?: number;
+          aiFollowupMax?: number;
+          aiFollowupCooldownHours?: number;
         };
         // Validate regex
         if (body.aiAssistantSkipNoisePattern) {
@@ -423,6 +431,27 @@ export async function aiRoutes(app: FastifyInstance) {
         ) {
           return reply.status(400).send({ error: 'Ngưỡng tin cậy phải trong khoảng 0..1' });
         }
+        if (body.aiFollowupEnabled !== undefined && typeof body.aiFollowupEnabled !== 'boolean') {
+          return reply.status(400).send({ error: 'Công tắc tự nhắc lại phải là boolean' });
+        }
+        if (
+          body.aiFollowupSilenceHours !== undefined &&
+          (!Number.isInteger(body.aiFollowupSilenceHours) || body.aiFollowupSilenceHours < 1 || body.aiFollowupSilenceHours > 72)
+        ) {
+          return reply.status(400).send({ error: 'Số giờ im lặng phải từ 1 đến 72' });
+        }
+        if (
+          body.aiFollowupMax !== undefined &&
+          (!Number.isInteger(body.aiFollowupMax) || body.aiFollowupMax < 1 || body.aiFollowupMax > 3)
+        ) {
+          return reply.status(400).send({ error: 'Số lần nhắc tối đa phải từ 1 đến 3' });
+        }
+        if (
+          body.aiFollowupCooldownHours !== undefined &&
+          (!Number.isInteger(body.aiFollowupCooldownHours) || body.aiFollowupCooldownHours < 1 || body.aiFollowupCooldownHours > 720)
+        ) {
+          return reply.status(400).send({ error: 'Khoảng cách giữa hai lần nhắc phải từ 1 đến 720 giờ' });
+        }
         const updated = await prisma.aiConfig.update({
           where: { orgId: request.user!.orgId },
           data: {
@@ -440,6 +469,10 @@ export async function aiRoutes(app: FastifyInstance) {
             aiAutoReplyEndHour: body.aiAutoReplyEndHour,
             aiAutoReplyMaxConsecutive: body.aiAutoReplyMaxConsecutive,
             aiAutoReplyMinConfidence: body.aiAutoReplyMinConfidence,
+            aiFollowupEnabled: body.aiFollowupEnabled,
+            aiFollowupSilenceHours: body.aiFollowupSilenceHours,
+            aiFollowupMax: body.aiFollowupMax,
+            aiFollowupCooldownHours: body.aiFollowupCooldownHours,
           },
         });
         return {
@@ -448,6 +481,10 @@ export async function aiRoutes(app: FastifyInstance) {
           aiAutoReplyGlobalEnabled: updated.aiAutoReplyGlobalEnabled,
           aiAutoReplyScope: updated.aiAutoReplyScope,
           aiAutoReplyFullAuto: updated.aiAutoReplyFullAuto,
+          aiFollowupEnabled: updated.aiFollowupEnabled,
+          aiFollowupSilenceHours: updated.aiFollowupSilenceHours,
+          aiFollowupMax: updated.aiFollowupMax,
+          aiFollowupCooldownHours: updated.aiFollowupCooldownHours,
         };
       } catch (err) {
         logger.error('[ai] assistant-config PUT error:', err);

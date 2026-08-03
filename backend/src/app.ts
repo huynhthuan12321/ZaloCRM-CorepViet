@@ -440,6 +440,9 @@ async function bootstrap() {
       // trong Marketing → Luồng kịch bản thì cron mới quét.
       const { startStageFollowupCron } = await import('./modules/automation/stage-followup-cron.js');
       startStageFollowupCron();
+      // A2 — một tin nhắc nhẹ do AI viết khi khách im lặng sau tư vấn AI-auto.
+      const { startAiFollowupCron } = await import('./modules/ai/ai-followup-cron.js');
+      startAiFollowupCron(io);
     }
     // Group info refresh periodic (mỗi 6h) — làm tươi avatar/tên/sĩ số nhóm chống
     // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).

@@ -158,6 +158,38 @@
             <input v-model.number="config.aiAutoReplyMinConfidence" type="number" min="0" max="1" step="0.05" class="regex-input" />
           </div>
         </div>
+
+        <div class="followup-section">
+          <h3 class="followup-title">💬 Tự nhắc lại khi khách im lặng</h3>
+          <p class="auto-desc">Chỉ gửi tin nhắc nhẹ để khơi gợi khách, không báo giá/chốt đơn.</p>
+
+          <div class="toggle-card">
+            <label class="toggle-row">
+              <input type="checkbox" v-model="config.aiFollowupEnabled" />
+              <div>
+                <div class="toggle-label">Bật tự nhắc lại</div>
+                <div class="toggle-hint">
+                  Chỉ hoạt động khi công tắc tổng auto-tư vấn đang bật. Mặc định TẮT.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div class="auto-grid">
+            <div class="field-group">
+              <label class="field-label">Số giờ im lặng</label>
+              <input v-model.number="config.aiFollowupSilenceHours" type="number" min="1" max="72" class="regex-input" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Số lần nhắc tối đa</label>
+              <input v-model.number="config.aiFollowupMax" type="number" min="1" max="3" class="regex-input" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Cách nhau (giờ)</label>
+              <input v-model.number="config.aiFollowupCooldownHours" type="number" min="1" max="720" class="regex-input" />
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Actions -->
@@ -266,6 +298,10 @@ interface AiAssistantConfig {
   aiAutoReplyEndHour: number;
   aiAutoReplyMaxConsecutive: number;
   aiAutoReplyMinConfidence: number;
+  aiFollowupEnabled: boolean;
+  aiFollowupSilenceHours: number;
+  aiFollowupMax: number;
+  aiFollowupCooldownHours: number;
   defaultSensitivePattern: string;
 }
 
@@ -289,6 +325,11 @@ const lowQuota = computed(() => {
   return usage.value.remaining < config.value.maxDaily * 0.2;
 });
 
+function normalizeInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
 async function load() {
   loading.value = true;
   try {
@@ -303,6 +344,10 @@ async function load() {
         ? cfg.aiAutoReplyScope
         : 'manual',
       aiAutoReplyFullAuto: cfg.aiAutoReplyFullAuto === true,
+      aiFollowupEnabled: cfg.aiFollowupEnabled === true,
+      aiFollowupSilenceHours: normalizeInteger(cfg.aiFollowupSilenceHours, 1, 72, 1),
+      aiFollowupMax: normalizeInteger(cfg.aiFollowupMax, 1, 3, 1),
+      aiFollowupCooldownHours: normalizeInteger(cfg.aiFollowupCooldownHours, 1, 720, 24),
     };
     usage.value = usageRes.data;
   } catch (e: any) {
@@ -351,6 +396,10 @@ async function save() {
       aiAutoReplyEndHour: Number(config.value.aiAutoReplyEndHour),
       aiAutoReplyMaxConsecutive: Number(config.value.aiAutoReplyMaxConsecutive),
       aiAutoReplyMinConfidence: Number(config.value.aiAutoReplyMinConfidence),
+      aiFollowupEnabled: config.value.aiFollowupEnabled,
+      aiFollowupSilenceHours: Number(config.value.aiFollowupSilenceHours),
+      aiFollowupMax: Number(config.value.aiFollowupMax),
+      aiFollowupCooldownHours: Number(config.value.aiFollowupCooldownHours),
     });
     saveMessage.value = '✓ Đã lưu cài đặt';
     saveOk.value = true;
@@ -628,6 +677,8 @@ onMounted(() => { load(); loadKb(); });
 .auto-title { font-size: 15px; font-weight: 700; margin: 0; }
 .auto-desc { font-size: 12.5px; color: #64748b; margin: 0; line-height: 1.5; }
 .auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.followup-section { border-top: 1px solid #e2e8f0; padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.followup-title { margin: 0; font-size: 14px; font-weight: 700; color: #1f2937; }
 .kb-section { border-top: 2px solid #e2e8f0; padding-top: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 12px; }.kb-title { font-size: 15px; font-weight: 700; margin: 0; }
 .kb-desc { font-size: 12.5px; color: #64748b; margin: 0; line-height: 1.5; }
 .kb-desc code, .field-hint code { background: #f1f5f9; padding: 0 5px; border-radius: 4px; font-size: 11px; }

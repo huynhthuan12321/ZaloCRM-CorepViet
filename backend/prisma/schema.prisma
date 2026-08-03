@@ -1704,6 +1704,11 @@ model AiConfig {
   aiAutoReplyMaxConsecutive   Int      @default(3) @map("ai_auto_reply_max_consecutive")
   // Ngưỡng confidence tối thiểu để auto-gửi; thấp hơn → chuyển sang "cần duyệt".
   aiAutoReplyMinConfidence    Float    @default(0.55) @map("ai_auto_reply_min_confidence")
+  // A2: nhắc lại nhẹ khi khách im lặng sau tin AI-auto. Mặc định tắt.
+  aiFollowupEnabled           Boolean  @default(false) @map("ai_followup_enabled")
+  aiFollowupSilenceHours      Int      @default(1) @map("ai_followup_silence_hours")
+  aiFollowupMax               Int      @default(1) @map("ai_followup_max")
+  aiFollowupCooldownHours     Int      @default(24) @map("ai_followup_cooldown_hours")
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
 
