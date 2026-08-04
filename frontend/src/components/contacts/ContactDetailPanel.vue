@@ -460,8 +460,8 @@ async function openVirtualChat() {
     );
     const convId = res.data?.conversationId;
     if (!convId) throw new Error('No conversationId returned');
-    // Navigate sang /chat với conversation virtual mở sẵn
-    await router.push({ path: '/chat', query: { conversationId: convId } });
+    // Navigate bằng route param chuẩn để ChatView chọn conversation ngay.
+    await router.push({ name: 'Chat', params: { convId } });
   } catch (e: any) {
     const msg = e?.response?.data?.message || e?.message || 'Lỗi mở chat nội bộ';
     alert(msg);

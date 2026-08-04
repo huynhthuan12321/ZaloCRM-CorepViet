@@ -136,6 +136,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useScoring, type StuckLeadsResponse, type StuckStageGroup, type StuckFriend } from '@/composables/use-scoring';
 import { api } from '@/api/index';
+import { openContactChat } from '@/composables/use-open-contact-chat';
 
 const router = useRouter();
 const scoring = useScoring();
@@ -262,9 +263,11 @@ function sendNbaTemplate(friend: StuckFriend, group: StuckStageGroup) {
 }
 
 async function confirmSendTemplate() {
-  if (!previewTemplate.value) return;
-  const friendId = previewTemplate.value.friend.friendId;
-  const templateKey = previewTemplate.value.group.nbaTemplate?.key ?? null;
+  const activePreview = previewTemplate.value;
+  if (!activePreview) return;
+  const friendId = activePreview.friend.friendId;
+  const contactId = activePreview.friend.contactId;
+  const templateKey = activePreview.group.nbaTemplate?.key ?? null;
   const content = previewContent.value.trim();
   if (!content) { showToast('error', 'Nội dung rỗng'); return; }
 
@@ -280,8 +283,13 @@ async function confirmSendTemplate() {
     if (res?.data?.ok) {
       previewTemplate.value = null;
       showToast('success', '✅ Đã gửi tin nhắn cho KH');
-      // Optional: open chat để sale theo dõi rep
-      router.push(`/chat?friendId=${friendId}`);
+      // API trả conversationId thật → mở thẳng bằng route param chuẩn.
+      const conversationId = res.data.conversationId as string | undefined;
+      if (conversationId) {
+        router.push({ name: 'Chat', params: { convId: conversationId } });
+      } else {
+        void openContactChat(router, contactId);
+      }
     } else {
       showToast('error', 'Gửi thất bại — kiểm tra connection nick Zalo');
     }
@@ -293,7 +301,7 @@ async function confirmSendTemplate() {
       if (navigator.clipboard) navigator.clipboard.writeText(content).catch(() => {});
       previewTemplate.value = null;
       showToast('success', 'KH chưa có hội thoại. Đã copy nội dung — mở chat để gửi.');
-      router.push(`/chat?friendId=${friendId}`);
+      void openContactChat(router, contactId);
     } else if (msg === 'rate_limited') {
       showToast('error', `🚫 ${detail || 'Đã đạt giới hạn nhắn tin hôm nay'}`);
     } else if (msg === 'nick_disconnected') {
@@ -305,7 +313,7 @@ async function confirmSendTemplate() {
 }
 
 function openChat(f: StuckFriend) {
-  router.push(`/chat?friendId=${f.friendId}`);
+  void openContactChat(router, f.contactId);
 }
 
 function snooze(f: StuckFriend) {

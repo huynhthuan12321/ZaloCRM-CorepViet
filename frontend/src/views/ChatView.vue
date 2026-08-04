@@ -624,6 +624,26 @@ watch(
   { immediate: false },
 );
 
+// Tương thích link cũ từng được phát ra dưới dạng /chat?conv=... hoặc
+// /chat?conversationId=.... Chuẩn hoá ngay về /chat/:convId để watcher phía trên
+// chọn đúng hội thoại; tránh rơi vào màn "Chọn cuộc trò chuyện" dù URL đã có ID.
+watch(
+  () => [route.query.conv, route.query.conversationId] as const,
+  ([conv, conversationId]) => {
+    if (typeof route.params.convId === 'string' && route.params.convId) return;
+    const legacyId = typeof conv === 'string'
+      ? conv
+      : (typeof conversationId === 'string' ? conversationId : '');
+    if (!legacyId) return;
+
+    const query = { ...route.query };
+    delete query.conv;
+    delete query.conversationId;
+    void router.replace({ name: 'Chat', params: { convId: legacyId }, query });
+  },
+  { immediate: true },
+);
+
 // Phase 2026-05-30 — Mở chat từ lead Facebook (/chat?compose=SĐT). Truyền xuống
 // ConversationList để tự mở "Tin nhắn mới" + điền sẵn SĐT → dialog tự lookup Zalo + tạo hội thoại.
 const autoComposePhone = computed(() => {

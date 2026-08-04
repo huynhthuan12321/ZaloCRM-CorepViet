@@ -569,7 +569,7 @@ async function selectUser(userId: string | null) {
 function goToInbox() { router.push('/chat'); }
 function goToAppts() { router.push('/appointments'); }
 function goToContacts() { router.push('/contacts'); }
-function goToConv(id: string) { router.push(`/chat?conv=${id}`); }
+function goToConv(id: string) { router.push({ name: 'Chat', params: { convId: id } }); }
 function goToLeadPool() { router.push('/lead-pool'); }
 function goToCareSessions() { router.push('/automation/care-sessions'); }
 function goToMarketing() { router.push('/marketing'); }
