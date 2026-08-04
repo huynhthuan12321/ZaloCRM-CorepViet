@@ -114,6 +114,26 @@
             <div class="f-note" style="margin-top:8px"><v-icon size="15">mdi-shield-check-outline</v-icon> Gửi tới <b>bạn bè đã kết bạn</b> của nick — an toàn hơn.
               <template v-if="form.zaloAccountId"> <b>{{ friendCount === null ? '…' : friendCount.toLocaleString('vi-VN') }}</b> bạn bè.</template>
             </div>
+            <div v-if="form.zaloAccountId" class="friend-label-filter">
+              <label class="f-label">Lọc theo nhãn</label>
+              <div v-if="labelsLoading" class="f-hint">Đang tải nhãn…</div>
+              <div v-else-if="labelsError" class="f-note warn">{{ labelsError }}</div>
+              <div v-else-if="availableLabels.length" class="friend-label-list">
+                <button
+                  v-for="label in availableLabels"
+                  :key="label.name"
+                  type="button"
+                  class="friend-label-chip"
+                  :class="{ on: form.friendLabels.includes(label.name) }"
+                  @click="toggleFriendLabel(label.name)"
+                >
+                  <v-icon size="14">{{ form.friendLabels.includes(label.name) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline' }}</v-icon>
+                  {{ label.name }} ({{ label.count.toLocaleString('vi-VN') }})
+                </button>
+              </div>
+              <div v-else class="f-hint">Nick này chưa có nhãn nào trên bạn bè — sẽ gửi cho tất cả bạn bè.</div>
+              <div class="f-hint" style="margin-top:5px">Chọn nhiều nhãn = khách phải có đủ tất cả nhãn.</div>
+            </div>
           </template>
 
           <div style="margin-top:10px">
@@ -315,6 +335,9 @@ const loading = ref(true);
 const creating = ref(false);
 const counting = ref(false);
 const friendCount = ref<number | null>(null);
+const availableLabels = ref<Array<{ name: string; count: number }>>([]);
+const labelsLoading = ref(false);
+const labelsError = ref('');
 const audience = ref<AudienceCount | null>(null);
 const audienceError = ref('');
 const showTplPick = ref(false);
@@ -326,7 +349,7 @@ const detail = reactive({ open: false, jobId: '' });
 
 const form = reactive({
   name: '', sourceType: 'friends' as 'customer_list' | 'friends',
-  customerListId: '', zaloAccountId: '', messageText: '',
+  customerListId: '', zaloAccountId: '', friendLabels: [] as string[], messageText: '',
   contentMode: 'text' as 'text' | 'blocks', contentBlockIds: [] as string[],
   scheduleType: 'once' as 'once' | 'daily' | 'weekly',
   scheduledAtLocal: '', timeOfDay: '08:00', daysOfWeek: [] as number[],
@@ -360,13 +383,58 @@ const stepValid = computed(() => validateWizardStep(
   wizard.step, form, { friendCount: friendCount.value, audienceWillSend: audience.value?.willSend ?? null },
 ));
 
-function setSource(s: 'friends' | 'customer_list'): void { form.sourceType = s; audience.value = null; audienceError.value = ''; }
+function setSource(s: 'friends' | 'customer_list'): void {
+  form.sourceType = s;
+  form.friendLabels = [];
+  availableLabels.value = [];
+  labelsError.value = '';
+  audience.value = null;
+  audienceError.value = '';
+  if (s === 'friends' && form.zaloAccountId) void loadFriendLabels(form.zaloAccountId);
+}
+
+async function loadFriendLabels(zaloAccountId: string): Promise<void> {
+  availableLabels.value = [];
+  labelsError.value = '';
+  if (!zaloAccountId) return;
+  labelsLoading.value = true;
+  try {
+    const res = await api.get('/broadcast-jobs/friend-labels', { params: { zaloAccountId } });
+    if (form.zaloAccountId === zaloAccountId && form.sourceType === 'friends') {
+      availableLabels.value = res.data.labels ?? [];
+    }
+  } catch {
+    if (form.zaloAccountId === zaloAccountId && form.sourceType === 'friends') {
+      labelsError.value = 'Không tải được nhãn của nick — vui lòng thử lại.';
+    }
+  } finally {
+    if (form.zaloAccountId === zaloAccountId) labelsLoading.value = false;
+  }
+}
+
+function toggleFriendLabel(name: string): void {
+  const index = form.friendLabels.indexOf(name);
+  if (index >= 0) form.friendLabels.splice(index, 1);
+  else form.friendLabels.push(name);
+  audience.value = null;
+  audienceError.value = '';
+}
 
 async function onNickChange(): Promise<void> {
-  friendCount.value = null; audience.value = null; audienceError.value = '';
+  friendCount.value = null;
+  form.friendLabels = [];
+  availableLabels.value = [];
+  labelsError.value = '';
+  audience.value = null;
+  audienceError.value = '';
   if (!form.zaloAccountId) return;
-  try { const res = await api.get(`/broadcast-jobs/friend-count/${form.zaloAccountId}`); friendCount.value = res.data.count; }
-  catch { friendCount.value = 0; }
+  const accountId = form.zaloAccountId;
+  if (form.sourceType === 'friends') void loadFriendLabels(accountId);
+  try {
+    const res = await api.get(`/broadcast-jobs/friend-count/${accountId}`);
+    if (form.zaloAccountId === accountId) friendCount.value = res.data.count;
+  }
+  catch { if (form.zaloAccountId === accountId) friendCount.value = 0; }
 }
 
 async function countAudience(): Promise<void> {
@@ -376,6 +444,7 @@ async function countAudience(): Promise<void> {
     const res = await api.post('/broadcast-jobs/audience-count', {
       sourceType: form.sourceType,
       customerListId: form.sourceType === 'customer_list' ? form.customerListId : undefined,
+      friendLabels: form.sourceType === 'friends' ? form.friendLabels : undefined,
       zaloAccountId: form.zaloAccountId, maxPerRun: form.maxPerRun,
     });
     audience.value = res.data;
@@ -414,8 +483,9 @@ function prevStep(): void { wizard.step = Math.max(1, wizard.step - 1); }
 
 async function openWizard(prefillList?: string): Promise<void> {
   wizard.open = true; wizard.step = 1; wizard.confirm = false;
-  Object.assign(form, { name: '', sourceType: prefillList ? 'customer_list' : 'friends', customerListId: prefillList ?? '', zaloAccountId: '', messageText: '', contentMode: 'text', contentBlockIds: [], scheduledAtLocal: '', timeOfDay: '08:00', daysOfWeek: [], maxPerRun: 50, delaySecMin: 30, delaySecMax: 90 });
+  Object.assign(form, { name: '', sourceType: prefillList ? 'customer_list' : 'friends', customerListId: prefillList ?? '', zaloAccountId: '', friendLabels: [], messageText: '', contentMode: 'text', contentBlockIds: [], scheduledAtLocal: '', timeOfDay: '08:00', daysOfWeek: [], maxPerRun: 50, delaySecMin: 30, delaySecMax: 90 });
   audience.value = null; audienceError.value = ''; friendCount.value = null;
+  availableLabels.value = []; labelsLoading.value = false; labelsError.value = '';
   if (lists.value.length === 0 || nicks.value.length === 0) {
     const [lr, nr] = await Promise.all([api.get('/customer-lists', { params: { status: 'active', limit: 100 } }), api.get('/zalo-accounts')]);
     lists.value = (lr.data.lists ?? lr.data ?? []).map((l: any) => ({ id: l.id, name: l.name, hasZaloEntries: l.hasZaloEntries ?? 0 }));
@@ -577,4 +647,10 @@ defineExpose({ wizard, form, stepValid, nextStep, prevStep, audience, unknownVar
 .f-block-name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .f-block-order { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: #0e445a; color: #fff; font-size: 11px; font-weight: 700; }
 .f-block-text { font-size: 12px; color: var(--text-secondary, #888); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.friend-label-filter { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border, #d5d4d8); border-radius: 8px; background: #fafbfc; }
+.friend-label-filter .f-label { margin-top: 0; }
+.friend-label-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.friend-label-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #cbd5e1; background: #fff; color: #475569; border-radius: 999px; padding: 4px 9px; font-size: 12px; cursor: pointer; }
+.friend-label-chip:hover { border-color: #0e7490; }
+.friend-label-chip.on { border-color: #0e7490; background: #ecfeff; color: #155e75; font-weight: 600; }
 </style>

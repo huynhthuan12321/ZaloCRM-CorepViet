@@ -4207,6 +4207,7 @@ model BroadcastJob {
   sourceType     String  @default("customer_list") @map("source_type") // 'customer_list' | 'friends'
   customerListId String? @map("customer_list_id") // tệp KH đích (khi sourceType=customer_list)
   zaloAccountId  String  @map("zalo_account_id") // nick gửi
+  friendLabels   String[] @default([]) @map("friend_labels") // lọc AND theo tên nhãn Zalo khi sourceType=friends
 
   // Nội dung: text hỗ trợ biến {{ten}} {{sdt}}; ảnh kèm (URL media MinIO/S3, optional).
   // Nếu contentBlockIds không rỗng → bỏ qua messageText/imageUrl, xoay vòng nội dung

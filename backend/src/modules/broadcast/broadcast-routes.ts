@@ -21,12 +21,14 @@ import { logger } from '../../shared/utils/logger.js';
 import { computeNextRunAt, parseTimeOfDay, type ScheduleType } from './broadcast-service.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { getEffectiveLimit } from '../zalo/sdk-limit-service.js';
+import { findFriendsByLabels, normalizeFriendLabels } from './broadcast-audience.js';
 
 interface JobBody {
   name?: string;
   // 'customer_list' (mặc định) = gửi tệp SĐT (có thể là người lạ);
   // 'friends' = gửi bạn bè đã kết bạn của nick (an toàn hơn).
   sourceType?: 'customer_list' | 'friends';
+  friendLabels?: string[];
   customerListId?: string;
   zaloAccountId?: string;
   messageText?: string;
@@ -124,6 +126,29 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
     return { count };
   });
 
+  // ── GET /broadcast-jobs/friend-labels — nhãn Zalo trên bạn bè của nick ──
+  app.get<{ Querystring: { zaloAccountId?: string } }>('/api/v1/broadcast-jobs/friend-labels', async (request, reply) => {
+    const user = request.user!;
+    const zaloAccountId = request.query.zaloAccountId ?? '';
+    const nick = await prisma.zaloAccount.findFirst({
+      where: { id: zaloAccountId, orgId: user.orgId },
+      select: { id: true },
+    });
+    if (!nick) return reply.status(400).send({ error: 'zaloAccount_not_found' });
+
+    const rows = await prisma.$queryRaw<Array<{ name: string; n: bigint }>>`
+      SELECT e->>'name' AS name, COUNT(DISTINCT f.id)::bigint AS n
+      FROM friends f
+      CROSS JOIN LATERAL jsonb_array_elements(f.zalo_labels) e
+      WHERE f.zalo_account_id = ${nick.id}
+        AND f.friendship_status = 'accepted'
+        AND e->>'name' IS NOT NULL AND e->>'name' <> ''
+      GROUP BY e->>'name'
+      ORDER BY n DESC
+    `;
+    return { labels: rows.map((row) => ({ name: row.name, count: Number(row.n) })) };
+  });
+
   // ── POST /broadcast-jobs ───────────────────────────────────────────────
   app.post<{ Body: JobBody }>('/api/v1/broadcast-jobs', async (request, reply) => {
     if (!requireBroadcastAdmin(request, reply)) return;
@@ -132,6 +157,7 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
 
     if (!b.name?.trim()) return reply.status(400).send({ error: 'name_required' });
     const sourceType = b.sourceType === 'friends' ? 'friends' : 'customer_list';
+    const friendLabels = sourceType === 'friends' ? normalizeFriendLabels(b.friendLabels) : [];
     const blockIds = (b.contentBlockIds ?? []).filter(Boolean);
     if (blockIds.length === 0 && !b.messageText?.trim()) return reply.status(400).send({ error: 'messageText_required' });
     const schedErr = validateSchedule(b);
@@ -170,6 +196,7 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
         sourceType,
         customerListId,
         zaloAccountId: nick.id,
+        friendLabels,
         messageText: blockIds.length ? '' : b.messageText!,
         imageUrl: blockIds.length ? null : b.imageUrl?.trim() || null,
         contentBlockIds: blockIds,
@@ -312,7 +339,7 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
   // ── POST /broadcast-jobs/audience-count — dry-run đếm người nhận (Phase 2) ──
   // Đếm TRƯỚC khi tạo/gửi: tổng, sẽ gửi, breakdown skip + quota tin còn lại của nick.
   // Không tạo record nào — thuần read-only.
-  app.post<{ Body: { sourceType?: 'customer_list' | 'friends'; customerListId?: string; zaloAccountId?: string; maxPerRun?: number } }>(
+  app.post<{ Body: { sourceType?: 'customer_list' | 'friends'; customerListId?: string; zaloAccountId?: string; friendLabels?: string[]; maxPerRun?: number } }>(
     '/api/v1/broadcast-jobs/audience-count',
     async (request, reply) => {
       const user = request.user!;
@@ -334,7 +361,10 @@ export async function broadcastRoutes(app: FastifyInstance): Promise<void> {
       const quotaRemaining = Math.max(0, limits.daily - usedToday);
 
       if (sourceType === 'friends') {
-        const total = await prisma.friend.count({ where: { zaloAccountId: nick.id, friendshipStatus: 'accepted' } });
+        const labels = normalizeFriendLabels(b.friendLabels);
+        const total = labels.length
+          ? (await findFriendsByLabels(nick.id, labels, 2_147_483_647)).length
+          : await prisma.friend.count({ where: { zaloAccountId: nick.id, friendshipStatus: 'accepted' } });
         const willSend = Math.min(total, maxPerRun);
         return {
           sourceType, total, willSend,

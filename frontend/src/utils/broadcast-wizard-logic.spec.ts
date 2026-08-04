@@ -8,6 +8,7 @@ import {
 function form(over: Partial<WizardForm> = {}): WizardForm {
   return {
     name: 'BC', sourceType: 'customer_list', customerListId: 'L1', zaloAccountId: 'N1',
+    friendLabels: [],
     messageText: 'Chào {{ten}}', contentMode: 'text', contentBlockIds: [],
     scheduleType: 'once', scheduledAtLocal: '2026-07-20T08:00', timeOfDay: '08:00', daysOfWeek: [],
     maxPerRun: 50, delaySecMin: 30, delaySecMax: 90, ...over,
@@ -80,6 +81,12 @@ describe('buildBroadcastPayload — dry-run gate', () => {
   it('customer_list gửi customerListId; friends thì undefined', () => {
     expect(buildBroadcastPayload(form({ sourceType: 'customer_list' }), true).customerListId).toBe('L1');
     expect(buildBroadcastPayload(form({ sourceType: 'friends' }), true).customerListId).toBeUndefined();
+  });
+  it('friends gửi friendLabels; customer_list luôn gửi mảng rỗng', () => {
+    expect(buildBroadcastPayload(form({ sourceType: 'friends', friendLabels: ['Quan tâm', 'VIP'] }), true).friendLabels)
+      .toEqual(['Quan tâm', 'VIP']);
+    expect(buildBroadcastPayload(form({ sourceType: 'customer_list', friendLabels: ['VIP'] }), true).friendLabels)
+      .toEqual([]);
   });
   it('blocks mode → messageText rỗng + contentBlockIds', () => {
     const p = buildBroadcastPayload(form({ contentMode: 'blocks', contentBlockIds: ['b1', 'b2'] }), true);

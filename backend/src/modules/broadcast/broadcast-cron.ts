@@ -30,6 +30,7 @@ import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
 import { renderMessage, computeNextRunAt, randomDelayMs, isWithinSendWindow, type ScheduleType } from './broadcast-service.js';
+import { findFriendsByLabels } from './broadcast-audience.js';
 
 let running = false;
 
@@ -57,7 +58,7 @@ export async function runBroadcastTick(io: Server | null): Promise<void> {
       where: { status: 'active', nextRunAt: { lte: now } },
       select: {
         id: true, orgId: true, scheduleType: true, scheduledAt: true, timeOfDay: true, daysOfWeek: true,
-        sourceType: true, customerListId: true, zaloAccountId: true, maxPerRun: true,
+        sourceType: true, customerListId: true, zaloAccountId: true, friendLabels: true, maxPerRun: true,
       },
     }),
   );
@@ -119,17 +120,12 @@ type RunRow = {
  */
 export async function materializeAudience(
   runId: string,
-  job: { id: string; orgId: string; sourceType: string; customerListId: string | null; zaloAccountId: string; maxPerRun: number },
+  job: { id: string; orgId: string; sourceType: string; customerListId: string | null; zaloAccountId: string; friendLabels: string[]; maxPerRun: number },
 ): Promise<number> {
   let rows: Array<{ entryId: string; phone: string | null; name: string | null; zaloUid: string | null }>;
 
   if (job.sourceType === 'friends') {
-    const friends = await prisma.friend.findMany({
-      where: { zaloAccountId: job.zaloAccountId, friendshipStatus: 'accepted' },
-      orderBy: { becameFriendAt: 'asc' },
-      take: job.maxPerRun,
-      select: { id: true, zaloUidInNick: true, zaloDisplayName: true },
-    });
+    const friends = await findFriendsByLabels(job.zaloAccountId, job.friendLabels ?? [], job.maxPerRun);
     rows = friends.map((f) => ({ entryId: f.id, phone: null, name: f.zaloDisplayName, zaloUid: f.zaloUidInNick }));
   } else {
     if (!job.customerListId) return 0;

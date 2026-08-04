@@ -12,6 +12,7 @@ export const BC_VAR_WHITELIST = ['ten', 'sdt', 'ten_khach', 'phone'];
 export interface WizardForm {
   name: string;
   sourceType: 'customer_list' | 'friends';
+  friendLabels: string[];
   customerListId: string;
   zaloAccountId: string;
   messageText: string;
@@ -74,6 +75,7 @@ export function buildBroadcastPayload(form: WizardForm, dryRun: boolean) {
     sourceType: form.sourceType,
     zaloAccountId: form.zaloAccountId,
     customerListId: form.sourceType === 'customer_list' ? form.customerListId : undefined,
+    friendLabels: form.sourceType === 'friends' ? form.friendLabels : [],
     messageText: form.contentMode === 'text' ? form.messageText : '',
     contentBlockIds: form.contentMode === 'blocks' ? form.contentBlockIds : [],
     scheduleType: form.scheduleType,
