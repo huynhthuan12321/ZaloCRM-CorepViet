@@ -336,13 +336,18 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
         `,
       ]);
 
-      // 🔖 Tag phổ biến — top 5 tag CRM trên Contact của target (Contact.tags = Json array).
+      // 🔖 Tag phổ biến — top 5 nhãn Zalo từ các nick do target sở hữu.
       const topTagRows = await prisma.$queryRaw<Array<{ tag: string; n: bigint }>>`
-        SELECT tag, COUNT(*)::bigint AS n
-        FROM contacts c, jsonb_array_elements_text(c.tags) AS tag
-        WHERE c.org_id = ${viewer.orgId} AND c.assigned_user_id = ${targetUserId}
-          AND tag NOT LIKE 'auto:%' AND length(tag) >= 2
-        GROUP BY tag ORDER BY n DESC LIMIT 5
+        SELECT label->>'name' AS tag, COUNT(*)::bigint AS n
+        FROM friends f
+        JOIN zalo_accounts za ON za.id = f.zalo_account_id
+        CROSS JOIN LATERAL jsonb_array_elements(f.zalo_labels) AS label
+        WHERE f.org_id = ${viewer.orgId}
+          AND za.owner_user_id = ${targetUserId}
+          AND label->>'name' IS NOT NULL AND label->>'name' <> ''
+        GROUP BY label->>'name'
+        ORDER BY n DESC
+        LIMIT 5
       `;
 
       // Quota nick — count msg today + friend req today per nick (public only).
