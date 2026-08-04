@@ -813,19 +813,22 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       // cooling: top 5 contacts pattern cooling/cold
       const coolingContacts = await prisma.contact.findMany({
         where: { orgId, mergedInto: null, engagementPattern: { in: ['cooling', 'cold'] } },
-        orderBy: { stuckSinceAggregate: 'asc' },
+        orderBy: { lastInboundAt: { sort: 'asc', nulls: 'last' } },
         take: 5,
-        select: { id: true, fullName: true, leadScore: true, stuckSinceAggregate: true, assignedUser: { select: { fullName: true } } },
+        select: { id: true, fullName: true, leadScore: true, lastInboundAt: true, lastActivity: true, assignedUser: { select: { fullName: true } } },
       });
-      const cooling = coolingContacts.map((c) => ({
-        contactId: c.id,
-        name: c.fullName,
-        saleName: c.assignedUser?.fullName || '',
-        silentDays: c.stuckSinceAggregate
-          ? Math.floor((now.getTime() - new Date(c.stuckSinceAggregate).getTime()) / 86400000)
-          : 0,
-        score: N(c.leadScore),
-      }));
+      const cooling = coolingContacts.map((c) => {
+        const silentSince = c.lastInboundAt ?? c.lastActivity;
+        return {
+          contactId: c.id,
+          name: c.fullName,
+          saleName: c.assignedUser?.fullName || '',
+          silentDays: silentSince
+            ? Math.max(0, Math.floor((now.getTime() - new Date(silentSince).getTime()) / 86400000))
+            : 0,
+          score: N(c.leadScore),
+        };
+      });
 
       // hot: top 5 contacts pattern hot/champion
       const hotContacts = await prisma.contact.findMany({
