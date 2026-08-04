@@ -10,7 +10,29 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
+import { getAiConfig } from '../ai/ai-service.js';
 import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
+
+type PublicAiStatus = {
+  globalEnabled: boolean;
+  scope: string;
+  fullAuto: boolean;
+  followupEnabled: boolean;
+};
+
+function toPublicAiStatus(config: {
+  aiAutoReplyGlobalEnabled: boolean;
+  aiAutoReplyScope: string;
+  aiAutoReplyFullAuto: boolean;
+  aiFollowupEnabled: boolean;
+}): PublicAiStatus {
+  return {
+    globalEnabled: config.aiAutoReplyGlobalEnabled,
+    scope: config.aiAutoReplyScope,
+    fullAuto: config.aiAutoReplyFullAuto,
+    followupEnabled: config.aiFollowupEnabled,
+  };
+}
 
 async function apiKeyAuth(request: FastifyRequest, reply: FastifyReply) {
   const apiKey = request.headers['x-api-key'] as string;
@@ -26,6 +48,63 @@ async function apiKeyAuth(request: FastifyRequest, reply: FastifyReply) {
 
 export async function publicApiRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', apiKeyAuth);
+
+  app.get('/api/public/ai/status', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const orgId = (request as any).orgId as string;
+      const aiConfig = await getAiConfig(orgId);
+      return toPublicAiStatus(aiConfig);
+    } catch (err) {
+      logger.error('[public-api] GET /ai/status error:', err);
+      return reply.status(500).send({ error: 'Không thể đọc trạng thái trợ lý AI' });
+    }
+  });
+
+  const setAiGlobalEnabled = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    enabled: boolean,
+  ) => {
+    const action = enabled ? 'ai_resumed' : 'ai_paused';
+
+    try {
+      const orgId = (request as any).orgId as string;
+      // Bảo đảm tổ chức luôn có cấu hình trước khi gọi update.
+      const current = await getAiConfig(orgId);
+      const [updated] = await prisma.$transaction([
+        prisma.aiConfig.update({
+          where: { orgId },
+          data: { aiAutoReplyGlobalEnabled: enabled },
+        }),
+        prisma.activityLog.create({
+          data: {
+            orgId,
+            actorType: 'api',
+            category: 'automation',
+            action,
+            entityType: 'ai_config',
+            entityId: current.id,
+            details: { globalEnabled: enabled, source: 'public_api' },
+          },
+        }),
+      ]);
+
+      return toPublicAiStatus(updated);
+    } catch (err) {
+      logger.error(`[public-api] ${action} error:`, err);
+      return reply.status(500).send({
+        error: enabled
+          ? 'Không thể bật lại trợ lý AI'
+          : 'Không thể tạm dừng trợ lý AI',
+      });
+    }
+  };
+
+  app.post('/api/public/ai/pause', async (request: FastifyRequest, reply: FastifyReply) =>
+    setAiGlobalEnabled(request, reply, false));
+
+  app.post('/api/public/ai/resume', async (request: FastifyRequest, reply: FastifyReply) =>
+    setAiGlobalEnabled(request, reply, true));
 
   app.get('/api/public/contacts', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
