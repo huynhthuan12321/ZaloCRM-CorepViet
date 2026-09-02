@@ -27,6 +27,7 @@ const api = createServer((request, response) => {
   response.end(JSON.stringify({
     globalEnabled,
     scope: 'all',
+    inboundStrangerEnabled: true,
     fullAuto: true,
     followupEnabled: false,
   }));

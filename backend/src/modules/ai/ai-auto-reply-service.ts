@@ -31,6 +31,7 @@ import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { assertAiCapability, auditAiAction } from './ai-capabilities.js';
 import { getAiConfig, generateAiOutput } from './ai-service.js';
 import { shouldTriggerAi } from './ai-virtual-chat-service.js';
+import { isConversationEligibleForAutoReply, normalizeAutoReplyScope } from './ai-auto-reply-eligibility.js';
 
 // ── Hằng số ────────────────────────────────────────────────────────────────
 const THROTTLE_MS = 5_000;
@@ -55,8 +56,6 @@ export const DEFAULT_SENSITIVE_PATTERN =
   '|hoá đơn|hóa đơn|hoa don|xuất hoá đơn|xuat hoa don';
 
 export type NeedsReviewReason = 'giá/chốt đơn' | 'độ tin cậy thấp' | 'thiếu nguồn tài liệu';
-type AiAutoReplyScope = 'manual' | 'new_customers' | 'all';
-
 export interface TriggerAutoReplyInput {
   accountId: string;
   conversationId: string;
@@ -108,6 +107,9 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
       conversationId,
       conv.aiAutoReplyEnabled,
       normalizeAutoReplyScope(aiCfg.aiAutoReplyScope),
+      aiCfg.aiAutoReplyInboundStrangerEnabled,
+      conv.zaloAccountId,
+      conv.externalThreadId,
     ))) return;
 
     // ── 3. Tin đến: phải là tin KHÁCH, text, đủ dài, không phải noise ──
@@ -202,6 +204,9 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
       conversationId,
       stillOn.aiAutoReplyEnabled,
       normalizeAutoReplyScope(latestAiCfg.aiAutoReplyScope),
+      latestAiCfg.aiAutoReplyInboundStrangerEnabled,
+      conv.zaloAccountId,
+      conv.externalThreadId,
     ))) return;
 
     // Full-auto may have been switched off during the human-like delay. Re-apply
@@ -364,37 +369,6 @@ function isAiAutoMessage(m: { sentVia?: string | null; metadata?: unknown }): bo
   if (m.sentVia === 'ai_auto') return true;
   const meta = m.metadata as { aiAuto?: unknown } | null | undefined;
   return meta?.aiAuto === true;
-}
-
-function normalizeAutoReplyScope(scope: string): AiAutoReplyScope {
-  return scope === 'new_customers' || scope === 'all' ? scope : 'manual';
-}
-
-/**
- * Manual enable always wins. Organization scope can additionally admit all
- * conversations or only conversations that have never received a human self reply.
- * AI-auto rows are excluded by both supported markers for legacy compatibility.
- */
-async function isConversationEligibleForAutoReply(
-  conversationId: string,
-  manuallyEnabled: boolean,
-  scope: AiAutoReplyScope,
-): Promise<boolean> {
-  if (manuallyEnabled) return true;
-  if (scope === 'all') return true;
-  if (scope !== 'new_customers') return false;
-
-  const rows = await prisma.$queryRaw<Array<{ hasHumanReply: boolean }>>`
-    SELECT EXISTS (
-      SELECT 1
-      FROM "messages"
-      WHERE "conversation_id" = ${conversationId}
-        AND "sender_type" = 'self'
-        AND "sent_via" <> 'ai_auto'
-        AND ("metadata"->>'aiAuto') IS DISTINCT FROM 'true'
-    ) AS "hasHumanReply"
-  `;
-  return rows[0]?.hasHumanReply !== true;
 }
 
 /**

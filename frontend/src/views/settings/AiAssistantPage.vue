@@ -111,6 +111,18 @@
           </div>
         </div>
 
+        <div class="toggle-card" :class="{ 'toggle-card--active': config.aiAutoReplyInboundStrangerEnabled }">
+          <label class="toggle-row">
+            <input type="checkbox" v-model="config.aiAutoReplyInboundStrangerEnabled" />
+            <div>
+              <div class="toggle-label">Tự tư vấn khách chủ động nhắn nhưng chưa kết bạn</div>
+              <div class="toggle-hint">
+                Khi bật, tin nhắn 1–1 do khách gửi vào từ hộp Người lạ vẫn được AI tiếp nhận, kể cả hội thoại từng có nhân viên trả lời. Không áp dụng cho nhóm.
+              </div>
+            </div>
+          </label>
+        </div>
+
         <div class="toggle-card" :class="{ 'toggle-card--warning': config.aiAutoReplyFullAuto }">
           <label class="toggle-row">
             <input type="checkbox" v-model="config.aiAutoReplyFullAuto" />
@@ -292,6 +304,7 @@ interface AiAssistantConfig {
   // Auto-tư vấn Mức A (2026-07-25)
   aiAutoReplyGlobalEnabled: boolean;
   aiAutoReplyScope: 'manual' | 'new_customers' | 'all';
+  aiAutoReplyInboundStrangerEnabled: boolean;
   aiAutoReplyFullAuto: boolean;
   aiAutoReplySensitivePattern: string | null;
   aiAutoReplyStartHour: number;
@@ -343,6 +356,7 @@ async function load() {
       aiAutoReplyScope: ['manual', 'new_customers', 'all'].includes(cfg.aiAutoReplyScope)
         ? cfg.aiAutoReplyScope
         : 'manual',
+      aiAutoReplyInboundStrangerEnabled: cfg.aiAutoReplyInboundStrangerEnabled === true,
       aiAutoReplyFullAuto: cfg.aiAutoReplyFullAuto === true,
       aiFollowupEnabled: cfg.aiFollowupEnabled === true,
       aiFollowupSilenceHours: normalizeInteger(cfg.aiFollowupSilenceHours, 1, 72, 1),
@@ -390,6 +404,7 @@ async function save() {
       aiAssistantSkipNoisePattern: config.value.aiAssistantSkipNoisePattern,
       aiAutoReplyGlobalEnabled: config.value.aiAutoReplyGlobalEnabled,
       aiAutoReplyScope: config.value.aiAutoReplyScope,
+      aiAutoReplyInboundStrangerEnabled: config.value.aiAutoReplyInboundStrangerEnabled,
       aiAutoReplyFullAuto: config.value.aiAutoReplyFullAuto,
       aiAutoReplySensitivePattern: sensitive,
       aiAutoReplyStartHour: Number(config.value.aiAutoReplyStartHour),
@@ -517,6 +532,7 @@ onMounted(() => { load(); loadKb(); });
   border-radius: 8px;
   padding: 14px;
 }
+.toggle-card--active { border-color: #22c55e; background: #f0fdf4; }
 .toggle-card--warning { border-color: #f59e0b; background: #fffbeb; }
 .warning-hint { color: #b45309; }
 .scope-select { font-family: inherit; }

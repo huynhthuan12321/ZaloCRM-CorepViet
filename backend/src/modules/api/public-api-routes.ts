@@ -16,6 +16,7 @@ import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
 type PublicAiStatus = {
   globalEnabled: boolean;
   scope: string;
+  inboundStrangerEnabled: boolean;
   fullAuto: boolean;
   followupEnabled: boolean;
 };
@@ -23,12 +24,14 @@ type PublicAiStatus = {
 function toPublicAiStatus(config: {
   aiAutoReplyGlobalEnabled: boolean;
   aiAutoReplyScope: string;
+  aiAutoReplyInboundStrangerEnabled: boolean;
   aiAutoReplyFullAuto: boolean;
   aiFollowupEnabled: boolean;
 }): PublicAiStatus {
   return {
     globalEnabled: config.aiAutoReplyGlobalEnabled,
     scope: config.aiAutoReplyScope,
+    inboundStrangerEnabled: config.aiAutoReplyInboundStrangerEnabled,
     fullAuto: config.aiAutoReplyFullAuto,
     followupEnabled: config.aiFollowupEnabled,
   };

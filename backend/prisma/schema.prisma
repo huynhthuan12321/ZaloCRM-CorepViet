@@ -1693,6 +1693,9 @@ model AiConfig {
   aiAutoReplyGlobalEnabled    Boolean  @default(false) @map("ai_auto_reply_global_enabled")
   // Phạm vi org: manual | new_customers | all. Manual giữ nguyên hành vi cũ.
   aiAutoReplyScope            String   @default("manual") @map("ai_auto_reply_scope")
+  // Cho phép auto-reply khi chính khách chủ động nhắn vào hội thoại 1-1 nhưng chưa kết bạn.
+  // Tách khỏi scope để có thể bật bổ sung cho manual/new_customers mà không đổi ý nghĩa scope cũ.
+  aiAutoReplyInboundStrangerEnabled Boolean @default(false) @map("ai_auto_reply_inbound_stranger_enabled")
   // true = bỏ bước chờ duyệt, gửi cả giá/đơn hàng; prompt chống bịa giá vẫn giữ nguyên.
   aiAutoReplyFullAuto         Boolean  @default(false) @map("ai_auto_reply_full_auto")
   // Regex từ khóa nhạy cảm (giá/cọc/chốt đơn/thanh toán). NULL → dùng default trong code.

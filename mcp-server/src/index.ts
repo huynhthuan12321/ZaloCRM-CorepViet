@@ -7,6 +7,7 @@ import { z } from 'zod';
 type AiStatus = {
   globalEnabled: boolean;
   scope: string;
+  inboundStrangerEnabled: boolean;
   fullAuto: boolean;
   followupEnabled: boolean;
 };
@@ -74,6 +75,7 @@ async function callControlApi(path: string, method: 'GET' | 'POST'): Promise<Api
       !status
       || typeof status.globalEnabled !== 'boolean'
       || typeof status.scope !== 'string'
+      || typeof status.inboundStrangerEnabled !== 'boolean'
       || typeof status.fullAuto !== 'boolean'
       || typeof status.followupEnabled !== 'boolean'
     ) {
@@ -146,6 +148,7 @@ server.registerTool(
     (status) => [
       `ℹ️ Trợ lý hiện đang: ${status.globalEnabled ? 'BẬT' : 'TẮT'}.`,
       `Phạm vi: ${scopeLabel(status.scope)}.`,
+      `Khách chủ động nhắn chưa kết bạn: ${status.inboundStrangerEnabled ? 'BẬT' : 'TẮT'}.`,
       `Chế độ trọn: ${status.fullAuto ? 'BẬT' : 'TẮT'}.`,
       `Nhắc lại khách im lặng: ${status.followupEnabled ? 'BẬT' : 'TẮT'}.`,
     ].join(' '),

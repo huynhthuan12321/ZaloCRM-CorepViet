@@ -344,6 +344,7 @@ export async function aiRoutes(app: FastifyInstance) {
         // Auto-tư vấn Mức A (2026-07-25).
         aiAutoReplyGlobalEnabled: cfg.aiAutoReplyGlobalEnabled,
         aiAutoReplyScope: cfg.aiAutoReplyScope,
+        aiAutoReplyInboundStrangerEnabled: cfg.aiAutoReplyInboundStrangerEnabled,
         aiAutoReplyFullAuto: cfg.aiAutoReplyFullAuto,
         aiAutoReplySensitivePattern: cfg.aiAutoReplySensitivePattern,
         aiAutoReplyStartHour: cfg.aiAutoReplyStartHour,
@@ -375,6 +376,7 @@ export async function aiRoutes(app: FastifyInstance) {
           // Auto-tư vấn Mức A.
           aiAutoReplyGlobalEnabled?: boolean;
           aiAutoReplyScope?: 'manual' | 'new_customers' | 'all';
+          aiAutoReplyInboundStrangerEnabled?: boolean;
           aiAutoReplyFullAuto?: boolean;
           aiAutoReplySensitivePattern?: string | null;
           aiAutoReplyStartHour?: number;
@@ -409,6 +411,12 @@ export async function aiRoutes(app: FastifyInstance) {
         }
         if (body.aiAutoReplyFullAuto !== undefined && typeof body.aiAutoReplyFullAuto !== 'boolean') {
           return reply.status(400).send({ error: 'Chế độ trọn phải là boolean' });
+        }
+        if (
+          body.aiAutoReplyInboundStrangerEnabled !== undefined &&
+          typeof body.aiAutoReplyInboundStrangerEnabled !== 'boolean'
+        ) {
+          return reply.status(400).send({ error: 'Cấu hình tự tư vấn khách chưa kết bạn phải là boolean' });
         }
         const isHour = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 23;
         if (body.aiAutoReplyStartHour !== undefined && !isHour(body.aiAutoReplyStartHour)) {
@@ -460,6 +468,7 @@ export async function aiRoutes(app: FastifyInstance) {
             aiAssistantSkipNoisePattern: body.aiAssistantSkipNoisePattern,
             aiAutoReplyGlobalEnabled: body.aiAutoReplyGlobalEnabled,
             aiAutoReplyScope: body.aiAutoReplyScope,
+            aiAutoReplyInboundStrangerEnabled: body.aiAutoReplyInboundStrangerEnabled,
             aiAutoReplyFullAuto: body.aiAutoReplyFullAuto,
             // '' → NULL để quay về pattern mặc định trong code.
             ...(body.aiAutoReplySensitivePattern !== undefined
@@ -480,6 +489,7 @@ export async function aiRoutes(app: FastifyInstance) {
           aiAssistantEnabled: updated.aiAssistantEnabled,
           aiAutoReplyGlobalEnabled: updated.aiAutoReplyGlobalEnabled,
           aiAutoReplyScope: updated.aiAutoReplyScope,
+          aiAutoReplyInboundStrangerEnabled: updated.aiAutoReplyInboundStrangerEnabled,
           aiAutoReplyFullAuto: updated.aiAutoReplyFullAuto,
           aiFollowupEnabled: updated.aiFollowupEnabled,
           aiFollowupSilenceHours: updated.aiFollowupSilenceHours,

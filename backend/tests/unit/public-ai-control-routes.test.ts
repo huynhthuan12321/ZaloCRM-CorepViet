@@ -7,6 +7,7 @@ const testState = vi.hoisted(() => {
     orgId: 'org-1',
     aiAutoReplyGlobalEnabled: true,
     aiAutoReplyScope: 'new_customers',
+    aiAutoReplyInboundStrangerEnabled: true,
     aiAutoReplyFullAuto: true,
     aiFollowupEnabled: true,
   });
@@ -82,6 +83,7 @@ describe('public AI control routes', () => {
     expect(initial.json()).toEqual({
       globalEnabled: true,
       scope: 'new_customers',
+      inboundStrangerEnabled: true,
       fullAuto: true,
       followupEnabled: true,
     });
@@ -91,6 +93,7 @@ describe('public AI control routes', () => {
     expect(paused.json()).toEqual({
       globalEnabled: false,
       scope: 'new_customers',
+      inboundStrangerEnabled: true,
       fullAuto: true,
       followupEnabled: true,
     });
