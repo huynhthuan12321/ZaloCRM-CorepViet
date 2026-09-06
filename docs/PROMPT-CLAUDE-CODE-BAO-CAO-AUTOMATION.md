@@ -72,7 +72,7 @@ hoặc theo mẫu report khác). Trả:
 
 ---
 
-## Ghi chú cho bạn
+## Ghi chú cho bạn vxhbn
 - Đây là feature lớn nhất còn lại (~2–3 ngày). Có thể bảo Claude Code làm MVP trước (phễu kết bạn + bám
   đuổi + broadcast theo sale/nick), rồi bổ sung reconnect/đủ-trần sau.
 - Commit: `git add backend/... frontend/...` → push → VPS `git reset --hard origin/main` →
