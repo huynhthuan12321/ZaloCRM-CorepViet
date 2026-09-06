@@ -31,8 +31,9 @@
       <!-- Provider info -->
       <div class="info-card">
         <div class="info-row">
-          <span class="info-label">Nhà cung cấp AI</span>
-          <span class="info-value">{{ config.provider }} — {{ config.model }}</span>
+          <span class="info-label">Nhà cung cấp AI (Tư vấn)</span>
+          <span class="info-value">{{ aiConfig.provider }} — {{ aiConfig.model }}</span>
+          <button class="btn-config-inline" @click="showAiConfigDialog = true">Cấu hình</button>
         </div>
         <div class="info-row">
           <span class="info-label">Quota hôm nay</span>
@@ -45,6 +46,13 @@
           </span>
         </div>
       </div>
+
+      <AiConfigDialog
+        v-model="showAiConfigDialog"
+        :loading="aiConfigSaving"
+        :config="aiConfig"
+        @save="saveAiMainConfig"
+      />
 
       <!-- Prompt editor -->
       <div class="field-group">
@@ -219,10 +227,10 @@
 
       <div v-if="saveMessage" class="save-msg" :class="saveOk ? 'ok' : 'err'">{{ saveMessage }}</div>
 
-      <!-- ── Knowledge base Cờ Rếp Việt (RAG) ── -->
+      <!-- ── Knowledge base (RAG) — AI Tra tài liệu ── -->
       <div class="kb-section">
-        <h2 class="kb-title">📚 Knowledge base Cờ Rếp Việt</h2>
-        <p class="kb-desc">Tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...) để Trợ lý AI trả lời bám dữ liệu công ty — dùng ở tab <b>AI</b> trong màn Chat.</p>
+        <h2 class="kb-title">📚 Knowledge base</h2>
+        <p class="kb-desc">Tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...) để Trợ lý AI trả lời bám dữ liệu công ty — dùng ở tab <b>AI</b> trong màn Chat. Cấu hình embedding <b>tách riêng</b> với AI tư vấn.</p>
 
         <!-- Cấu hình embedding -->
         <div class="field-group">
@@ -291,6 +299,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { api } from '@/api/index';
 import { useAiKnowledge } from '@/composables/use-ai-knowledge';
+import AiConfigDialog from '@/components/ai/ai-config-dialog.vue';
 
 interface AiAssistantConfig {
   aiAssistantEnabled: boolean;
@@ -332,6 +341,47 @@ const usage = ref<AiUsage | null>(null);
 const saveMessage = ref('');
 const saveOk = ref(false);
 const testPromptOpen = ref(false);
+
+// AI Config dialog (provider/model/key cho Tư vấn)
+const showAiConfigDialog = ref(false);
+const aiConfigSaving = ref(false);
+const aiConfig = ref({ provider: 'gemini', model: 'gemini-2.5-flash', maxDaily: 500, enabled: true });
+
+async function loadAiConfig() {
+  try {
+    const res = await api.get('/ai/config');
+    aiConfig.value = {
+      provider: res.data.provider,
+      model: res.data.model,
+      maxDaily: res.data.maxDaily,
+      enabled: res.data.enabled,
+    };
+  } catch {
+    // fallback giữ nguyên giá trị mặc định
+  }
+}
+
+async function saveAiMainConfig(value: { provider: string; model: string; maxDaily: number; enabled: boolean }) {
+  aiConfigSaving.value = true;
+  try {
+    const res = await api.put('/ai/config', value);
+    aiConfig.value = {
+      provider: res.data.provider,
+      model: res.data.model,
+      maxDaily: res.data.maxDaily,
+      enabled: res.data.enabled,
+    };
+    showAiConfigDialog.value = false;
+    saveMessage.value = '✓ Đã lưu cấu hình AI tư vấn';
+    saveOk.value = true;
+    setTimeout(() => (saveMessage.value = ''), 3000);
+  } catch (e: any) {
+    saveMessage.value = e?.response?.data?.error || 'Lỗi lưu cấu hình AI';
+    saveOk.value = false;
+  } finally {
+    aiConfigSaving.value = false;
+  }
+}
 
 const lowQuota = computed(() => {
   if (!usage.value || !config.value) return false;
@@ -488,7 +538,7 @@ async function removeKbDoc(d: { id: string; title: string }) {
 }
 function fmtDate(s: string) { return new Date(s).toLocaleDateString('vi-VN'); }
 
-onMounted(() => { load(); loadKb(); });
+onMounted(() => { load(); loadAiConfig(); loadKb(); });
 </script>
 
 <style scoped>
@@ -554,12 +604,27 @@ onMounted(() => { load(); loadKb(); });
 .info-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 12px;
   padding: 4px 0;
 }
 .info-label { color: #64748b; }
 .info-value { font-weight: 500; }
 .info-value.low-quota { color: #b91c1c; }
+.btn-config-inline {
+  font-size: 11px;
+  padding: 2px 10px;
+  border: 1px solid #3b82f6;
+  color: #3b82f6;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+.btn-config-inline:hover {
+  background: #3b82f6;
+  color: #fff;
+}
 
 .field-group {
   background: #fff;
