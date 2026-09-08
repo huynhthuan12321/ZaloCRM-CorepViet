@@ -16,6 +16,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { config } from '../../config/index.js';
 import { logger } from '../../shared/utils/logger.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
+import { zaloPool } from '../zalo/zalo-pool.js';
 import {
   sendSystemNotificationToUser,
   resolveSystemNotifyRecipient,
@@ -325,15 +326,32 @@ export async function removeAppointmentReminder(apptId: string): Promise<void> {
 
 // ── (4) Cron → gửi tin nhắc kèm SHORT-LINK đánh dấu. Trả status để cron quyết tăng count.
 //   'sent'    = gửi Zalo OK    → cron tăng actionPromptCount (Luật D4)
-//   'failed'  = gửi lỗi/anti-spam → cron GIỮ count, nhịp sau thử lại
+//   'failed'  = đã thử gửi nhưng lỗi/anti-spam → cron GIỮ count, retry có cooldown
+//   'deferred'= nick/UID chưa sẵn sàng → chưa tạo log lỗi, cron kiểm tra lại nhịp sau
 //   'skipped' = không đủ điều kiện (mất sale) → cron coi như đã xử lý (không retry vô hạn)
 export async function sendAppointmentActionPrompt(
   apptId: string,
   reminderNo: number,
-): Promise<'sent' | 'failed' | 'skipped'> {
+): Promise<'sent' | 'failed' | 'deferred' | 'skipped'> {
   try {
     const a = await loadAppt(apptId);
     if (!a || !a.assignedUserId) return 'skipped';
+
+    // Preflight trước khi tạo SystemNotification. Khi nick hệ thống đang reconnect
+    // hoặc người nhận chưa có UID, chỉ hoãn tới nhịp cron sau; không sinh một log
+    // `failed` mới mỗi 5 phút. Kiểm tra pool thật vì status DB có thể còn `connected`
+    // trong vài giây trong lúc SDK đang dựng lại session.
+    const recipient = await resolveSystemNotifyRecipient(a.orgId, a.assignedUserId);
+    if (
+      recipient.status !== 'ready'
+      || !recipient.senderZaloAccountId
+      || !recipient.threadIdInSenderView
+      || !zaloPool.getApi(recipient.senderZaloAccountId)
+    ) {
+      logger.debug(`[appt-zalo] defer action prompt apt=${apptId}: recipient=${recipient.status}, pool=${recipient.senderZaloAccountId && zaloPool.getApi(recipient.senderZaloAccountId) ? 'ready' : 'not_ready'}`);
+      return 'deferred';
+    }
+
     const link = await mintActionLink(a.id, a.assignedUserId, a.orgId);
     const content = buildPromptMessage(a, reminderNo, link);
     const result = await sendSystemNotificationToUser({

@@ -33,6 +33,19 @@ export function reminderDueMs(startMs: number, offsets: number[], alreadySent: n
   return startMs + cumulativeHours * 3600_000;
 }
 
+// Một lần gọi SDK thật bị lỗi chỉ retry sau 30 phút. Trạng thái `deferred`
+// (nick/UID chưa sẵn sàng, chưa gọi SDK và chưa tạo log) vẫn được kiểm tra mỗi 5 phút.
+export const ACTION_PROMPT_FAILURE_COOLDOWN_MS = 30 * 60_000;
+
+export function canAttemptActionPrompt(
+  nowMs: number,
+  dueMs: number,
+  lastAttemptAt: Date | null,
+): boolean {
+  if (nowMs < dueMs) return false;
+  return !lastAttemptAt || nowMs - lastAttemptAt.getTime() >= ACTION_PROMPT_FAILURE_COOLDOWN_MS;
+}
+
 export function startAppointmentReminder(io: Server): void {
   // 01:00 UTC = 08:00 Vietnam time (UTC+7)
   cron.schedule('0 1 * * *', async () => {
@@ -130,7 +143,16 @@ export function startAppointmentReminder(io: Server): void {
           assignedUser: { is: { isActive: true } }, // sale nghỉ việc → ngừng bắn tin (Luật D3)
           appointmentDate: { lte: prefilterMax },
         },
-        select: { id: true, orgId: true, appointmentDate: true, appointmentTime: true, actionPromptCount: true },
+        // Lịch mới ưu tiên trước để backlog lỗi cũ không chiếm hết take=200.
+        orderBy: { appointmentDate: 'desc' },
+        select: {
+          id: true,
+          orgId: true,
+          appointmentDate: true,
+          appointmentTime: true,
+          actionPromptCount: true,
+          lastActionPromptAt: true,
+        },
         take: 200,
       });
       if (!candidates.length) return;
@@ -150,17 +172,35 @@ export function startAppointmentReminder(io: Server): void {
         const startMs = appointmentStartMs(c.appointmentDate, c.appointmentTime, o.timezone || '+07:00');
         const dueMs = reminderDueMs(startMs, offsets, n);
         if (dueMs === null) continue; // đã gửi hết số lần cấu hình
-        if (now.getTime() < dueMs) continue; // chưa tới mốc nhắc lần (n+1)
+        if (!canAttemptActionPrompt(now.getTime(), dueMs, c.lastActionPromptAt)) continue;
+        const attemptedAt = new Date();
         const result = await sendAppointmentActionPrompt(c.id, n + 1);
-        // Luật D4: CHỈ tăng count khi gửi Zalo OK. 'failed' → giữ count, nhịp sau thử lại (không mất nhắc).
+        // Luật D4: chỉ tăng count khi gửi Zalo OK. Lỗi thật ghi mốc thử để
+        // cooldown 30 phút; deferred không ghi mốc để tự hồi ngay khi nick sẵn sàng.
         if (result === 'sent') {
           await withTenant(c.orgId, () =>
             prisma.appointment.update({
               where: { id: c.id },
-              data: { actionPromptCount: { increment: 1 }, lastActionPromptAt: new Date(), actionPromptSent: true },
+              data: { actionPromptCount: { increment: 1 }, lastActionPromptAt: attemptedAt, actionPromptSent: true },
             }),
           );
           sent++;
+        } else if (result === 'failed') {
+          await withTenant(c.orgId, () =>
+            prisma.appointment.update({
+              where: { id: c.id },
+              data: { lastActionPromptAt: attemptedAt },
+            }),
+          );
+        } else if (result === 'skipped') {
+          // Dữ liệu đổi giữa lúc query và gửi (vd bỏ người phụ trách): đóng chu kỳ
+          // để không quay lại vô hạn. Không áp dụng cho deferred tạm thời.
+          await withTenant(c.orgId, () =>
+            prisma.appointment.update({
+              where: { id: c.id },
+              data: { actionPromptCount: 3, lastActionPromptAt: attemptedAt },
+            }),
+          ).catch(() => {});
         }
       }
       if (sent > 0) logger.info(`[appointment] Đã gửi ${sent} nhắc hoàn thành`);

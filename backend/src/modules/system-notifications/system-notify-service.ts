@@ -198,6 +198,54 @@ function buildMessage(
   return `${prefix}${title}\n${content}`.trim();
 }
 
+const SYSTEM_NOTIFY_RETRY_DELAYS_MS = [400, 1_000] as const;
+
+/** Chỉ retry lỗi chắc chắn mang tính kết nối/session; lỗi nghiệp vụ Zalo không retry. */
+export function isRetryableSystemNotifyError(err: unknown): boolean {
+  const e = err as { message?: string; code?: string | number; cause?: { message?: string; code?: string } };
+  const text = `${e?.message ?? ''} ${e?.cause?.message ?? ''} ${e?.code ?? ''} ${e?.cause?.code ?? ''}`.toLowerCase();
+  return [
+    'fetch failed',
+    'socket',
+    'econnreset',
+    'etimedout',
+    'und_err',
+    'session expired',
+    'not logged in',
+    'login required',
+  ].some((token) => text.includes(token));
+}
+
+async function sendZaloSystemMessage(
+  senderId: string,
+  messageContent: Record<string, unknown>,
+  threadId: string,
+  threadType: 0 | 1,
+): Promise<unknown> {
+  let lastError: unknown = new Error('Nick gửi hệ thống chưa connected trong Zalo pool');
+  for (let attempt = 0; attempt <= SYSTEM_NOTIFY_RETRY_DELAYS_MS.length; attempt++) {
+    const api = zaloPool.getApi(senderId);
+    if (api) {
+      try {
+        return await api.sendMessage(
+          messageContent as Parameters<typeof api.sendMessage>[0],
+          threadId,
+          threadType,
+        );
+      } catch (err) {
+        lastError = err;
+        if (!isRetryableSystemNotifyError(err)) throw err;
+      }
+    }
+    if (attempt < SYSTEM_NOTIFY_RETRY_DELAYS_MS.length) {
+      const waitMs = SYSTEM_NOTIFY_RETRY_DELAYS_MS[attempt];
+      logger.warn(`[system-notify] lỗi kết nối tạm thời, retry ${attempt + 1}/${SYSTEM_NOTIFY_RETRY_DELAYS_MS.length} sau ${waitMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  throw lastError;
+}
+
 export async function resolveSystemNotifyRecipient(orgId: string, targetUserId: string): Promise<ResolveResult> {
   const [org, targetUser] = await Promise.all([
     prisma.organization.findUnique({
@@ -332,9 +380,6 @@ export async function sendSystemNotificationToUser(input: SendToUserInput) {
   }
 
   try {
-    const api = zaloPool.getApi(resolved.senderZaloAccountId);
-    if (!api) throw new Error('Nick gửi hệ thống chưa connected trong Zalo pool');
-
     const hasStyles = Array.isArray(input.styles) && input.styles.length > 0;
     const msg = buildMessage(input.title, input.content, priority, hasStyles);
     // 2026-06-04 — payload Zalo: styles (định dạng chữ) + urgency (cờ Khẩn).
@@ -345,8 +390,9 @@ export async function sendSystemNotificationToUser(input: SendToUserInput) {
     if (input.urgency && input.urgency > 0) messageContent.urgency = input.urgency;
     // T8: threadType 0=user (mặc định) | 1=group. SDK đã support (zalo-operations.ts:243).
     const threadType = input.recipientType === 'group' ? 1 : 0;
-    const sendResult = await api.sendMessage(
-      messageContent as Parameters<typeof api.sendMessage>[0],
+    const sendResult = await sendZaloSystemMessage(
+      resolved.senderZaloAccountId,
+      messageContent,
       resolved.threadIdInSenderView,
       threadType,
     );

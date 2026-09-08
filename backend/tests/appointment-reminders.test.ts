@@ -2,7 +2,12 @@
 // Phủ logic rủi ro nhất: mốc due cộng dồn, parse offsets, resolve trưởng phòng (D3).
 // E2E (3 lần nhắc / reschedule / digest gửi) → QA trên app thật (cần cron + DB).
 import { describe, it, expect } from 'vitest';
-import { parseOffsetsHours, reminderDueMs } from '../src/modules/contacts/appointment-reminder.js';
+import {
+  ACTION_PROMPT_FAILURE_COOLDOWN_MS,
+  canAttemptActionPrompt,
+  parseOffsetsHours,
+  reminderDueMs,
+} from '../src/modules/contacts/appointment-reminder.js';
 import { makeManagerResolver } from '../src/modules/contacts/appointment-digest.js';
 
 const H = 3600_000;
@@ -40,6 +45,26 @@ describe('parseOffsetsHours — JSON org → mảng giờ, sai/rỗng → mặc 
     expect(parseOffsetsHours('x')).toEqual([1, 3, 6]);
     expect(parseOffsetsHours(null)).toEqual([1, 3, 6]);
     expect(parseOffsetsHours(undefined)).toEqual([1, 3, 6]);
+  });
+});
+
+describe('canAttemptActionPrompt — chống tạo log lỗi mỗi 5 phút', () => {
+  const now = new Date('2026-09-08T05:00:00.000Z').getTime();
+
+  it('chưa tới hạn thì không gửi', () => {
+    expect(canAttemptActionPrompt(now, now + 1, null)).toBe(false);
+  });
+
+  it('đến hạn và chưa từng thử thì gửi', () => {
+    expect(canAttemptActionPrompt(now, now, null)).toBe(true);
+  });
+
+  it('đang trong cooldown 30 phút thì không thử lại', () => {
+    expect(canAttemptActionPrompt(now, now - 1, new Date(now - ACTION_PROMPT_FAILURE_COOLDOWN_MS + 1))).toBe(false);
+  });
+
+  it('hết cooldown thì được thử lại', () => {
+    expect(canAttemptActionPrompt(now, now - 1, new Date(now - ACTION_PROMPT_FAILURE_COOLDOWN_MS))).toBe(true);
   });
 });
 
