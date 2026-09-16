@@ -14,7 +14,7 @@ export function buildLiveHealth(uptime = process.uptime()): { status: 'ok'; upti
 
 export async function buildReadyHealth(input: {
   checkDb: () => Promise<void>;
-  checkRedis: () => boolean;
+  checkRedis: () => boolean | Promise<boolean>;
   uptime?: number;
   timestamp?: string;
 }): Promise<{ statusCode: 200 | 503; body: ReadyHealth }> {
@@ -25,7 +25,7 @@ export async function buildReadyHealth(input: {
   } catch {
     db = 'disconnected';
   }
-  if (!input.checkRedis()) redis = 'disconnected';
+  if (!(await input.checkRedis())) redis = 'disconnected';
   const ok = db === 'connected' && redis === 'connected';
   return {
     statusCode: ok ? 200 : 503,

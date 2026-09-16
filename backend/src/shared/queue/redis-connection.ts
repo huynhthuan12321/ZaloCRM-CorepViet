@@ -63,8 +63,21 @@ export function getBullMQRedis(): Redis {
   return connectionInstance;
 }
 
-export function isBullMQRedisHealthy(): boolean {
-  return !connectionFailed && connectionInstance?.status === 'ready';
+// Readiness probe: KHÔNG chỉ đọc connectionInstance?.status (có thể null nếu chưa module nào
+// gọi getBullMQRedis(), hoặc status "nói dối" khi Redis chết giữa chừng). Chủ động:
+//  1) getBullMQRedis() → tự tạo + kết nối (lazyConnect:false) nếu chưa có.
+//  2) ping() → xác nhận Redis thực sự phản hồi.
+export async function isBullMQRedisHealthy(): Promise<boolean> {
+  try {
+    const redis = getBullMQRedis();
+    await redis.ping();
+    return !connectionFailed && redis.status === 'ready';
+  } catch (err) {
+    logger.error(
+      `[bullmq-redis] health check failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return false;
+  }
 }
 
 export async function closeBullMQRedis(): Promise<void> {

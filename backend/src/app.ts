@@ -107,7 +107,7 @@ import { credentialRoutes } from './modules/zalo/credential-routes.js';
 import { eventBuffer } from './shared/event-buffer.js';
 import { systemNotifyRoutes } from './modules/system-notifications/system-notify-routes.js';
 import { userCreateWithZaloRoutes } from './modules/system-notifications/user-create-with-zalo-routes.js';
-import { isBullMQRedisHealthy } from './shared/queue/redis-connection.js';
+import { isBullMQRedisHealthy, getBullMQRedis } from './shared/queue/redis-connection.js';
 // Lead Pool → extension bundle (src/_ee/lead-pool).
 // Facebook Lead Ads (Multi-Source + Form ingestion) → extension bundle (src/_ee/facebook).
 
@@ -439,6 +439,11 @@ async function bootstrap() {
     await app.listen({ port: config.port, host: config.host });
     logger.info(`Zalo CRM running on http://${config.host}:${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
+    // Eager-init shared BullMQ Redis connection lúc boot: readiness (/health/ready)
+    // dùng isBullMQRedisHealthy() = connectionInstance?.status === 'ready'. Nếu để lazy,
+    // connectionInstance chỉ tạo khi có module gọi getBullMQRedis() lần đầu → readiness
+    // 503 dù Redis OK. Gọi ở đây đảm bảo client tồn tại + kết nối ngay khi app start.
+    if (config.nodeEnv !== 'test') getBullMQRedis();
     startAppointmentReminder(io);
     startZaloHealthCheck();
     startContactIntelligence();

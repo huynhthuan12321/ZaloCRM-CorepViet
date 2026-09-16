@@ -20,13 +20,14 @@ RUN npm run build
 # ── Stage 2: Build backend ───────────────────────────────────────────────────
 FROM node:22-alpine AS backend-builder
 WORKDIR /app/backend
-# sharp (nén ảnh + watermark Media): trên alpine/musl cần libvips. Cài vips-dev + build tools
-# để sharp có thể build từ source nếu prebuild musl không tải được (mạng/registry chặn).
-RUN apk add --no-cache vips-dev build-base python3
+# sharp (nén ảnh + watermark Media): dùng binary prebuilt @img/sharp-linuxmusl-x64 (đã bundle libvips).
+# KHÔNG cài vips-dev ở builder: nếu có, sharp phát hiện "globally-installed libvips" → cố build
+# from source → chết vì VPS không tải được node headers từ unofficial-builds.nodejs.org (ETIMEDOUT).
+# Bỏ vips-dev → sharp buộc dùng prebuilt binary → build ok. build-base + python3 giữ cho các
+# native dep khác nếu cần.
+RUN apk add --no-cache build-base python3
 COPY backend/package.json backend/package-lock.json ./
-# Dùng `npm install` thay `npm ci` vì lock file đôi khi out of sync với package.json
-# (vd: thêm package mới qua npm install --no-save trong dev). Tradeoff: build chậm hơn ~10s
-# nhưng KHÔNG fail nếu lock drift. Tooling cần regenerate lock sau khi add dep.
+# Dùng `npm install` thay `npm ci` vì lock file đôi khi out of sync với package.json.
 RUN npm install --no-audit --no-fund
 COPY backend/ ./
 RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" npx prisma generate
