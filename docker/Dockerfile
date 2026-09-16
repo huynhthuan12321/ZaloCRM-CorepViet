@@ -23,6 +23,7 @@ WORKDIR /app/backend
 # sharp (nén ảnh + watermark Media): trên alpine/musl cần libvips. Cài vips-dev + build tools
 # để sharp có thể build từ source nếu prebuild musl không tải được (mạng/registry chặn).
 RUN apk add --no-cache vips-dev build-base python3
+RUN npm install -g node-gyp
 COPY backend/package.json backend/package-lock.json ./
 # Dùng `npm install` thay `npm ci` vì lock file đôi khi out of sync với package.json
 # (vd: thêm package mới qua npm install --no-save trong dev). Tradeoff: build chậm hơn ~10s
