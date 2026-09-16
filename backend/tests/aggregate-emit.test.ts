@@ -21,7 +21,13 @@ const prismaMock = {
   $transaction: vi.fn(),
 };
 
-vi.mock('../src/shared/database/prisma-client.js', () => ({ prisma: prismaMock }));
+// PR-01 (2026-09-16): applyFriendAggregate chạy trong tenantTransaction (RLS set_config)
+// thay cho prisma.$transaction → mock uỷ quyền về $transaction. Thiếu export này hàm
+// nuốt lỗi trong try/catch → không emit (test cũ fail im lặng).
+vi.mock('../src/shared/database/prisma-client.js', () => ({
+  prisma: prismaMock,
+  tenantTransaction: (cb: unknown) => prismaMock.$transaction(cb),
+}));
 vi.mock('../src/shared/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -75,6 +81,7 @@ describe('applyFriendAggregate — emit friend:updated', () => {
           update: vi.fn(),
         },
         contact: {
+          findUnique: vi.fn().mockResolvedValue({ fullName: 'KH An', avatarUrl: null }),
           update: vi.fn(),
         },
       };
@@ -119,7 +126,7 @@ describe('applyFriendAggregate — emit friend:updated', () => {
           }),
           update: vi.fn().mockResolvedValue({}),
         },
-        contact: { update: vi.fn() },
+        contact: { findUnique: vi.fn().mockResolvedValue({ fullName: 'KH', avatarUrl: null }), update: vi.fn() },
       };
       await cb(tx);
     });
@@ -155,7 +162,7 @@ describe('applyFriendAggregate — emit friend:updated', () => {
           }),
           update: vi.fn().mockResolvedValue({}),
         },
-        contact: { update: vi.fn() },
+        contact: { findUnique: vi.fn().mockResolvedValue({ fullName: 'KH', avatarUrl: null }), update: vi.fn() },
       };
       await cb(tx);
     });

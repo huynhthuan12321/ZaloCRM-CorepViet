@@ -38,6 +38,16 @@ vi.mock('../src/modules/zalo/zalo-route-helpers.js', () => ({
   }),
 }));
 
+// PR-01 (2026-09-16): route giờ có requireGrant (RBAC → prisma) + markFriendRequestSent
+// (ghi Friend) + friend-sync-service/zalo-pool. Test route-level → mock ở biên module.
+vi.mock('../src/modules/rbac/rbac-middleware.js', () => ({ requireGrant: () => async () => {} }));
+vi.mock('../src/modules/zalo/friend-event-handler.js', () => ({
+  markFriendRequestSent: vi.fn(),
+  applyFriendTransition: vi.fn(),
+}));
+vi.mock('../src/modules/zalo/friend-sync-service.js', () => ({ syncAccountFully: vi.fn() }));
+vi.mock('../src/modules/zalo/zalo-pool.js', () => ({ zaloPool: { getIO: vi.fn().mockReturnValue(null) } }));
+
 const { friendRoutes } = await import('../src/modules/zalo/friend-routes.js');
 
 const BASE = '/api/v1/zalo-accounts/za-1/friends';
@@ -96,7 +106,8 @@ describe('Friend Queries', () => {
     const res = await buildApp().inject({ method: 'GET', url: `${BASE}/aliases` });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ data: [{ alias: 'Bob' }] });
-    expect(zaloOpsMock.getAliasList).toHaveBeenCalledWith('za-1');
+    // Paging mặc định count=100, page=1 (friend-routes.ts GET /aliases).
+    expect(zaloOpsMock.getAliasList).toHaveBeenCalledWith('za-1', 100, 1);
   });
 });
 

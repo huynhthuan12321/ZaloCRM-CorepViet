@@ -21,11 +21,15 @@ vi.mock('../../src/shared/database/prisma-client.js', () => {
     contactTag: { updateMany: vi.fn() },
     $executeRaw: vi.fn(),
   };
+  const prismaMock = {
+    $transaction: vi.fn(async (fn: (tx: typeof mockTx) => Promise<unknown>) => fn(mockTx)),
+    __mockTx: mockTx,
+  };
   return {
-    prisma: {
-      $transaction: vi.fn(async (fn: (tx: typeof mockTx) => Promise<unknown>) => fn(mockTx)),
-      __mockTx: mockTx,
-    },
+    prisma: prismaMock,
+    // PR-01 (2026-09-16): tag-service dùng tenantTransaction (RLS set_config) thay cho
+    // prisma.$transaction trực tiếp → mock uỷ quyền về $transaction (không có RLS trong unit).
+    tenantTransaction: (fn: (tx: typeof mockTx) => Promise<unknown>) => prismaMock.$transaction(fn),
   };
 });
 

@@ -20,6 +20,8 @@ const prismaMock = {
   organization: { findMany: vi.fn() },
   user: { findFirst: vi.fn() },
   contact: { findMany: vi.fn() },
+  // PR-01 (2026-09-16): detector bù globalId từ Friend cho contact thiếu zaloGlobalId.
+  friend: { findMany: vi.fn().mockResolvedValue([]) },
   duplicateGroup: { findFirst: vi.fn(), create: vi.fn() },
   parentCandidate: { findFirst: vi.fn(), create: vi.fn() },
 };

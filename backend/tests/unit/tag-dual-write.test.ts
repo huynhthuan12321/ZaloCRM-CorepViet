@@ -89,6 +89,8 @@ vi.mock('../../src/shared/database/prisma-client.js', () => {
   };
 
   return {
+    // PR-01 (2026-09-16): tag-service dùng tenantTransaction (RLS set_config) → uỷ quyền về tx mock.
+    tenantTransaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     prisma: {
       friend: {
         findUnique: vi.fn(async ({ where }: any) => (where.id === state.friend.id ? { id: state.friend.id, orgId: state.friend.orgId, contactId: state.friend.contactId, zaloAccountId: state.friend.zaloAccountId } : null)),
@@ -97,6 +99,8 @@ vi.mock('../../src/shared/database/prisma-client.js', () => {
         findUnique: vi.fn(async ({ where }: any) => (where.id === state.contact.id ? { id: state.contact.id, orgId: state.contact.orgId } : null)),
       },
       $transaction: vi.fn(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+      // PR-01: addFriendTag ghi activity log (fire-and-forget) sau khi commit.
+      activityLog: { create: vi.fn(async () => ({})) },
       __state: state,
     },
   };

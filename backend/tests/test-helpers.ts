@@ -100,6 +100,13 @@ export function mockPrisma() {
       create: vi.fn(),
       update: vi.fn(),
     },
+    // PR-01 (2026-09-16): getUserFullName() (chat-helpers) đọc prisma.user.findUnique
+    // cho metadata.sender của tin gửi từ CRM — thiếu delegate này route gửi tin trả 500.
+    user: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+    },
   };
 }
 
