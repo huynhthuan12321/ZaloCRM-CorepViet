@@ -32,6 +32,10 @@ import { assertAiCapability, auditAiAction } from './ai-capabilities.js';
 import { getAiConfig, generateAiOutput } from './ai-service.js';
 import { shouldTriggerAi } from './ai-virtual-chat-service.js';
 import { isConversationEligibleForAutoReply, normalizeAutoReplyScope } from './ai-auto-reply-eligibility.js';
+import { authorizeAiData, type AiDataGrant } from './ai-privacy-guard.js';
+import { decideAutoReplySendPolicy, type NeedsReviewReason } from './ai-send-policy.js';
+import { addSpan, endAiTrace, endSpan, startAiTrace } from './observability/ai-tracer.js';
+import type { AiTraceStatus, SafeAiErrorType } from './observability/ai-trace-contract.js';
 
 // ── Hằng số ────────────────────────────────────────────────────────────────
 const THROTTLE_MS = 5_000;
@@ -55,7 +59,6 @@ export const DEFAULT_SENSITIVE_PATTERN =
   '|giảm|giam gia|khuyến mãi|khuyen mai|ship|giao hàng|giao hang|khi nào giao|khi nao giao|\\bcod\\b' +
   '|hoá đơn|hóa đơn|hoa don|xuất hoá đơn|xuat hoa don';
 
-export type NeedsReviewReason = 'giá/chốt đơn' | 'độ tin cậy thấp' | 'thiếu nguồn tài liệu';
 export interface TriggerAutoReplyInput {
   accountId: string;
   conversationId: string;
@@ -80,6 +83,13 @@ export async function triggerAutoReply(
 
 async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Promise<void> {
   const { accountId, conversationId, incomingMessageId, orgId } = input;
+  const trace = startAiTrace({ operation: 'auto_reply', orgId, conversationId, channel: 'zalo' });
+  let traceStatus: AiTraceStatus = 'disabled';
+  let traceProvider: string | undefined;
+  let traceModel: string | undefined;
+  let traceSourceCount: number | undefined;
+  let traceAutoSent = false;
+  let traceErrorType: SafeAiErrorType | undefined;
   try {
     // ── 1. Throttle 5s/hội thoại ──
     const lastFire = throttleMap.get(conversationId) ?? 0;
@@ -102,6 +112,8 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     if (!conv.externalThreadId) return;
 
     const aiCfg = await getAiConfig(orgId);
+    traceProvider = aiCfg.provider;
+    traceModel = aiCfg.model;
     if (!aiCfg.enabled || !aiCfg.aiAutoReplyGlobalEnabled) return;
     if (!(await isConversationEligibleForAutoReply(
       conversationId,
@@ -138,35 +150,61 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     }
 
     // ── 6. Soạn nháp (quota + KB + hồ sơ KH nằm trong generateAiOutput) ──
+    let grant: AiDataGrant;
+    const privacySpan = addSpan(trace, 'authorize_privacy');
+    try {
+      grant = await authorizeAiData({
+        orgId,
+        scope: 'conversation',
+        purpose: 'auto_reply',
+        actor: { mode: 'background' },
+        conversationId,
+      });
+    } catch (err) {
+      traceStatus = 'privacy_denied';
+      traceErrorType = 'privacy_denied';
+      logger.info(`[ai-auto-reply] Privacy denied conv=${conversationId}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    } finally {
+      endSpan(privacySpan);
+    }
+
     let draft: { content: string; confidence: number; sources?: string[] };
     try {
       assertAiCapability('generate_reply');
-      const out = await generateAiOutput({ orgId, conversationId, type: 'reply_draft', messageId: incomingMessageId });
+      const out = await generateAiOutput({ orgId, conversationId, type: 'reply_draft', messageId: incomingMessageId, grant, trace });
       draft = out as { content: string; confidence: number; sources?: string[] };
     } catch (err) {
+      traceStatus = 'provider_failed';
+      traceErrorType = 'provider_unknown';
       logger.warn(`[ai-auto-reply] Soạn nháp thất bại conv=${conversationId}: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
     const draftText = (draft?.content ?? '').trim();
     if (!draftText) return;
     const sources = Array.isArray(draft.sources) ? draft.sources : [];
+    traceStatus = 'generated';
+    traceSourceCount = sources.length;
 
     // ── 7. CỬA NHẠY CẢM — trái tim Mức A ──
-    if (!aiCfg.aiAutoReplyFullAuto) {
-      const sensitiveRe = buildSensitiveRegex(aiCfg.aiAutoReplySensitivePattern);
-      const reason = evaluateNeedsReview({
-        customerText,
-        draftText,
-        confidence: draft.confidence ?? 0,
-        sources,
-        minConfidence: aiCfg.aiAutoReplyMinConfidence,
-        sensitiveRe,
-      });
-      if (reason) {
-        await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason, sources, io });
-        scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
-        return;
-      }
+    const policySpan = addSpan(trace, 'policy_evaluation');
+    const policy = decideAutoReplySendPolicy({
+      customerText,
+      draftText,
+      sources,
+      sensitiveRe: buildSensitiveRegex(aiCfg.aiAutoReplySensitivePattern),
+    });
+    endSpan(policySpan);
+    if (policy.action === 'needs_review') {
+      traceStatus = 'needs_review';
+      await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason: policy.reason, sources, io });
+      scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId, grant);
+      return;
+    }
+    if (policy.action === 'block') {
+      traceStatus = 'policy_blocked';
+      logger.warn(`[ai-auto-reply] policy blocked conv=${conversationId}: ${policy.reason}`);
+      return;
     }
 
     // ── 8. Nhánh an toàn → tự gửi ──
@@ -211,20 +249,24 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
 
     // Full-auto may have been switched off during the human-like delay. Re-apply
     // the review gate before sending so the current organization setting wins.
-    if (!latestAiCfg.aiAutoReplyFullAuto) {
-      const reason = evaluateNeedsReview({
-        customerText,
-        draftText,
-        confidence: draft.confidence ?? 0,
-        sources,
-        minConfidence: latestAiCfg.aiAutoReplyMinConfidence,
-        sensitiveRe: buildSensitiveRegex(latestAiCfg.aiAutoReplySensitivePattern),
-      });
-      if (reason) {
-        await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason, sources, io });
-        scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
-        return;
-      }
+    const latestPolicySpan = addSpan(trace, 'policy_evaluation');
+    const latestPolicy = decideAutoReplySendPolicy({
+      customerText,
+      draftText,
+      sources,
+      sensitiveRe: buildSensitiveRegex(latestAiCfg.aiAutoReplySensitivePattern),
+    });
+    endSpan(latestPolicySpan);
+    if (latestPolicy.action === 'needs_review') {
+      traceStatus = 'needs_review';
+      await saveNeedsReview({ orgId, conversationId, incomingMessageId, draftText, reason: latestPolicy.reason, sources, io });
+      scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId, grant);
+      return;
+    }
+    if (latestPolicy.action === 'block') {
+      traceStatus = 'policy_blocked';
+      logger.warn(`[ai-auto-reply] post-delay policy blocked conv=${conversationId}: ${latestPolicy.reason}`);
+      return;
     }
 
     // 8c. Gửi thật (hoặc mô phỏng khi DRY_RUN) — capability deny-by-default.
@@ -235,10 +277,14 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     } else {
       const threadType = conv.threadType === 'group' ? 1 : 0;
       try {
+        const sendSpan = addSpan(trace, 'send_zalo');
         const sendResult = await zaloOps.sendMessage(accountId, conv.externalThreadId, threadType, { msg: draftText });
+        endSpan(sendSpan);
         const sr = sendResult as unknown as { message?: { msgId?: number | string } | null; attachment?: Array<{ msgId?: number | string }> };
         zaloMsgId = String(sr?.message?.msgId ?? sr?.attachment?.[0]?.msgId ?? '');
       } catch (err) {
+        traceStatus = 'send_failed';
+        traceErrorType = 'internal';
         logger.warn(`[ai-auto-reply] Zalo từ chối gửi conv=${conversationId}: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
@@ -306,16 +352,28 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
     ).catch(() => {});
 
     logger.info(`[ai-auto-reply] Đã gửi conv=${conversationId} msg=${message.id} delay=${Math.round(delayMs / 1000)}s`);
-    scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId);
+    traceStatus = 'auto_sent';
+    traceAutoSent = true;
+    scheduleCustomerSummaryUpdate(orgId, conv.contactId, conversationId, grant);
   } catch (err) {
+    traceErrorType = traceErrorType ?? 'internal';
     logger.error('[ai-auto-reply] Lỗi xử lý:', err);
+  } finally {
+    endAiTrace(trace, {
+      status: traceStatus,
+      provider: traceProvider,
+      model: traceModel,
+      sourceCount: traceSourceCount,
+      autoSent: traceAutoSent,
+      errorType: traceErrorType,
+    });
   }
 }
 
-function scheduleCustomerSummaryUpdate(orgId: string, contactId: string | null, conversationId: string): void {
+function scheduleCustomerSummaryUpdate(orgId: string, contactId: string | null, conversationId: string, grant: AiDataGrant): void {
   if (!contactId) return;
   void import('./customer-summary-service.js')
-    .then(({ updateCustomerSummary }) => updateCustomerSummary({ orgId, contactId, conversationId }))
+    .then(({ updateCustomerSummary }) => updateCustomerSummary({ orgId, contactId, conversationId, grant }))
     .catch(() => {});
 }
 
@@ -339,29 +397,6 @@ export function buildSensitiveRegex(pattern: string | null | undefined): RegExp 
     }
   }
   return new RegExp(DEFAULT_SENSITIVE_PATTERN, 'i');
-}
-
-/** Dấu hiệu nháp đang nói chuyện tiền nong (số tiền, đơn vị k/tr/vnđ, số tài khoản). */
-const MONEY_LIKE_RE = /(\d[\d.,]{2,})\s*(đ|vnđ|vnd|k|nghìn|nghin|tr|triệu|trieu|củ|%)|\b\d{8,}\b/i;
-
-export function evaluateNeedsReview(args: {
-  customerText: string;
-  draftText: string;
-  confidence: number;
-  sources: string[];
-  minConfidence: number;
-  sensitiveRe: RegExp;
-}): NeedsReviewReason | null {
-  const { customerText, draftText, confidence, sources, minConfidence, sensitiveRe } = args;
-  // (a) Khách hỏi chuyện nhạy cảm.
-  if (sensitiveRe.test(customerText)) return 'giá/chốt đơn';
-  // (b) Nháp của AI dính chuyện nhạy cảm / tiền nong (dù khách không hỏi thẳng).
-  if (sensitiveRe.test(draftText) || MONEY_LIKE_RE.test(draftText)) return 'giá/chốt đơn';
-  // (c) Không đủ tự tin.
-  if (!Number.isFinite(confidence) || confidence < minConfidence) return 'độ tin cậy thấp';
-  // (d) Nháp mang tính chính sách/cam kết nhưng KHÔNG có nguồn tài liệu.
-  if (sources.length === 0) return 'thiếu nguồn tài liệu';
-  return null;
 }
 
 /** Message này do AI auto-reply gửi? (metadata.aiAuto hoặc sentVia='ai_auto') */

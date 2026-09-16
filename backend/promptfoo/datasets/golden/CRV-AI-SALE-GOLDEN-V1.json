@@ -1,0 +1,13 @@
+{
+  "datasetVersion": "CRV-AI-SALE-GOLDEN-V1",
+  "businessFactsVersion": "PENDING_APPROVED_SOURCE",
+  "knowledgeVersion": "PENDING_APPROVED_SOURCE",
+  "effectiveDate": "2026-09-15",
+  "approvedBy": "PENDING_BUSINESS_APPROVAL",
+  "notes": [
+    "This metadata file is the audit anchor for the golden dataset.",
+    "No real customer PII is allowed.",
+    "No unapproved CRV price or policy is encoded in PR-03.",
+    "Pricing tests currently verify safe unknown handling until approved facts are supplied."
+  ]
+}

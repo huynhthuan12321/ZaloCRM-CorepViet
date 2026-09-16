@@ -17,7 +17,10 @@ async function fetchJson(url: string, headers: Record<string, string>): Promise<
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const res = await fetch(url, { headers, signal: controller.signal });
+    const res = await fetch(url, { headers, signal: controller.signal, redirect: 'manual' });
+    if (res.status >= 300 && res.status < 400) {
+      throw new Error(`HTTP ${res.status} redirect rejected`);
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status} ${body.slice(0, 200)}`);

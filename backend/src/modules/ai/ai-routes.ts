@@ -19,6 +19,7 @@ import {
 import { listProviderModels, invalidateModelCache } from './providers/list-models.js';
 import { logger } from '../../shared/utils/logger.js';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { AiPrivacyDeniedError, authorizeAiData, type AiDataGrant, type AiDataPurpose } from './ai-privacy-guard.js';
 
 async function assertConversationReadAccess(request: FastifyRequest, reply: FastifyReply, conversationId: string) {
   const user = request.user!;
@@ -68,6 +69,35 @@ async function assertPrivacyAllowsAi(request: FastifyRequest, reply: FastifyRepl
     return false;
   }
   return true;
+}
+
+async function authorizeConversationAiForRoute(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  conversationId: string,
+  purpose: AiDataPurpose,
+): Promise<AiDataGrant | null> {
+  const { buildPrivacyContext } = await import('../privacy/redact.js');
+  try {
+    const privacyContext = await buildPrivacyContext(request);
+    return await authorizeAiData({
+      orgId: request.user!.orgId,
+      scope: 'conversation',
+      purpose,
+      actor: { mode: 'user', privacyContext },
+      conversationId,
+    });
+  } catch (err) {
+    if (err instanceof AiPrivacyDeniedError && err.message === 'Conversation not found') {
+      reply.status(404).send({ error: 'Conversation not found' });
+      return null;
+    }
+    reply.status(403).send({
+      error: 'Nick nÃ y Ä‘ang báº­t RiÃªng tÆ° â€” chá»‰ chÃ­nh chá»§ Ä‘Ã£ má»Ÿ khoÃ¡ má»›i dÃ¹ng Ä‘Æ°á»£c AI trÃªn há»™i thoáº¡i nÃ y.',
+      code: 'PRIVACY_LOCKED',
+    });
+    return null;
+  }
 }
 
 function getStatusFromError(err: unknown, fallback: string) {
@@ -165,14 +195,16 @@ export async function aiRoutes(app: FastifyInstance) {
       if (!body.conversationId) return reply.status(400).send({ error: 'conversationId is required' });
       const access = await assertConversationReadAccess(request, reply, body.conversationId);
       if (!access) return;
-      if (!(await assertPrivacyAllowsAi(request, reply, body.conversationId))) return;
-      const result = await generateAiOutput({ orgId: request.user!.orgId, conversationId: body.conversationId, messageId: body.messageId, type: 'reply_draft' });
+      const grant = await authorizeConversationAiForRoute(request, reply, body.conversationId, 'reply');
+      if (!grant) return;
+      const result = await generateAiOutput({ orgId: request.user!.orgId, conversationId: body.conversationId, messageId: body.messageId, type: 'reply_draft', grant });
       if (access.contactId) {
         void import('./customer-summary-service.js')
           .then(({ updateCustomerSummary }) => updateCustomerSummary({
             orgId: request.user!.orgId,
             contactId: access.contactId!,
             conversationId: body.conversationId!,
+            grant,
           }))
           .catch(() => {});
       }
@@ -186,8 +218,9 @@ export async function aiRoutes(app: FastifyInstance) {
   app.post('/api/v1/ai/summarize/:id', { preHandler: requireZaloAccess('read') }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
-      if (!(await assertPrivacyAllowsAi(request, reply, id))) return;
-      return await generateAiOutput({ orgId: request.user!.orgId, conversationId: id, type: 'summary' });
+      const grant = await authorizeConversationAiForRoute(request, reply, id, 'summary');
+      if (!grant) return;
+      return await generateAiOutput({ orgId: request.user!.orgId, conversationId: id, type: 'summary', grant });
     } catch (err) {
       logger.error('[ai] Summary error:', err);
       return sendHandledError(reply, err, 'Failed to summarize conversation');
@@ -197,8 +230,9 @@ export async function aiRoutes(app: FastifyInstance) {
   app.post('/api/v1/ai/sentiment/:id', { preHandler: requireZaloAccess('read') }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
-      if (!(await assertPrivacyAllowsAi(request, reply, id))) return;
-      return await generateAiOutput({ orgId: request.user!.orgId, conversationId: id, type: 'sentiment' });
+      const grant = await authorizeConversationAiForRoute(request, reply, id, 'sentiment');
+      if (!grant) return;
+      return await generateAiOutput({ orgId: request.user!.orgId, conversationId: id, type: 'sentiment', grant });
     } catch (err) {
       logger.error('[ai] Sentiment error:', err);
       return sendHandledError(reply, err, 'Failed to analyze sentiment');
@@ -319,7 +353,13 @@ export async function aiRoutes(app: FastifyInstance) {
       const body = request.body as { text?: string };
       if (!body?.text?.trim()) return reply.status(400).send({ error: 'text is required' });
       if (body.text.length > 3000) return reply.status(400).send({ error: 'Đoạn text quá dài (tối đa 3000 ký tự)' });
-      return await aiFormatRichText({ orgId: request.user!.orgId, rawText: body.text });
+      const grant = await authorizeAiData({
+        orgId: request.user!.orgId,
+        scope: 'operator_text',
+        purpose: 'format_rich',
+        actor: { mode: 'user', privacyContext: { viewerUserId: request.user!.id, orgId: request.user!.orgId, privacyUnlocked: false } },
+      });
+      return await aiFormatRichText({ orgId: request.user!.orgId, rawText: body.text, grant });
     } catch (err) {
       logger.error('[ai] Format-rich error:', err);
       return sendHandledError(reply, err, 'Không format được tin bằng AI');

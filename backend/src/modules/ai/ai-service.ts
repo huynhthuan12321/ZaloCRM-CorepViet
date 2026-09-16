@@ -3,20 +3,34 @@
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { config } from '../../config/index.js';
 import { logger } from '../../shared/utils/logger.js';
-import { getProviderConfig, getAvailableProviders, resolveProviderApiKey, getProviderBaseUrl } from './provider-registry.js';
-import { generateWithAnthropic } from './providers/anthropic.js';
-import { generateWithGemini } from './providers/gemini.js';
-import { generateWithOpenaiCompat } from './providers/openai-compat.js';
+import { getAvailableProviders, resolveProviderApiKey } from './provider-registry.js';
 import { buildReplyDraftPrompt } from './prompts/reply-draft.js';
 import { buildSummaryPrompt } from './prompts/summary.js';
 import { buildSentimentPrompt } from './prompts/sentiment.js';
 import { parseAppointmentRuleBased } from './appointment-fallback-parser.js';
 import { retrieveRelevantChunks } from './knowledge/knowledge-service.js';
+import { executeAiGeneration } from './ai-generation-executor.js';
+import type { AiDataGrant } from './ai-privacy-guard.js';
+import { AiCircuitOpenError } from './ai-circuit-breaker.js';
+import { addSpan, endAiTrace, endSpan, startAiTrace, type AiTraceContext } from './observability/ai-tracer.js';
+import type { AiOperation, SafeAiErrorType } from './observability/ai-trace-contract.js';
 
 export type AiTaskType = 'reply_draft' | 'summary' | 'sentiment';
 
 type MessageContext = { senderType: string; senderName: string | null; content: string | null; sentAt: Date };
 type SentimentResult = { label: 'positive' | 'neutral' | 'negative'; confidence: number; reason: string };
+
+function mapProviderErrorType(err: unknown): SafeAiErrorType {
+  if (err instanceof AiCircuitOpenError) return 'provider_circuit_open';
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  if (message.includes('timeout')) return 'provider_timeout';
+  if (message.includes('429') || message.includes('rate')) return 'provider_rate_limit';
+  if (message.includes('401') || message.includes('403') || message.includes('auth') || message.includes('key')) return 'provider_auth';
+  if (message.includes('500') || message.includes('502') || message.includes('503')) return 'provider_server';
+  if (message.includes('quota')) return 'quota_exhausted';
+  if (message.includes('configured') || message.includes('disabled')) return 'config_missing';
+  return 'provider_unknown';
+}
 
 function detectLanguage(text: string): 'vi' | 'en' {
   if (/[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text)) return 'vi';
@@ -39,9 +53,7 @@ function buildConversationContext(messages: MessageContext[]) {
     .join('\n');
 }
 
-// M53 2026-05-30: exported để ai-virtual-chat-service reuse
 export async function getProviderApiKey(orgId: string, provider: string) {
-  /* Ưu tiên key per-org (UI, mã hoá) → legacy plain → env fallback. */
   return resolveProviderApiKey(orgId, provider);
 }
 
@@ -92,7 +104,6 @@ async function loadConversation(conversationId: string, orgId: string) {
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, orgId },
     include: {
-      // Hồ sơ + nhu cầu khách cho reply_draft (metadata.productNeed nếu có).
       contact: {
         select: {
           fullName: true, phone: true, gender: true, birthYear: true,
@@ -112,24 +123,6 @@ async function loadConversation(conversationId: string, orgId: string) {
   return { ...conversation, messages: [...conversation.messages].reverse() };
 }
 
-// M53 2026-05-30: exported để ai-virtual-chat-service reuse
-export async function generateText(provider: string, apiKey: string, model: string, system: string, prompt: string, maxTokens?: number, baseUrlOverride?: string) {
-  const providerDef = getProviderConfig(provider);
-  const baseUrl = baseUrlOverride || providerDef?.baseUrl || '';
-
-  if (provider === 'anthropic') return generateWithAnthropic(baseUrl, apiKey, model, system, prompt, maxTokens);
-  if (provider === 'gemini') return generateWithGemini(baseUrl, apiKey, model, system, prompt, maxTokens);
-
-  /* OpenAI, Qwen, Kimi, DeepSeek all use OpenAI-compatible chat/completions API */
-  if (provider === 'openai') return generateWithOpenaiCompat(`${baseUrl}/v1/chat/completions`, apiKey, model, system, prompt, maxTokens, 'max_completion_tokens');
-  if (provider === 'qwen') return generateWithOpenaiCompat(`${baseUrl}/compatible-mode/v1/chat/completions`, apiKey, model, system, prompt, maxTokens);
-  if (provider === 'kimi') return generateWithOpenaiCompat(`${baseUrl}/v1/chat/completions`, apiKey, model, system, prompt, maxTokens);
-  // DeepSeek: base https://api.deepseek.com → /chat/completions (max_tokens chuẩn OpenAI).
-  if (provider === 'deepseek') return generateWithOpenaiCompat(`${baseUrl}/chat/completions`, apiKey, model, system, prompt, maxTokens);
-
-  throw new Error(`Unsupported AI provider: ${provider}`);
-}
-
 async function saveSuggestion(input: { orgId: string; conversationId: string | null; messageId?: string; type: AiTaskType; content: string; confidence: number }) {
   return prisma.aiSuggestion.create({
     data: {
@@ -143,20 +136,32 @@ async function saveSuggestion(input: { orgId: string; conversationId: string | n
   });
 }
 
-export async function generateAiOutput(input: { orgId: string; conversationId: string; type: AiTaskType; messageId?: string }) {
-  const [currentConfig, conversation] = await Promise.all([
-    getAiConfig(input.orgId),
-    loadConversation(input.conversationId, input.orgId),
-  ]);
+export async function generateAiOutput(input: { orgId: string; conversationId: string; type: AiTaskType; messageId?: string; grant: AiDataGrant; trace?: AiTraceContext }) {
+  const operation: AiOperation = input.type === 'reply_draft' ? 'reply' : input.type;
+  const ownsTrace = !input.trace;
+  const trace = input.trace ?? startAiTrace({ operation, orgId: input.orgId, conversationId: input.conversationId, channel: 'zalo' });
+  let currentConfig: Awaited<ReturnType<typeof getAiConfig>> | null = null;
+  let kbSources: string[] = [];
+  try {
+    const loadSpan = addSpan(trace, 'load_context');
+    const [loadedConfig, conversation] = await Promise.all([
+      getAiConfig(input.orgId),
+      loadConversation(input.conversationId, input.orgId),
+    ]);
+    endSpan(loadSpan);
+    currentConfig = loadedConfig;
 
-  if (!currentConfig.enabled) throw new Error('AI is disabled for this organization');
+    if (!currentConfig.enabled) {
+      if (ownsTrace) endAiTrace(trace, { status: 'disabled', provider: currentConfig.provider, model: currentConfig.model });
+      throw new Error('AI is disabled for this organization');
+    }
 
   // Atomic quota check — count inside transaction to prevent TOCTOU race
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const withinQuota = await tenantTransaction(async (tx) => {
     const usedToday = await tx.aiSuggestion.count({ where: { orgId: input.orgId, createdAt: { gte: startOfDay } } });
-    return usedToday < currentConfig.maxDaily;
+    return usedToday < currentConfig!.maxDaily;
   });
   if (!withinQuota) throw new Error('AI daily quota exceeded');
 
@@ -168,9 +173,7 @@ export async function generateAiOutput(input: { orgId: string; conversationId: s
   const customerName = conversation.contact?.fullName || 'customer';
 
   let userPrompt: string;
-  let kbSources: string[] = [];
-
-  if (input.type === 'reply_draft') {
+    if (input.type === 'reply_draft') {
     // ── KB retrieval: query từ ~6 tin gần nhất của KHÁCH (fallback: tin cuối bất kỳ).
     const customerMsgs = conversation.messages.filter((m) => m.senderType !== 'self' && m.content?.trim());
     const queryMsgs = customerMsgs.length > 0
@@ -179,7 +182,9 @@ export async function generateAiOutput(input: { orgId: string; conversationId: s
     const kbQuery = queryMsgs.map((m) => m.content!.trim()).join('\n');
 
     // Best-effort: KB rỗng / chưa cấu hình embedding / embed lỗi → [].
+    const retrieveSpan = addSpan(trace, 'retrieve_knowledge');
     const kbChunks = kbQuery ? await retrieveRelevantChunks({ orgId: input.orgId, query: kbQuery, topK: 10 }) : [];
+    endSpan(retrieveSpan);
     const cappedChunks = kbChunks.slice(0, 10).map((c) => ({ ...c, content: c.content.slice(0, 800) }));
     kbSources = [...new Set(cappedChunks.map((c) => c.docTitle))];
 
@@ -218,23 +223,34 @@ export async function generateAiOutput(input: { orgId: string; conversationId: s
       '<company_docs>', docsBlock, '</company_docs>',
       '<conversation_context>', `Customer: ${customerName}`, contextText, '</conversation_context>',
     );
-    userPrompt = parts.join('\n');
-  } else {
-    userPrompt = [
+      userPrompt = parts.join('\n');
+    } else {
+      userPrompt = [
       `<conversation_context>`,
       `Customer: ${customerName}`,
       contextText,
       `</conversation_context>`,
-    ].join('\n');
-  }
+      ].join('\n');
+    }
 
-  const system = input.type === 'reply_draft'
-    ? buildReplyDraftPrompt(language)
-    : input.type === 'summary'
-      ? buildSummaryPrompt(language)
-      : buildSentimentPrompt(language);
+    const buildPromptSpan = addSpan(trace, 'build_prompt');
+    const system = input.type === 'reply_draft'
+      ? buildReplyDraftPrompt(language)
+      : input.type === 'summary'
+        ? buildSummaryPrompt(language)
+        : buildSentimentPrompt(language);
+    endSpan(buildPromptSpan);
 
-  const raw = await generateText(currentConfig.provider, apiKey, currentConfig.model, system, userPrompt, undefined, await getProviderBaseUrl(input.orgId, currentConfig.provider));
+    const raw = await executeAiGeneration({
+      grant: input.grant,
+      orgId: input.orgId,
+      provider: currentConfig.provider,
+      apiKey,
+      model: currentConfig.model,
+      system,
+      prompt: userPrompt,
+      trace,
+    });
 
   if (input.type === 'sentiment') {
     let parsed: SentimentResult;
@@ -256,22 +272,34 @@ export async function generateAiOutput(input: { orgId: string; conversationId: s
       content: JSON.stringify(normalized),
       confidence: normalized.confidence,
     });
-    return normalized;
-  }
+      if (ownsTrace) endAiTrace(trace, { status: 'generated', provider: currentConfig.provider, model: currentConfig.model });
+      return normalized;
+    }
 
-  const text = raw.trim();
-  await saveSuggestion({
-    orgId: input.orgId,
-    conversationId: input.conversationId,
-    messageId: input.messageId,
-    type: input.type,
-    content: text,
-    confidence: 0.8,
-  });
-  if (input.type === 'reply_draft') {
-    return { content: text, confidence: 0.8, sources: kbSources };
+    const text = raw.trim();
+    await saveSuggestion({
+      orgId: input.orgId,
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+      type: input.type,
+      content: text,
+      confidence: 0.8,
+    });
+    if (ownsTrace) endAiTrace(trace, { status: 'generated', provider: currentConfig.provider, model: currentConfig.model, sourceCount: kbSources.length });
+    if (input.type === 'reply_draft') {
+      return { content: text, confidence: 0.8, sources: kbSources };
+    }
+    return { content: text, confidence: 0.8 };
+  } catch (err) {
+    if (ownsTrace) endAiTrace(trace, {
+      status: currentConfig?.enabled === false ? 'disabled' : 'provider_failed',
+      provider: currentConfig?.provider,
+      model: currentConfig?.model,
+      sourceCount: kbSources.length,
+      errorType: mapProviderErrorType(err),
+    });
+    throw err;
   }
-  return { content: text, confidence: 0.8 };
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -291,7 +319,8 @@ export type ParsedAppointment = {
   source?: 'ai' | 'fallback'; // 'ai'=Gemini OK, 'fallback'=rule-based (AI fail/quota)
 };
 
-export async function parseAppointmentFromText(input: { orgId: string; text: string; now?: Date }): Promise<ParsedAppointment & { source?: 'ai' | 'fallback' } | null> {
+export async function parseAppointmentFromText(input: { orgId: string; text: string; now?: Date; grant: AiDataGrant }): Promise<ParsedAppointment & { source?: 'ai' | 'fallback' } | null> {
+  const trace = startAiTrace({ operation: 'appointment_parse', orgId: input.orgId, channel: 'crm_note' });
   const now = input.now || new Date();
   const currentConfig = await getAiConfig(input.orgId);
 
@@ -301,6 +330,7 @@ export async function parseAppointmentFromText(input: { orgId: string; text: str
   const fallback = parseAppointmentRuleBased(input.text, now);
 
   if (!currentConfig.enabled) {
+    endAiTrace(trace, { status: 'disabled', provider: currentConfig.provider, model: currentConfig.model });
     // AI tắt → chỉ trả fallback nếu có intent
     return fallback.hasIntent ? { ...fallback, source: 'fallback' } : null;
   }
@@ -341,7 +371,18 @@ export async function parseAppointmentFromText(input: { orgId: string; text: str
 
   let raw: string;
   try {
-    raw = await generateText(currentConfig.provider, apiKey, currentConfig.model, system, userPrompt, undefined, await getProviderBaseUrl(input.orgId, currentConfig.provider));
+    const buildPromptSpan = addSpan(trace, 'build_prompt');
+    endSpan(buildPromptSpan);
+    raw = await executeAiGeneration({
+      grant: input.grant,
+      orgId: input.orgId,
+      provider: currentConfig.provider,
+      apiKey,
+      model: currentConfig.model,
+      system,
+      prompt: userPrompt,
+      trace,
+    });
   } catch (err: unknown) {
     // AI fail (429 quota, timeout, network) → fallback to rule-based parser
     const msg = err instanceof Error ? err.message : String(err);
@@ -393,6 +434,7 @@ export async function parseAppointmentFromText(input: { orgId: string; text: str
   if (!timeOk && !missing.includes('time')) missing.push('time');
   if (!location && !missing.includes('location')) missing.push('location');
 
+  endAiTrace(trace, { status: 'generated', provider: currentConfig.provider, model: currentConfig.model });
   return {
     date: dateOk ? parsed.date! : null,
     time: timeOk ? parsed.time! : null,
@@ -623,12 +665,19 @@ export function aiGenerateSalesHandoffMessage(input: SalesHandoffInput): SalesHa
   return { content, source: 'template' };
 }
 
-export async function aiFormatRichText(input: { orgId: string; rawText: string }): Promise<AiFormatResult> {
+export async function aiFormatRichText(input: { orgId: string; rawText: string; grant: AiDataGrant }): Promise<AiFormatResult> {
+  const trace = startAiTrace({ operation: 'format_rich', orgId: input.orgId, channel: 'editor' });
   const text = (input.rawText || '').toString();
-  if (!text.trim()) return { text, styles: [], source: 'fallback' };
+  if (!text.trim()) {
+    endAiTrace(trace, { status: 'fallback' });
+    return { text, styles: [], source: 'fallback' };
+  }
 
   const currentConfig = await getAiConfig(input.orgId);
-  if (!currentConfig.enabled) return { text, styles: [], source: 'fallback' };
+  if (!currentConfig.enabled) {
+    endAiTrace(trace, { status: 'disabled', provider: currentConfig.provider, model: currentConfig.model });
+    return { text, styles: [], source: 'fallback' };
+  }
 
   // Quota check (cùng counter với các AI task khác)
   const startOfDay = new Date();
@@ -637,13 +686,28 @@ export async function aiFormatRichText(input: { orgId: string; rawText: string }
   if (usedToday >= currentConfig.maxDaily) throw new Error('AI daily quota exceeded');
 
   const apiKey = await getProviderApiKey(input.orgId, currentConfig.provider);
-  if (!apiKey) return { text, styles: [], source: 'fallback' };
+  if (!apiKey) {
+    endAiTrace(trace, { status: 'fallback', provider: currentConfig.provider, model: currentConfig.model, errorType: 'config_missing' });
+    return { text, styles: [], source: 'fallback' };
+  }
 
   try {
     // 2026-05-21 fix: cap đủ cho JSON output dài (text + nhiều style overlap per range).
     // Test với đoạn sản phẩm 800 chars input → Gemini muốn trả ~7900 chars JSON ≈ 5000 tokens.
     // Set 8000 = sát limit Gemini 2.5 Flash (8192) + buffer. Nếu vẫn cap → cần shrink prompt.
-    const raw = await generateText(currentConfig.provider, apiKey, currentConfig.model, AI_FORMAT_SYSTEM_PROMPT, text, 8000, await getProviderBaseUrl(input.orgId, currentConfig.provider));
+    const buildPromptSpan = addSpan(trace, 'build_prompt');
+    endSpan(buildPromptSpan);
+    const raw = await executeAiGeneration({
+      grant: input.grant,
+      orgId: input.orgId,
+      provider: currentConfig.provider,
+      apiKey,
+      model: currentConfig.model,
+      system: AI_FORMAT_SYSTEM_PROMPT,
+      prompt: text,
+      maxTokens: 8000,
+      trace,
+    });
 
     let parsed: { ranges?: unknown } | null = null;
     try {
@@ -657,6 +721,7 @@ export async function aiFormatRichText(input: { orgId: string; rawText: string }
       parsed = JSON.parse(cleaned);
     } catch (e) {
       logger.warn(`[ai-format-rich] JSON parse fail (len=${raw.length}): ${raw.slice(0, 300)}... [end:${raw.slice(-100)}]`);
+      endAiTrace(trace, { status: 'fallback', provider: currentConfig.provider, model: currentConfig.model, errorType: 'provider_unknown' });
       return { text, styles: [], source: 'fallback' };
     }
     // v4: phrase-based → BE tự indexOf → offsets chính xác 100%
@@ -671,9 +736,11 @@ export async function aiFormatRichText(input: { orgId: string; rawText: string }
       confidence: 0.85,
     }).catch(() => {});
 
+    endAiTrace(trace, { status: 'generated', provider: currentConfig.provider, model: currentConfig.model });
     return { text, styles, source: 'ai' };
   } catch (err) {
     logger.warn('[ai-format-rich] AI call failed:', err);
+    endAiTrace(trace, { status: 'fallback', provider: currentConfig.provider, model: currentConfig.model, errorType: mapProviderErrorType(err) });
     return { text, styles: [], source: 'fallback' };
   }
 }

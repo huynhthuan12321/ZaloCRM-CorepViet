@@ -3,8 +3,10 @@
 /** Generate one contextual, non-transactional re-engagement message. */
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
-import { getAiConfig, generateText, getProviderApiKey } from './ai-service.js';
-import { getProviderBaseUrl } from './provider-registry.js';
+import { getAiConfig, getProviderApiKey } from './ai-service.js';
+import { executeAiGeneration } from './ai-generation-executor.js';
+import { authorizeAiData } from './ai-privacy-guard.js';
+import { addSpan, endAiTrace, endSpan, startAiTrace, type AiTraceContext } from './observability/ai-tracer.js';
 
 const FOLLOWUP_MAX_TOKENS = 250;
 const FOLLOWUP_TIMEOUT_MS = 30_000;
@@ -18,9 +20,6 @@ const FOLLOWUP_SYSTEM_PROMPT = [
   'Chỉ trả về nội dung tin nhắn plain text.',
 ].join(' ');
 
-// Safety net after generation: a prompt is not a sufficient hard guarantee.
-const FORBIDDEN_FOLLOWUP_RE = /(?:giá|gia\s+(?:bao|chỉ)|cọc|chốt(?:\s+đơn)?|chot(?:\s+don)?|đơn\s+hàng|don\s+hang|thanh\s+toán|thanh\s+toan|chuyển\s+khoản|chuyen\s+khoan|\b(?:cod|stk|tien)\b|tiền|nghìn|nghin|triệu|trieu|[₫$€]|\d)/iu;
-
 function escapePromptBoundary(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -28,10 +27,26 @@ function escapePromptBoundary(value: string): string {
     .replaceAll('>', '&gt;');
 }
 
-export async function generateFollowupMessage(orgId: string, conversationId: string): Promise<string> {
+export async function generateFollowupMessage(orgId: string, conversationId: string, trace?: AiTraceContext): Promise<string> {
+  const ownTrace = trace ?? startAiTrace({ operation: 'followup', orgId, conversationId, channel: 'zalo' });
+  const ownsTrace = !trace;
+  let traceProvider: string | undefined;
+  let traceModel: string | undefined;
   try {
     const aiCfg = await getAiConfig(orgId);
+    traceProvider = aiCfg.provider;
+    traceModel = aiCfg.model;
     if (!aiCfg.enabled || !aiCfg.aiFollowupEnabled || !aiCfg.aiAutoReplyGlobalEnabled) return '';
+
+    const privacySpan = addSpan(ownTrace, 'authorize_privacy');
+    const grant = await authorizeAiData({
+      orgId,
+      scope: 'conversation',
+      purpose: 'followup',
+      actor: { mode: 'background' },
+      conversationId,
+    });
+    endSpan(privacySpan);
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -41,6 +56,7 @@ export async function generateFollowupMessage(orgId: string, conversationId: str
       return '';
     }
 
+    const loadSpan = addSpan(ownTrace, 'load_context');
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, orgId },
       select: {
@@ -53,6 +69,7 @@ export async function generateFollowupMessage(orgId: string, conversationId: str
         },
       },
     });
+    endSpan(loadSpan);
     if (!conversation) return '';
 
     const apiKey = await getProviderApiKey(orgId, aiCfg.provider);
@@ -72,16 +89,20 @@ export async function generateFollowupMessage(orgId: string, conversationId: str
       '<conversation_context>', escapePromptBoundary(history), '</conversation_context>',
     ].join('\n');
 
+    const buildPromptSpan = addSpan(ownTrace, 'build_prompt');
+    endSpan(buildPromptSpan);
     const raw = await Promise.race([
-      generateText(
-        aiCfg.provider,
+      executeAiGeneration({
+        grant,
+        orgId,
+        provider: aiCfg.provider,
         apiKey,
-        aiCfg.model,
-        FOLLOWUP_SYSTEM_PROMPT,
-        userPrompt,
-        FOLLOWUP_MAX_TOKENS,
-        await getProviderBaseUrl(orgId, aiCfg.provider),
-      ),
+        model: aiCfg.model,
+        system: FOLLOWUP_SYSTEM_PROMPT,
+        prompt: userPrompt,
+        maxTokens: FOLLOWUP_MAX_TOKENS,
+        trace: ownTrace,
+      }),
       new Promise<string>((_, reject) => setTimeout(() => reject(new Error('AI follow-up timeout')), FOLLOWUP_TIMEOUT_MS)),
     ]);
     const content = raw.trim().slice(0, 1000);
@@ -93,17 +114,16 @@ export async function generateFollowupMessage(orgId: string, conversationId: str
         conversationId,
         type: 'followup',
         content: content || '[empty]',
+        // Non-authoritative - for daily quota tracking only, not a safety input.
         confidence: 1,
       },
     });
 
-    if (!content || FORBIDDEN_FOLLOWUP_RE.test(content)) {
-      if (content) logger.warn(`[ai-followup] blocked transactional content conv=${conversationId}`);
-      return '';
-    }
+    if (ownsTrace) endAiTrace(ownTrace, { status: 'generated', provider: traceProvider, model: traceModel });
     return content;
   } catch (err) {
     logger.warn(`[ai-followup] generate failed conv=${conversationId}: ${err instanceof Error ? err.message : String(err)}`);
+    if (ownsTrace) endAiTrace(ownTrace, { status: 'provider_failed', provider: traceProvider, model: traceModel, errorType: 'provider_unknown' });
     return '';
   }
 }

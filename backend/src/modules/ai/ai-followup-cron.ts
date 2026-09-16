@@ -13,6 +13,9 @@ import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { assertAiCapability, auditAiAction } from './ai-capabilities.js';
 import { isWithinAutoReplyWindow } from './ai-auto-reply-service.js';
 import { generateFollowupMessage } from './ai-followup-service.js';
+import { decideFollowupSendPolicy } from './ai-send-policy.js';
+import { addSpan, endAiTrace, endSpan, startAiTrace } from './observability/ai-tracer.js';
+import type { AiTraceStatus, SafeAiErrorType } from './observability/ai-trace-contract.js';
 
 const MAX_CONVERSATIONS_PER_ORG = 20;
 const CANDIDATE_SCAN_LIMIT = 100;
@@ -199,8 +202,22 @@ async function processCandidate(
   anchor: FollowupAnchor,
   io: Server | null,
 ): Promise<boolean> {
-  const content = await generateFollowupMessage(conversation.orgId, conversation.id);
-  if (!content) return false;
+  const trace = startAiTrace({ operation: 'followup', orgId: conversation.orgId, conversationId: conversation.id, contactId: conversation.contactId ?? undefined, channel: 'zalo' });
+  let traceStatus: AiTraceStatus = 'disabled';
+  let traceAutoSent = false;
+  let traceErrorType: SafeAiErrorType | undefined;
+  try {
+    const content = await generateFollowupMessage(conversation.orgId, conversation.id, trace);
+    if (!content) return false;
+    traceStatus = 'generated';
+    const initialPolicySpan = addSpan(trace, 'policy_evaluation');
+    const initialPolicy = decideFollowupSendPolicy(content);
+    endSpan(initialPolicySpan);
+    if (initialPolicy.action !== 'allow') {
+      traceStatus = 'policy_blocked';
+      logger.warn(`[ai-followup-cron] policy blocked conv=${conversation.id}: ${initialPolicy.reason}`);
+      return false;
+    }
 
   const delayMs = DELAY_MIN_MS + Math.floor(Math.random() * (DELAY_MAX_MS - DELAY_MIN_MS));
   await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -237,6 +254,14 @@ async function processCandidate(
 
   const latestAnchor = await findEligibleAnchor(conversation, latestConfig, new Date());
   if (!latestAnchor || latestAnchor.id !== anchor.id || latestAnchor.sentAt.getTime() !== anchor.sentAt.getTime()) return false;
+    const latestPolicySpan = addSpan(trace, 'policy_evaluation');
+    const latestPolicy = decideFollowupSendPolicy(content);
+    endSpan(latestPolicySpan);
+    if (latestPolicy.action !== 'allow') {
+      traceStatus = 'policy_blocked';
+      logger.warn(`[ai-followup-cron] post-delay policy blocked conv=${conversation.id}: ${latestPolicy.reason}`);
+      return false;
+    }
 
   assertAiCapability('send_auto_reply');
   let zaloMsgId = '';
@@ -244,18 +269,22 @@ async function processCandidate(
     logger.info(`[ai-followup-cron] [dry-run] conv=${conversation.id} text="${content.slice(0, 60)}"`);
   } else {
     try {
+      const sendSpan = addSpan(trace, 'send_zalo');
       const result = await zaloOps.sendMessage(
         conversation.zaloAccountId,
         conversation.externalThreadId!,
         0,
         { msg: content },
       );
+      endSpan(sendSpan);
       const parsed = result as unknown as {
         message?: { msgId?: number | string } | null;
         attachment?: Array<{ msgId?: number | string }>;
       };
       zaloMsgId = String(parsed?.message?.msgId ?? parsed?.attachment?.[0]?.msgId ?? '');
     } catch (err) {
+      traceStatus = 'send_failed';
+      traceErrorType = 'internal';
       logger.warn(`[ai-followup-cron] send rejected conv=${conversation.id}: ${err instanceof Error ? err.message : String(err)}`);
       return false;
     }
@@ -320,7 +349,12 @@ async function processCandidate(
   })).catch(() => {});
 
   logger.info(`[ai-followup-cron] sent conv=${conversation.id} msg=${message.id} delay=${Math.round(delayMs / 1000)}s`);
-  return true;
+    traceStatus = 'auto_sent';
+    traceAutoSent = true;
+    return true;
+  } finally {
+    endAiTrace(trace, { status: traceStatus, autoSent: traceAutoSent, errorType: traceErrorType });
+  }
 }
 
 function isAiAuto(message: { sentVia?: string | null; metadata?: unknown }): boolean {

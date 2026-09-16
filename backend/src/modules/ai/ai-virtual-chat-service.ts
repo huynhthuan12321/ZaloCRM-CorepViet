@@ -18,13 +18,15 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
-import { getAiConfig, getProviderApiKey, generateText } from './ai-service.js';
-import { getProviderBaseUrl } from './provider-registry.js';
+import { getAiConfig, getProviderApiKey } from './ai-service.js';
+import { executeAiGeneration } from './ai-generation-executor.js';
+import type { AiDataGrant } from './ai-privacy-guard.js';
 import { DEFAULT_VIRTUAL_CHAT_PROMPT } from './prompts/virtual-chat-assistant.js';
 import { safeParseEntities, type ExtractedEntities } from './schemas/extracted-entities.js';
 import { withTenant } from '../../shared/tenant/tenant-context.js';
 import { assertAiCapability, auditAiAction } from './ai-capabilities.js';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
+import { addSpan, endAiTrace, endSpan, startAiTrace } from './observability/ai-tracer.js';
 
 const THROTTLE_MS = 5_000;
 const throttleMap = new Map<string, number>(); // in-memory fallback (no Redis)
@@ -34,6 +36,7 @@ interface TriggerInput {
   conversationId: string;
   triggerMessageId: string;
   orgId: string;
+  grant: AiDataGrant;
 }
 
 /**
@@ -56,6 +59,7 @@ async function runVirtualChatAiReply(
 ): Promise<void> {
   try {
     const { conversationId, triggerMessageId, orgId } = input;
+    const trace = startAiTrace({ operation: 'virtual_chat', orgId, conversationId, channel: 'virtual' });
 
     // 1. Throttle 5s/conversation
     const lastFire = throttleMap.get(conversationId) ?? 0;
@@ -97,7 +101,9 @@ async function runVirtualChatAiReply(
     }
 
     // 4. Build context
+    const loadSpan = addSpan(trace, 'load_context');
     const ctx = await buildContext(conversationId, orgId);
+    endSpan(loadSpan);
     if (!ctx) return;
 
     const apiKey = await getProviderApiKey(orgId, config.provider);
@@ -107,19 +113,32 @@ async function runVirtualChatAiReply(
     }
 
     const systemPrompt = config.aiAssistantPromptTemplate || DEFAULT_VIRTUAL_CHAT_PROMPT;
+    const buildPromptSpan = addSpan(trace, 'build_prompt');
     const userPrompt = buildUserPrompt(ctx);
+    endSpan(buildPromptSpan);
 
     // 5. Generate AI reply with timeout
     let raw: string;
     try {
       raw = await Promise.race([
-        generateText(config.provider, apiKey, config.model, systemPrompt, userPrompt, 800, await getProviderBaseUrl(orgId, config.provider)),
+        executeAiGeneration({
+          grant: input.grant,
+          orgId,
+          provider: config.provider,
+          apiKey,
+          model: config.model,
+          system: systemPrompt,
+          prompt: userPrompt,
+          maxTokens: 800,
+          trace,
+        }),
         new Promise<string>((_, reject) =>
           setTimeout(() => reject(new Error('AI timeout')), AI_TIMEOUT_MS),
         ),
       ]);
     } catch (err) {
       logger.warn(`[ai-virtual-chat] AI failed: ${err instanceof Error ? err.message : String(err)}`);
+      endAiTrace(trace, { status: 'provider_failed', provider: config.provider, model: config.model, errorType: 'provider_unknown' });
       return;
     }
 
@@ -197,6 +216,7 @@ async function runVirtualChatAiReply(
         entities,
       });
     }
+    endAiTrace(trace, { status: 'generated', provider: config.provider, model: config.model });
   } catch (err) {
     logger.error('[ai-virtual-chat] Trigger error:', err);
   }

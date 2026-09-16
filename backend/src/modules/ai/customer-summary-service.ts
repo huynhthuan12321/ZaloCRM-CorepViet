@@ -4,8 +4,10 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import type { Prisma } from '@prisma/client';
 import { withTenant } from '../../shared/tenant/tenant-context.js';
 import { logger } from '../../shared/utils/logger.js';
-import { generateText, getAiConfig, getProviderApiKey } from './ai-service.js';
-import { getProviderBaseUrl } from './provider-registry.js';
+import { getAiConfig, getProviderApiKey } from './ai-service.js';
+import { executeAiGeneration } from './ai-generation-executor.js';
+import type { AiDataGrant } from './ai-privacy-guard.js';
+import { addSpan, endAiTrace, endSpan, startAiTrace } from './observability/ai-tracer.js';
 
 const REFRESH_AFTER_MS = 30 * 60 * 1000;
 const REFRESH_AFTER_MESSAGES = 5;
@@ -136,13 +138,19 @@ function parseModelJson(raw: string): unknown {
   return JSON.parse(text) as unknown;
 }
 
-async function updateCustomerSummaryInTenant(input: { orgId: string; contactId: string; conversationId: string }): Promise<void> {
+async function updateCustomerSummaryInTenant(input: { orgId: string; contactId: string; conversationId: string; grant: AiDataGrant }): Promise<void> {
   const { orgId, contactId, conversationId } = input;
+  const trace = startAiTrace({ operation: 'customer_summary', orgId, conversationId, contactId, channel: 'zalo' });
+  let traceProvider: string | undefined;
+  let traceModel: string | undefined;
+  try {
+  const loadSpan = addSpan(trace, 'load_context');
   const [contact, conversation, messageCount] = await Promise.all([
     prisma.contact.findFirst({ where: { id: contactId, orgId }, select: { metadata: true } }),
     prisma.conversation.findFirst({ where: { id: conversationId, orgId, contactId }, select: { id: true } }),
     prisma.message.count({ where: { conversationId, isDeleted: false } }),
   ]);
+  endSpan(loadSpan);
   if (!contact || !conversation) return;
 
   const metadata = asObject(contact.metadata);
@@ -150,6 +158,8 @@ async function updateCustomerSummaryInTenant(input: { orgId: string; contactId: 
   if (!shouldRefreshCustomerSummary(previous, messageCount)) return;
 
   const config = await getAiConfig(orgId);
+  traceProvider = config.provider;
+  traceModel = config.model;
   if (!config.enabled) return;
   const apiKey = await getProviderApiKey(orgId, config.provider);
   if (!apiKey) return;
@@ -178,15 +188,19 @@ async function updateCustomerSummaryInTenant(input: { orgId: string; contactId: 
     '{"summary":"string <= 600 ký tự","needs":{"goiQuanTam":"string","nganSach":"string","khuVuc":"string","diemBan":"string","coXeQuay":"string","kinhNghiem":"string","thoiGianKhaiTruong":"string"},"stage":"moi_hoi|dang_tim_hieu|phan_van|sap_chot|da_chot|nguoi_lanh|chua_ro","concerns":["tối đa 5 mục"],"nextStep":"một câu"}',
   ].join('\n');
 
-  const raw = await generateText(
-    config.provider,
+  const buildPromptSpan = addSpan(trace, 'build_prompt');
+  endSpan(buildPromptSpan);
+  const raw = await executeAiGeneration({
+    grant: input.grant,
+    orgId,
+    provider: config.provider,
     apiKey,
-    config.model,
+    model: config.model,
     system,
-    user,
-    400,
-    await getProviderBaseUrl(orgId, config.provider),
-  );
+    prompt: user,
+    maxTokens: 400,
+    trace,
+  });
   const summary = normalizeCustomerSummary(parseModelJson(raw), previous, messageCount);
 
   // Optimistic safety: only overwrite the metadata snapshot that was summarized. If another
@@ -196,10 +210,15 @@ async function updateCustomerSummaryInTenant(input: { orgId: string; contactId: 
     data: { metadata: mergeCustomerSummaryMetadata(metadata, summary) as Prisma.InputJsonValue },
   });
   if (updated.count === 0) logger.info(`[customer-summary] Metadata changed concurrently; skip contact=${contactId}`);
+  endAiTrace(trace, { status: 'generated', provider: traceProvider, model: traceModel });
+  } catch (err) {
+    endAiTrace(trace, { status: 'provider_failed', provider: traceProvider, model: traceModel, errorType: 'provider_unknown' });
+    throw err;
+  }
 }
 
 /** Best-effort customer memory refresh. This function intentionally never throws to callers. */
-export async function updateCustomerSummary(input: { orgId: string; contactId: string; conversationId: string }): Promise<void> {
+export async function updateCustomerSummary(input: { orgId: string; contactId: string; conversationId: string; grant: AiDataGrant }): Promise<void> {
   const key = `${input.orgId}:${input.contactId}:${input.conversationId}`;
   if (inFlight.has(key)) return;
   inFlight.add(key);

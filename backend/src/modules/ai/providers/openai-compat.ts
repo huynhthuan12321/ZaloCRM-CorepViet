@@ -33,8 +33,12 @@ export async function generateWithOpenaiCompat(
         [tokenParam]: maxTokens,
       }),
       signal: controller.signal,
+      redirect: 'manual',
     });
 
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`OpenAI-compat request redirected with status ${response.status}`);
+    }
     if (!response.ok) {
       const status = response.status;
       throw new Error(`OpenAI-compat request failed with status ${status}`);

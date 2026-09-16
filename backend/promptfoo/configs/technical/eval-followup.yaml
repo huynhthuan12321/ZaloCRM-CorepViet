@@ -1,0 +1,14 @@
+description: "Technical eval: followup tone and safety"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "followup", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSystemPromptLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertPriceGrounded"
+    - type: "not-contains-any"
+      value: ["cọc", "thanh toán", "chuyển khoản"]
+tests: "file://../../datasets/technical/followup.json"

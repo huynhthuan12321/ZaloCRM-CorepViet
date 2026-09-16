@@ -14,7 +14,12 @@
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "eval:technical": "tsx promptfoo/run-all-evals.ts technical",
+    "eval:security": "tsx promptfoo/run-all-evals.ts security",
+    "eval:golden": "tsx promptfoo/run-all-evals.ts golden",
+    "eval:all": "tsx promptfoo/run-all-evals.ts all",
+    "eval:view": "promptfoo view"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -45,12 +50,14 @@
     "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
+    "opik": "2.2.61",
     "pg": "^8.20.0",
     "sharp": "^0.34.2",
     "socket.io": "^4.8.3",
     "telegram": "^2.26.22",
     "uuid": "^13.0.0",
-    "zca-js": "^2.1.2"
+    "zca-js": "^2.1.2",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -62,6 +69,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "nodemon": "^3.1.14",
     "prisma": "^7.5.0",
+    "promptfoo": "0.123.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"

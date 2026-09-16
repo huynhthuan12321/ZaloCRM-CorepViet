@@ -15,6 +15,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { parseAppointmentFromText } from '../ai/ai-service.js';
+import { authorizeAiData } from '../ai/ai-privacy-guard.js';
 import { assertContactVisible } from './contact-scope.js';
 
 const NOTE_INCLUDE = {
@@ -204,7 +205,13 @@ export async function notesRoutes(app: FastifyInstance): Promise<void> {
       const note = await prisma.note.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true, body: true } });
       if (!note) return reply.status(404).send({ error: 'Note not found' });
 
-      const parsed = await parseAppointmentFromText({ orgId: user.orgId, text: note.body });
+      const grant = await authorizeAiData({
+        orgId: user.orgId,
+        scope: 'crm_note',
+        purpose: 'appointment_parse',
+        actor: { mode: 'user', privacyContext: { viewerUserId: user.id, orgId: user.orgId, privacyUnlocked: false } },
+      });
+      const parsed = await parseAppointmentFromText({ orgId: user.orgId, text: note.body, grant });
       if (!parsed || !parsed.hasIntent) {
         return { parsed: null, reason: 'Không phát hiện ý định hẹn rõ ràng trong ghi chú này' };
       }

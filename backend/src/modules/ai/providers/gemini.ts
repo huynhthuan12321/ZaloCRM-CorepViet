@@ -27,8 +27,12 @@ export async function generateWithGemini(baseUrl: string, apiKey: string, model:
         generationConfig,
       }),
       signal: controller.signal,
+      redirect: 'manual',
     });
 
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`Gemini request redirected with status ${response.status}`);
+    }
     if (!response.ok) {
       const status = response.status;
       const errBody = await response.text().catch(() => '');

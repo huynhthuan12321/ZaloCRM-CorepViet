@@ -28,9 +28,13 @@ import { fileURLToPath } from 'node:url';
 
 import { Prisma } from '@prisma/client';
 import { config } from './config/index.js';
+import { validateProductionConfig } from './config/validate-production-config.js';
 import { prisma } from './shared/database/prisma-client.js';
 import { decryptSessionData } from './shared/crypto/session-crypto.js';
 import { logger } from './shared/utils/logger.js';
+import { sanitizeRequestId } from './shared/http/request-id.js';
+import { classifyError } from './shared/http/error-classifier.js';
+import { buildLiveHealth, buildReadyHealth } from './shared/http/health.js';
 import { authRoutes } from './modules/auth/auth-routes.js';
 import { orgBrandingRoutes } from './modules/branding/org-branding-routes.js';
 import { zaloRoutes } from './modules/zalo/zalo-routes.js';
@@ -95,6 +99,7 @@ import { chatOperationsRoutes, registerChatSocketHandlers } from './modules/chat
 import { groupRoutes } from './modules/zalo/group-routes.js';
 import { groupScanRoutes } from './modules/zalo/group-scan-routes.js';
 import { startGroupScanWorker, stopGroupScanWorker } from './modules/zalo/group-scan-queue.js';
+import { flushOpik, initOpikExporter } from './modules/ai/observability/opik-exporter.js';
 import { groupModerationRoutes } from './modules/zalo/group-moderation-routes.js';
 import { friendRoutes } from './modules/zalo/friend-routes.js';
 import { profileRoutes } from './modules/zalo/profile-routes.js';
@@ -102,6 +107,7 @@ import { credentialRoutes } from './modules/zalo/credential-routes.js';
 import { eventBuffer } from './shared/event-buffer.js';
 import { systemNotifyRoutes } from './modules/system-notifications/system-notify-routes.js';
 import { userCreateWithZaloRoutes } from './modules/system-notifications/user-create-with-zalo-routes.js';
+import { isBullMQRedisHealthy } from './shared/queue/redis-connection.js';
 // Lead Pool → extension bundle (src/_ee/lead-pool).
 // Facebook Lead Ads (Multi-Source + Form ingestion) → extension bundle (src/_ee/facebook).
 
@@ -134,12 +140,22 @@ async function loadExtension(): Promise<ExtensionBundle | null> {
 }
 
 async function bootstrap() {
+  validateProductionConfig();
   // trustProxy 2026-06-11 — app chạy sau Cloudflare + reverse proxy (nginx/Caddy).
   // KHÔNG bật → Fastify thấy request.ip = IP proxy DUY NHẤT cho mọi user → rate-limit
   // theo IP biến thành GLOBAL (500/phút CHUNG cho cả công ty) → 20-25 sale thao tác
   // cùng lúc chạm trần ngay → 429 hàng loạt + chat lag. Bật để đọc X-Forwarded-For
   // (IP thật) làm fallback khi request không có token.
-  const app = Fastify({ logger: false, trustProxy: true });
+  const app = Fastify({
+    logger: false,
+    trustProxy: true,
+    genReqId: (request) => sanitizeRequestId(request.headers['x-request-id']),
+  });
+
+  app.addHook('onRequest', (request, reply, done) => {
+    reply.header('x-request-id', request.id);
+    done();
+  });
 
   // ── Plugins ──────────────────────────────────────────────────────────────
 
@@ -364,7 +380,19 @@ async function bootstrap() {
   // Open-core: extension route registrations (no-op in Community edition).
   await ee?.registerExtensionRoutes?.(app);
 
-  // Liveness/readiness probe — also checks DB connectivity
+  // Liveness/readiness probes. /health remains backward compatible.
+  app.get('/health/live', async () => {
+    return buildLiveHealth();
+  });
+
+  app.get('/health/ready', async (_request, reply) => {
+    const ready = await buildReadyHealth({
+      checkDb: async () => { await prisma.$queryRaw`SELECT 1`; },
+      checkRedis: isBullMQRedisHealthy,
+    });
+    return reply.status(ready.statusCode).send(ready.body);
+  });
+
   app.get('/health', async () => {
     try {
       await prisma.$queryRaw`SELECT 1`;
@@ -391,10 +419,17 @@ async function bootstrap() {
 
   // ── Error handler ─────────────────────────────────────────────────────────
 
-  app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
-    logger.error('Request error:', error.message);
-    reply.status(error.statusCode ?? 500).send({
-      error: error.message || 'Internal Server Error',
+  app.setErrorHandler((error: Error & { statusCode?: number; code?: unknown }, request, reply) => {
+    const classified = classifyError(error);
+    const prefix = `[req:${request.id}] Request error: ${error.message || classified.clientMessage}`;
+    if (classified.logLevel === 'warn') {
+      logger.warn(prefix);
+    } else {
+      logger.error(prefix, classified.includeStack ? (error.stack ?? error) : error.message);
+    }
+    reply.status(classified.statusCode).send({
+      error: classified.clientMessage,
+      requestId: request.id,
     });
   });
 
@@ -504,6 +539,7 @@ async function bootstrap() {
     // sweepers, list enrichment, nick workers) → started by the extension bundle.
     // Open-core: extension cron/worker startups (no-op in Community edition).
     await ee?.startExtensionJobs?.(app, io);
+    await initOpikExporter().catch((e) => logger.warn('[opik] init failed:', e));
 
     // 2026-06-19 — Cầu Telegram (Phase 1): subscribe bridge-bus, mirror tin Zalo→Telegram.
     // Core feature (outside _ee) — chạy ở cả Extension lẫn Community.
@@ -528,6 +564,7 @@ async function bootstrap() {
         process.exit(1);
       }, 10_000);
       force.unref();
+      await flushOpik().catch((e) => logger.warn('[shutdown] opik flush loi:', e));
       try {
         await stopGroupScanWorker().catch((e) => logger.warn('[shutdown] stopGroupScanWorker lỗi:', e));
         await app.close().catch((e) => logger.warn('[shutdown] app.close lỗi:', e));

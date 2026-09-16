@@ -20,11 +20,15 @@ export async function generateWithAnthropic(baseUrl: string, apiKey: string, mod
         messages: [{ role: 'user', content: prompt }],
       }),
       signal: controller.signal,
+      redirect: 'manual',
     });
 
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`Anthropic request redirected with status ${response.status}`);
+    }
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      throw new Error(`Anthropic request failed (${response.status}): ${body}`);
+      throw new Error(`Anthropic request failed (${response.status}): ${body.slice(0, 200)}`);
     }
 
     const data = await response.json() as { content?: Array<{ type: string; text?: string }> };

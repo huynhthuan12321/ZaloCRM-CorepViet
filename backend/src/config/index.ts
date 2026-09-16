@@ -24,16 +24,34 @@ export function envValue(name: string): string | undefined {
   return (commentAt >= 0 ? trimmed.slice(0, commentAt) : trimmed).trim();
 }
 
+function parseOriginAllowlist(raw: string | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const item of (raw ?? '').split(',')) {
+    const value = item.trim();
+    if (!value) continue;
+    try {
+      const url = new URL(value);
+      out.add(url.origin);
+    } catch {
+      // Invalid allowlist entries are ignored so they cannot fail open.
+    }
+  }
+  return out;
+}
+
 function requireSecret(name: string, devFallback: string, value: string | undefined): string {
   if (isProd) {
-    if (!value || value === devFallback || value.length < 32) {
+    // PR-04 centralizes production fail-fast in validateProductionConfig().
+    // Never fall back to dev defaults when NODE_ENV=production.
+    if (!value || value === devFallback || value.length < 32) return '';
+    if (!value || value === devFallback || value!.length < 32) {
       // Fail-fast: better to crash boot than run prod with forgeable secrets.
       throw new Error(
         `[config] FATAL: ${name} must be set (≥32 chars, not the dev default) when NODE_ENV=production. ` +
         `Set ${name} in environment before starting the server.`,
       );
     }
-    return value;
+    return value || '';
   }
   return value || devFallback;
 }
@@ -112,6 +130,33 @@ export const config = {
   // Model: deepseek-chat (V3), deepseek-reasoner (R1). Key nhập trên UI hoặc env.
   deepseekBaseUrl: envValue('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com',
   deepseekAuthToken: envValue('DEEPSEEK_AUTH_TOKEN') || envValue('DEEPSEEK_API_KEY') || '',
+
+  aiProviderBaseUrlAllowlist: parseOriginAllowlist(envValue('AI_PROVIDER_BASE_URL_ALLOWLIST')),
+
+  // PR-04 production hardening: AI provider circuit breaker and per-org AI quota.
+  aiCircuitFailureThreshold: Math.max(1, Number(envValue('AI_CIRCUIT_FAILURE_THRESHOLD')) || 5),
+  aiCircuitCooldownMs: Math.max(1, Number(envValue('AI_CIRCUIT_COOLDOWN_MS')) || 30_000),
+  aiCircuitHalfOpenMax: Math.max(1, Number(envValue('AI_CIRCUIT_HALF_OPEN_MAX')) || 1),
+  aiRateLimitPerOrg: Math.max(1, Number(envValue('AI_RATE_LIMIT_PER_ORG')) || 60),
+  aiRateLimitWindowMs: Math.max(1, Number(envValue('AI_RATE_LIMIT_WINDOW_MS')) || 60_000),
+
+  // Opik observability (PR-02): disabled by default and metadata-only.
+  opikEnabled: envValue('OPIK_ENABLED') === 'true',
+  opikUrlOverride: envValue('OPIK_URL_OVERRIDE') || '',
+  opikApiKey: envValue('OPIK_API_KEY') || '',
+  opikWorkspace: envValue('OPIK_WORKSPACE') || '',
+  opikProjectName: envValue('OPIK_PROJECT_NAME') || 'zalocrm',
+  opikEnvironment: envValue('OPIK_ENVIRONMENT') || '',
+  opikSampleRate: Math.max(0, Math.min(1, Number(envValue('OPIK_SAMPLE_RATE')) || 0)),
+  opikHashSecret: envValue('OPIK_HASH_SECRET') || '',
+  opikBatchDelayMs: Number(envValue('OPIK_BATCH_DELAY_MS')) || 300,
+  opikFlushTimeoutMs: Number(envValue('OPIK_FLUSH_TIMEOUT_MS')) || 500,
+  opikMaxPending: Number(envValue('OPIK_MAX_PENDING')) || 1000,
+  opikLogLevel: envValue('OPIK_LOG_LEVEL') || 'WARN',
+
+  // Promptfoo evaluation (PR-03): dev/CI only. Production must never grant eval access.
+  promptfooEvalEnabled: envValue('PROMPTFOO_EVAL_ENABLED') === 'true',
+  promptfooEvalOrgId: envValue('PROMPTFOO_EVAL_ORG_ID') || '',
 
   isProduction: process.env.NODE_ENV === 'production',
 

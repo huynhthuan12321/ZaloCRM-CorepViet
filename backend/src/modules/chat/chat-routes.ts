@@ -21,6 +21,7 @@ import { applyContactAggregateFromMessage, applyFriendAggregate } from '../conta
 import { normalizePhone } from '../../shared/utils/phone.js';
 // M53 2026-05-30 — AI Trợ Lý cho Virtual Chat (KH no-Zalo)
 import { triggerVirtualChatAiReply } from '../ai/ai-virtual-chat-service.js';
+import { authorizeAiData } from '../ai/ai-privacy-guard.js';
 // M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual conv
 import { attachContactCollaboratorByUser } from '../contacts/contact-scope.js';
 // Fix 2026-06-03 — M11 optimistic badge cache (Anh báo "Sale CRM · Staff")
@@ -1665,10 +1666,24 @@ export async function chatRoutes(app: FastifyInstance) {
         });
 
         // M53 AI Trợ Lý — fire-and-forget, KHÔNG block response
-        void triggerVirtualChatAiReply(
-          { conversationId: id, triggerMessageId: message.id, orgId: user.orgId },
-          io,
-        );
+        void (async () => {
+          try {
+            const { buildPrivacyContext } = await import('../privacy/redact.js');
+            const grant = await authorizeAiData({
+              orgId: user.orgId,
+              scope: 'conversation',
+              purpose: 'virtual_chat',
+              actor: { mode: 'user', privacyContext: await buildPrivacyContext(request) },
+              conversationId: id,
+            });
+            await triggerVirtualChatAiReply(
+              { conversationId: id, triggerMessageId: message.id, orgId: user.orgId, grant },
+              io,
+            );
+          } catch (err) {
+            logger.warn(`[chat] virtual AI privacy denied conv=${id}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        })();
 
         // M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual.
         // Sale chăm KH qua chat = counter "Cùng chăm" +1 (idempotent).

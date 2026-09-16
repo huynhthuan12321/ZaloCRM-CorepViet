@@ -8,8 +8,10 @@
 import { prisma } from '../../../shared/database/prisma-client.js';
 import { chunkText } from './chunk-util.js';
 import { embedTexts, cosineSim } from './embedding-service.js';
-import { getAiConfig, getProviderApiKey, generateText } from '../ai-service.js';
-import { getProviderBaseUrl } from '../provider-registry.js';
+import { getAiConfig, getProviderApiKey } from '../ai-service.js';
+import { executeAiGeneration } from '../ai-generation-executor.js';
+import type { AiDataGrant } from '../ai-privacy-guard.js';
+import { addSpan, endAiTrace, endSpan, startAiTrace } from '../observability/ai-tracer.js';
 
 const RAG_SYSTEM_PROMPT = `# Vai trò
 Em là trợ lý tra cứu của đội sale Cờ Rếp Việt. Sale hỏi về sản phẩm, giá,
@@ -118,11 +120,14 @@ export async function retrieveRelevantChunks(args: { orgId: string; query: strin
 }
 
 /** Hỏi đáp RAG: embed câu hỏi → cosine top-K chunk → nhồi prompt → trả lời. */
-export async function ragAnswer(args: { orgId: string; question: string; topK?: number }): Promise<{ answer: string; sources: string[]; chunksUsed: number }> {
+export async function ragAnswer(args: { orgId: string; question: string; topK?: number; grant: AiDataGrant }): Promise<{ answer: string; sources: string[]; chunksUsed: number }> {
+  const trace = startAiTrace({ operation: 'rag_answer', orgId: args.orgId, channel: 'knowledge' });
   const question = (args.question ?? '').trim();
   if (!question) throw new Error('EMPTY_QUESTION');
 
+  const retrieveSpan = addSpan(trace, 'retrieve_knowledge');
   const scored = await retrieveChunksStrict({ orgId: args.orgId, query: question, topK: args.topK ?? 6 });
+  endSpan(retrieveSpan);
   if (scored.length === 0) {
     return { answer: 'Chưa có tài liệu nào trong knowledge base. Vào Cài đặt → Trợ lý AI để thêm tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...).', sources: [], chunksUsed: 0 };
   }
@@ -132,7 +137,6 @@ export async function ragAnswer(args: { orgId: string; question: string; topK?: 
   const cfg = await getAiConfig(args.orgId);
   const apiKey = await getProviderApiKey(args.orgId, cfg.provider);
   if (!apiKey) throw new Error('CHAT_KEY_MISSING');
-  const baseUrl = await getProviderBaseUrl(args.orgId, cfg.provider);
 
   const prompt = [
     '# Tài liệu tham khảo', context, '',
@@ -140,7 +144,20 @@ export async function ragAnswer(args: { orgId: string; question: string; topK?: 
     '# Yêu cầu', 'Trả lời ngắn gọn, dựa CHỦ YẾU trên tài liệu trên. Nếu tài liệu không có thông tin, nói rõ "Tài liệu chưa có thông tin này" thay vì bịa.',
   ].join('\n');
 
-  const answer = await generateText(cfg.provider, apiKey, cfg.model, RAG_SYSTEM_PROMPT, prompt, 700, baseUrl);
+  const buildPromptSpan = addSpan(trace, 'build_prompt');
+  endSpan(buildPromptSpan);
+  const answer = await executeAiGeneration({
+    grant: args.grant,
+    orgId: args.orgId,
+    provider: cfg.provider,
+    apiKey,
+    model: cfg.model,
+    system: RAG_SYSTEM_PROMPT,
+    prompt,
+    maxTokens: 700,
+    trace,
+  });
   const sources = [...new Set(scored.map((s) => s.docId))];
+  endAiTrace(trace, { status: 'generated', provider: cfg.provider, model: cfg.model, sourceCount: scored.length });
   return { answer: (answer ?? '').trim(), sources, chunksUsed: scored.length };
 }

@@ -46,12 +46,25 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     volumes:
       - file_storage:/var/lib/zalo-crm/files
     tmpfs:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEMORY_LIMIT:-1G}
+          cpus: "${APP_CPU_LIMIT:-2}"
+        reservations:
+          memory: ${APP_MEMORY_RESERVATION:-512M}
     # FIX 2026-06-08: log driver json-file CŨ bị đóng băng (docker logs kẹt 1 mốc, không
     # stream log mới) → không debug được worker. Giới hạn + rotate để tránh corrupt/đầy.
     logging:
@@ -79,6 +92,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-512M}
     # ── Timezone (Cách 2 — giờ VN cho ops/log, 2026-06-14) ──────────────────────
     #   log_timezone=Asia/Ho_Chi_Minh → log Postgres hiện giờ VN, dễ đối chiếu UI.
     #   timezone=UTC (GIỮ NGUYÊN)     → CURRENT_TIMESTAMP / @default(now()) lưu UTC.

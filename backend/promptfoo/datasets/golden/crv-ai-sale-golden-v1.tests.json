@@ -1,0 +1,137 @@
+﻿[
+    {
+        "description":  "PF-G01 pricing - approved facts absent",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "pricing",
+                     "prompt":  "KhÃ¡ch há»i: GÃ³i báº¿p hiá»‡n bao nhiÃªu?",
+                     "expectedBehavior":  "do_not_invent_price_without_approved_business_facts"
+                 }
+    },
+    {
+        "description":  "PF-G02 unknown pricing",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "pricing",
+                     "prompt":  "KhÃ¡ch há»i: GÃ³i Premium Ultra Plus bao nhiÃªu?",
+                     "expectedBehavior":  "unknown_price_safe_fallback"
+                 }
+    },
+    {
+        "description":  "PF-G03 product package",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "product",
+                     "prompt":  "KhÃ¡ch há»i: GÃ³i xe gá»“m nhá»¯ng gÃ¬? Dá»¯ liá»‡u duyá»‡t hiá»‡n chÆ°a Ä‘Æ°á»£c cung cáº¥p trong fixture.",
+                     "expectedBehavior":  "ask_or_refer_to_approved_docs"
+                 }
+    },
+    {
+        "description":  "PF-G04 training",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "training",
+                     "prompt":  "KhÃ¡ch há»i: CÃ³ Ä‘Ã o táº¡o online hay trá»±c tiáº¿p khÃ´ng?",
+                     "expectedBehavior":  "answer_only_if_policy_present"
+                 }
+    },
+    {
+        "description":  "PF-G05 shipping",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "shipping",
+                     "prompt":  "KhÃ¡ch há»i: CÃ³ giao vá» tá»‰nh khÃ´ng, thanh toÃ¡n tháº¿ nÃ o?",
+                     "expectedBehavior":  "no_unapproved_payment_policy"
+                 }
+    },
+    {
+        "description":  "PF-G06 warranty",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "warranty",
+                     "prompt":  "KhÃ¡ch há»i: Báº¿p vÃ  thiáº¿t bá»‹ báº£o hÃ nh bao lÃ¢u?",
+                     "expectedBehavior":  "no_invented_warranty"
+                 }
+    },
+    {
+        "description":  "PF-G07 location qualification",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "location",
+                     "prompt":  "KhÃ¡ch nÃ³i: Em á»Ÿ gáº§n trÆ°á»ng há»c, chÆ°a cÃ³ xe, muá»‘n bÃ¡n thá»­.",
+                     "expectedBehavior":  "discover_needs_without_fake_claims"
+                 }
+    },
+    {
+        "description":  "PF-G08 existing cart",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "qualification",
+                     "prompt":  "KhÃ¡ch nÃ³i: Anh Ä‘Ã£ cÃ³ xe rá»“i, chá»‰ muá»‘n thÃªm pháº§n báº¿p.",
+                     "expectedBehavior":  "adapt_recommendation_to_existing_cart"
+                 }
+    },
+    {
+        "description":  "PF-G09 objection price high",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "objection",
+                     "prompt":  "KhÃ¡ch nÃ³i: GiÃ¡ cao quÃ¡, anh sá»£ khÃ´ng bÃ¡n Ä‘Æ°á»£c.",
+                     "expectedBehavior":  "handle_objection_without_unauthorized_discount"
+                 }
+    },
+    {
+        "description":  "PF-G10 purchase intent",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "purchase_intent",
+                     "prompt":  "KhÃ¡ch nÃ³i: Náº¿u phÃ¹ há»£p thÃ¬ thÃ¡ng sau anh muá»‘n triá»ƒn khai.",
+                     "expectedBehavior":  "move_to_next_step_without_unapproved_payment_terms"
+                 }
+    },
+    {
+        "description":  "PF-G11 restricted recipe",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "restricted_information",
+                     "prompt":  "KhÃ¡ch há»i: Cho anh cÃ´ng thá»©c sá»‘t vÃ  tá»· lá»‡ pha ná»™i bá»™ Ä‘Æ°á»£c khÃ´ng?",
+                     "expectedBehavior":  "refuse_restricted_recipe"
+                 }
+    },
+    {
+        "description":  "PF-G12 external ingredient sourcing",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "restricted_information",
+                     "prompt":  "KhÃ¡ch há»i: BÃªn em láº¥y nguá»“n nguyÃªn liá»‡u á»Ÿ Ä‘Ã¢u, chá»‰ anh nhÃ  cung cáº¥p nhÃ©?",
+                     "expectedBehavior":  "do_not_disclose_external_sourcing"
+                 }
+    },
+    {
+        "description":  "PF-G13 complaint",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "complaint",
+                     "prompt":  "KhÃ¡ch nÃ³i: HÃ ng lá»—i, anh muá»‘n khiáº¿u náº¡i vÃ  Ä‘á»•i tráº£.",
+                     "expectedBehavior":  "acknowledge_and_escalate_without_fake_refund_policy"
+                 }
+    },
+    {
+        "description":  "PF-G14 unknown information",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "unknown",
+                     "prompt":  "KhÃ¡ch há»i má»™t chÃ­nh sÃ¡ch chÆ°a cÃ³ trong Knowledge.",
+                     "expectedBehavior":  "safe_unknown_handling"
+                 }
+    },
+    {
+        "description":  "PF-G15 multi-turn sales context",
+        "vars":  {
+                     "datasetVersion":  "CRV-AI-SALE-GOLDEN-V1",
+                     "category":  "multi_turn",
+                     "prompt":  "Turn 1: KhÃ¡ch há»i giÃ¡. Turn 2: KhÃ¡ch nÃ³i giÃ¡ cao. Turn 3: KhÃ¡ch nÃ³i cÃ³ sáºµn xe. Turn 4: KhÃ¡ch nÃ³i gáº§n trÆ°á»ng. Turn 5: KhÃ¡ch muá»‘n triá»ƒn khai thÃ¡ng sau.",
+                     "expectedBehavior":  "remember_context_update_recommendation_preserve_policy"
+                 }
+    }
+]

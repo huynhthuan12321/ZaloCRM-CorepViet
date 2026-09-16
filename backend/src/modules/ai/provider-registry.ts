@@ -13,6 +13,7 @@ import { config } from '../../config/index.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { encryptToken, decryptToken } from '../integrations/_shared/token-encryption.util.js';
 import { logger } from '../../shared/utils/logger.js';
+import { validateAiProviderBaseUrl } from './ai-provider-url-policy.js';
 
 export type ProviderModel = { title: string; value: string };
 
@@ -94,7 +95,8 @@ export async function getProviderBaseUrl(orgId: string, provider: string): Promi
   const setting = await prisma.appSetting.findUnique({
     where: { orgId_settingKey: { orgId, settingKey: urlSettingKey(provider) } },
   });
-  return setting?.valuePlain || getProviderConfig(provider)?.baseUrl || '';
+  const raw = setting?.valuePlain || getProviderConfig(provider)?.baseUrl || '';
+  return validateAiProviderBaseUrl(raw);
 }
 
 /** Set/xoá API key per-org (apiKey rỗng/null = xoá → quay về env fallback) */
@@ -122,10 +124,11 @@ export async function setProviderBaseUrl(orgId: string, provider: string, baseUr
     await prisma.appSetting.deleteMany({ where: { orgId, settingKey } });
     return;
   }
+  const normalized = await validateAiProviderBaseUrl(trimmed);
   await prisma.appSetting.upsert({
     where: { orgId_settingKey: { orgId, settingKey } },
-    create: { orgId, settingKey, valuePlain: trimmed },
-    update: { valuePlain: trimmed },
+    create: { orgId, settingKey, valuePlain: normalized },
+    update: { valuePlain: normalized },
   });
 }
 

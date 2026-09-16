@@ -1,0 +1,14 @@
+description: "Technical eval: summary synthetic contract"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "summary", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSystemPromptLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoPiiLeak"
+    - type: "not-contains"
+      value: "```"
+tests: "file://../../datasets/technical/summary.json"

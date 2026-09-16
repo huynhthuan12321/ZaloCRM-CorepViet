@@ -9,6 +9,7 @@
  */
 import { getAiConfig } from '../ai-service.js';
 import { resolveProviderApiKey, getProviderBaseUrl } from '../provider-registry.js';
+import { validateAiProviderBaseUrl } from '../ai-provider-url-policy.js';
 
 export interface EmbedConfig { provider: string; model: string; apiKey: string; baseUrl: string; }
 
@@ -33,7 +34,7 @@ export async function resolveEmbedConfig(orgId: string): Promise<EmbedConfig> {
     getProviderBaseUrl(orgId, provider),
   ]);
   if (!apiKey) throw new Error('EMBED_KEY_MISSING');
-  return { provider, model, apiKey, baseUrl };
+  return { provider, model, apiKey, baseUrl: await validateAiProviderBaseUrl(baseUrl) };
 }
 
 async function embedOpenAiCompat(baseUrl: string, apiKey: string, model: string, texts: string[], path: string): Promise<number[][]> {
@@ -41,7 +42,9 @@ async function embedOpenAiCompat(baseUrl: string, apiKey: string, model: string,
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({ model, input: texts }),
+    redirect: 'manual',
   });
+  if (res.status >= 300 && res.status < 400) throw new Error(`embed HTTP ${res.status}: redirect rejected`);
   if (!res.ok) throw new Error(`embed HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
   const data = (await res.json()) as { data?: Array<{ embedding: number[] }> };
   return (data.data ?? []).map((d) => d.embedding);
@@ -52,7 +55,9 @@ async function embedGemini(baseUrl: string, apiKey: string, model: string, texts
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ requests: texts.map((t) => ({ model: `models/${model}`, content: { parts: [{ text: t }] } })) }),
+    redirect: 'manual',
   });
+  if (res.status >= 300 && res.status < 400) throw new Error(`gemini embed HTTP ${res.status}: redirect rejected`);
   if (!res.ok) throw new Error(`gemini embed HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
   const data = (await res.json()) as { embeddings?: Array<{ values: number[] }> };
   return (data.embeddings ?? []).map((e) => e.values);

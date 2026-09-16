@@ -15,6 +15,7 @@ import { requireGrant } from '../../rbac/rbac-middleware.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { getAiConfig } from '../ai-service.js';
 import { ingestText, listDocs, deleteDoc, ragAnswer } from './knowledge-service.js';
+import { authorizeAiData } from '../ai-privacy-guard.js';
 
 const ERR_MSG: Record<string, string> = {
   EMBED_NOT_CONFIGURED: 'Chưa cấu hình model embedding — vào Cài đặt → Trợ lý AI → chọn provider/model embedding.',
@@ -85,7 +86,13 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     try {
       const body = (request.body ?? {}) as { question?: string };
       if (!body.question?.trim()) return reply.status(400).send({ error: ERR_MSG.EMPTY_QUESTION });
-      const out = await ragAnswer({ orgId: request.user!.orgId, question: body.question });
+      const grant = await authorizeAiData({
+        orgId: request.user!.orgId,
+        scope: 'knowledge',
+        purpose: 'rag_answer',
+        actor: { mode: 'user', privacyContext: { viewerUserId: request.user!.id, orgId: request.user!.orgId, privacyUnlocked: false } },
+      });
+      const out = await ragAnswer({ orgId: request.user!.orgId, question: body.question, grant });
       return out;
     } catch (err) {
       logger.error('[ai-knowledge] ask error:', err);
