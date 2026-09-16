@@ -6,6 +6,11 @@ export type ReadyHealth = {
   redis: 'connected' | 'disconnected';
   uptime: number;
   timestamp: string;
+  /**
+   * Trạng thái kênh Messenger (chỉ thông tin). KHÔNG BAO GIỜ ảnh hưởng statusCode:
+   * Docker healthcheck dùng /health/ready — Messenger lỗi không được kéo Zalo xuống.
+   */
+  messenger?: { status: 'disabled' | 'ready' | 'misconfigured'; inbound: boolean; outbound: boolean };
 };
 
 export function buildLiveHealth(uptime = process.uptime()): { status: 'ok'; uptime: number } {
@@ -17,6 +22,7 @@ export async function buildReadyHealth(input: {
   checkRedis: () => boolean | Promise<boolean>;
   uptime?: number;
   timestamp?: string;
+  messenger?: ReadyHealth['messenger'];
 }): Promise<{ statusCode: 200 | 503; body: ReadyHealth }> {
   let db: ReadyHealth['db'] = 'connected';
   let redis: ReadyHealth['redis'] = 'connected';
@@ -35,6 +41,7 @@ export async function buildReadyHealth(input: {
       redis,
       uptime: input.uptime ?? process.uptime(),
       timestamp: input.timestamp ?? new Date().toISOString(),
+      ...(input.messenger ? { messenger: input.messenger } : {}),
     },
   };
 }

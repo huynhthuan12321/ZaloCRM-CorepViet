@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { Prisma } from '@prisma/client';
 import { config } from './config/index.js';
 import { validateProductionConfig } from './config/validate-production-config.js';
+import { messengerConfig, messengerHealthSummary } from './config/messenger-config.js';
 import { prisma } from './shared/database/prisma-client.js';
 import { decryptSessionData } from './shared/crypto/session-crypto.js';
 import { logger } from './shared/utils/logger.js';
@@ -389,6 +390,7 @@ async function bootstrap() {
     const ready = await buildReadyHealth({
       checkDb: async () => { await prisma.$queryRaw`SELECT 1`; },
       checkRedis: isBullMQRedisHealthy,
+      messenger: messengerHealthSummary(messengerConfig),
     });
     return reply.status(ready.statusCode).send(ready.body);
   });

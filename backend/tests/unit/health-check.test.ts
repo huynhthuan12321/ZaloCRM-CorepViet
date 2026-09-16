@@ -34,4 +34,27 @@ describe('health check helpers', () => {
     expect(result.statusCode).toBe(503);
     expect(result.body).toMatchObject({ status: 'error', db: 'connected', redis: 'disconnected' });
   });
+
+  it('PH-HC05 messenger block is informational and never changes the status code', async () => {
+    for (const status of ['disabled', 'ready', 'misconfigured'] as const) {
+      const healthy = await buildReadyHealth({
+        checkDb: async () => {},
+        checkRedis: () => true,
+        messenger: { status, inbound: false, outbound: false },
+      });
+      expect(healthy.statusCode).toBe(200);
+      expect(healthy.body.messenger?.status).toBe(status);
+    }
+    const down = await buildReadyHealth({
+      checkDb: async () => {},
+      checkRedis: () => false,
+      messenger: { status: 'ready', inbound: true, outbound: true },
+    });
+    expect(down.statusCode).toBe(503);
+  });
+
+  it('PH-HC06 body has no messenger key when not provided (backward compatible)', async () => {
+    const result = await buildReadyHealth({ checkDb: async () => {}, checkRedis: () => true });
+    expect(result.body).not.toHaveProperty('messenger');
+  });
 });

@@ -182,6 +182,13 @@ docker compose run --rm app npx prisma migrate deploy
 
 ## BƯỚC 8 — Khởi động toàn bộ stack + Caddy HTTPS
 
+> ⚠️ **VPS 157.66.219.190 hiện tại (đính chính 2026-09-16): KHÔNG chạy overlay `docker-compose.caddy.yml`.**
+> HTTPS do Caddy DÙNG CHUNG trong `/opt/n8n` đảm nhận (reverse proxy tới `172.17.0.1:3080`).
+> Chạy overlay sẽ tạo Caddy thứ hai tranh cổng 80/443 → sập HTTPS của cả n8n và ZaloCRM.
+> Trên VPS này chỉ dùng: `docker compose -f docker-compose.yml up -d` (lần đầu) hoặc
+> `docker compose -f docker-compose.yml up -d --no-deps app` (cập nhật app) — xem `DEPLOY.md`.
+> Overlay bên dưới chỉ áp dụng cho VPS MỚI không có reverse proxy nào khác.
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
 ```
@@ -213,7 +220,9 @@ curl -s http://localhost:3000/health/live
 ```bash
 curl -s http://localhost:3000/health/ready
 ```
-→ Mong đợi: `{"status":"ok","db":"connected","redis":"connected",...}`
+→ Mong đợi: `{"status":"ok","db":"connected","redis":"connected","messenger":{"status":"disabled",...},...}`
+→ Từ host (ngoài container) cổng là `APP_PORT` (mặc định 3080): `curl -s http://127.0.0.1:3080/health/ready`.
+→ Khối `messenger` chỉ để tham khảo, KHÔNG ảnh hưởng mã 200/503.
 
 ### 9.3 — HTTPS qua domain
 ```bash
@@ -267,6 +276,8 @@ Lỗi phổ biến:
 - Port 80/443 bị firewall chặn → `ufw allow 80 && ufw allow 443`
 
 ### Xóa sạch làm lại
+> ⛔ **KHÔNG BAO GIỜ chạy trên production đang có dữ liệu.** `down -v` xoá volume DB/media vĩnh viễn.
+> Chỉ dùng cho VPS mới chưa có dữ liệu thật, sau khi đã có backup + restore test (`docs/runbooks/BACKUP-RESTORE.md`).
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.caddy.yml down
 docker compose down -v  # CẢNH BÁO: xóa volumes = mất data
@@ -278,6 +289,10 @@ docker compose build --no-cache
 ## SAU KHI DEPLOY THÀNH CÔNG
 
 ### Kiểm tra firewall
+> ⚠️ **Docker bỏ qua ufw**: cổng publish dạng `"3080:3000"` (bind 0.0.0.0) vẫn mở ra Internet dù ufw chặn.
+> Kiểm tra thực tế bằng `docker ps --format '{{.Names}} {{.Ports}}'` và `ss -ltnp`, không chỉ `ufw status`.
+> Cổng chỉ dùng nội bộ phải bind `127.0.0.1:` (db, redis đã làm) hoặc chặn ở chain `DOCKER-USER`.
+> Đổi bind của app trên VPS này phải giữ cho Caddy dùng chung vẫn tới được `172.17.0.1:3080` — cần duyệt riêng.
 ```bash
 ufw status
 # Chỉ mở: 22 (SSH), 80 (HTTP), 443 (HTTPS)
@@ -293,6 +308,9 @@ ufw enable
 docker compose ps backup
 ls -la ./backups/
 ```
+> Service `backup` chạy `@daily` và **không** backup lúc khởi động: thư mục `backups/` rỗng cho tới 00:00.
+> Container "healthy" KHÔNG có nghĩa đã có bản dump. Media volume và off-site không được service này backup.
+> Quy trình đầy đủ + restore test: `docs/runbooks/BACKUP-RESTORE.md`.
 
 ### Monitoring đơn giản
 ```bash

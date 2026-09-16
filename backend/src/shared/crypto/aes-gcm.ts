@@ -4,6 +4,11 @@
  * aes-gcm.ts — AES-256-GCM symmetric encryption for sensitive tokens at rest.
  * Key sourced from FB_TOKEN_ENC_KEY env (32-byte hex = 64 hex chars).
  * Output format (all base64): "<iv_b64>:<authTag_b64>:<ciphertext_b64>"
+ *
+ * @deprecated PR-00 Messenger (2026-09-16): KHÔNG dùng cho token mới. Cơ chế chuẩn duy nhất
+ * là `modules/integrations/_shared/token-encryption.util.ts` (TOKEN_ENCRYPTION_KEY + key version).
+ * Giữ file để tương thích bản EE Lead Ads cũ; production không có dữ liệu mã hoá bằng khoá này
+ * (4 bảng token FB legacy = 0 dòng). Test kiến trúc chặn import mới trong src/.
  */
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
 
