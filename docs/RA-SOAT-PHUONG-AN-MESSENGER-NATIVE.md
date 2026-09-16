@@ -1,6 +1,8 @@
 # Rà soát phương án triển khai Messenger Native trong ZaloCRM
 
 > **Đã được thay thế về mặt triển khai** bởi [TRIEN-KHAI-PRODUCTION-MESSENGER-NATIVE.md](TRIEN-KHAI-PRODUCTION-MESSENGER-NATIVE.md) (audit repo + VPS ngày 2026-09-16). Mục §10 (gỡ Chatwoot) không còn hiệu lực — Chatwoot đã gỡ xong.
+>
+> **Cách đọc cùng TRIEN-KHAI:** tài liệu này giữ **lý do kiến trúc** (§1–§7) và **hướng dẫn Meta Spike** (§3.3–§3.6). Thứ tự làm việc và tên PR theo **TRIEN-KHAI §19** (PR-00…PR-09, PR-02 tách 02a/02b). Bảng đối chiếu Phase ở đây → PR: 0A Backup → Gate §11 + track OPS · 0B Zalo regression → PR-01 · 0C Meta Spike → track Meta Spike · 0D Advanced Access → điều kiện D12 · Phase 1 trở đi → PR-02a…PR-09. Khi hai tài liệu lệch nhau, **TRIEN-KHAI thắng**.
 
 | | |
 |---|---|
@@ -403,7 +405,8 @@ Meta có thể đổi wording hoặc subcode; phân loại phải dựa trên **
 | Tình huống | Ý nghĩa | Hành động |
 |---|---|---|
 | 190 | Token hết hạn / bị thu hồi | `TokenCredential.status = invalid`, dừng outbound Page, cảnh báo, chạy runbook |
-| 10 / 200 **và** `message` liên quan permission / access | Thiếu quyền truy cập | Không retry. Trong Spike: đánh dấu `META_ACCESS_BLOCKED`, ghi evidence vào Gate 0D. Trong production: cảnh báo admin |
+| 10 / 200 **và** `message` liên quan permission / access | Thiếu quyền truy cập | Không retry. Trong Spike: đánh dấu `META_ACCESS_BLOCKED`, ghi evidence vào Gate 0D. Trong production: `ACCESS_BLOCKED` — token giữ ACTIVE nếu `debug_token` hợp lệ, tắt outbound Page, cảnh báo admin (TRIEN-KHAI §7.8) |
+| Read timeout / mất kết nối **sau khi** đã gửi request | Không biết tin đã tới chưa (Send API không có idempotency key) | `UNKNOWN_DELIVERY`, không retry tự động; reconcile trước (TRIEN-KHAI §7.3.1) |
 | 10 / 200 nhưng `message` khác | Chưa rõ | Phân loại riêng, không retry mù. **Không** tự kết luận cần App Review |
 | 613 | Rate limit | Backoff rồi thử lại |
 | 551 | Người dùng không nhận được tin | Không retry, đánh dấu hội thoại |
