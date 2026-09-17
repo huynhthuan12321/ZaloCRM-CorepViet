@@ -8,22 +8,8 @@ export PATH
 SCRIPT_NAME="backup-offsite.sh"
 BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/root/zalocrm-ops/backup.env}"
 
-OPS_DIR="${OPS_DIR:-/root/zalocrm-ops}"
-DUMP_DIR="${DUMP_DIR:-$OPS_DIR/backups}"
-STATE_DIR="${STATE_DIR:-$OPS_DIR/state}"
-DB_CONTAINER="${DB_CONTAINER:-zalo-crm-db}"
-DB_USER="${DB_USER:-crmuser}"
-DB_NAME="${DB_NAME:-zalocrm}"
-MEDIA_SOURCE="${MEDIA_SOURCE:-/var/lib/docker/volumes/zalocrm-corepviet_file_storage/_data}"
-REMOTE="${REMOTE:-gdrive-crypt:}"
-RCLONE_CONFIG="${RCLONE_CONFIG:-/root/.config/rclone/rclone.conf}"
-BWLIMIT="${BWLIMIT:-10M}"
-KEEP_LOCAL_DUMPS="${KEEP_LOCAL_DUMPS:-7}"
-MIN_DUMP_BYTES="${MIN_DUMP_BYTES:-5000000}"
-DISK_MAX_PCT="${DISK_MAX_PCT:-85}"
-HC_DAILY_URL="${HC_DAILY_URL:-}"
-HC_WEEKLY_URL="${HC_WEEKLY_URL:-}"
-
+# Defaults are applied after optional backup.env is sourced so backup.env can
+# override OPS_DIR and derived paths such as DUMP_DIR/STATE_DIR.
 MODE=""
 DRY_RUN=0
 STARTED=0
@@ -99,17 +85,50 @@ parse_args() {
   [[ "$MODE" == "daily" || "$MODE" == "weekly" ]] || { usage >&2; exit 2; }
 }
 
+pre_parse_help() {
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h) usage; exit 0 ;;
+    esac
+  done
+}
+
 validate_env_file() {
   [[ -e "$BACKUP_ENV_FILE" ]] || return 0
   local owner mode
   owner="$(stat -c '%U' "$BACKUP_ENV_FILE")"
   mode="$(stat -c '%a' "$BACKUP_ENV_FILE")"
-  if [[ "$owner" != "root" || "$mode" != "600" ]]; then
+  # BACKUP_ENV_SKIP_OWNER_CHECK is only for local tests on non-root Git Bash.
+  if [[ "${BACKUP_ENV_SKIP_OWNER_CHECK:-0}" != "1" && "$owner" != "root" ]]; then
+    echo "ERROR: $BACKUP_ENV_FILE must be owner root and mode 600" >&2
+    exit 2
+  fi
+  if [[ "$mode" != "600" ]]; then
     echo "ERROR: $BACKUP_ENV_FILE must be owner root and mode 600" >&2
     exit 2
   fi
   # shellcheck disable=SC1090
   set -a; . "$BACKUP_ENV_FILE"; set +a
+}
+
+apply_defaults() {
+  : "${OPS_DIR:=/root/zalocrm-ops}"
+  : "${DUMP_DIR:=$OPS_DIR/backups}"
+  : "${STATE_DIR:=$OPS_DIR/state}"
+  : "${DB_CONTAINER:=zalo-crm-db}"
+  : "${DB_USER:=crmuser}"
+  : "${DB_NAME:=zalocrm}"
+  : "${MEDIA_SOURCE:=/var/lib/docker/volumes/zalocrm-corepviet_file_storage/_data}"
+  : "${REMOTE:=gdrive-crypt:}"
+  : "${RCLONE_CONFIG:=/root/.config/rclone/rclone.conf}"
+  : "${BWLIMIT:=10M}"
+  : "${KEEP_LOCAL_DUMPS:=7}"
+  : "${MIN_DUMP_BYTES:=5000000}"
+  : "${DISK_MAX_PCT:=85}"
+  : "${HC_DAILY_URL:=}"
+  : "${HC_WEEKLY_URL:=}"
+  : "${WEEKLY_MEDIA_MIN_AGE:=3h}"
+  : "${WEEKLY_LOCK_WAIT:=3600}"
 }
 
 init_after_config() {
@@ -124,14 +143,26 @@ init_after_config() {
 ensure_dirs_and_lock() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "DRY-RUN: would mkdir -p $DUMP_DIR $STATE_DIR"
-    log "DRY-RUN: would acquire flock $STATE_DIR/backup.lock"
+    if [[ "$MODE" == "weekly" ]]; then
+      log "DRY-RUN: would acquire flock -w $WEEKLY_LOCK_WAIT $STATE_DIR/backup.lock"
+    else
+      log "DRY-RUN: would acquire flock -n $STATE_DIR/backup.lock"
+    fi
     return 0
   fi
   mkdir -p "$DUMP_DIR" "$STATE_DIR"
   exec 9>"$STATE_DIR/backup.lock"
-  if ! flock -n 9; then
-    log "Another backup is already running; exit 0"
-    exit 0
+  if [[ "$MODE" == "weekly" ]]; then
+    ping_hc "/start"; STARTED=1
+    if ! flock -w "$WEEKLY_LOCK_WAIT" 9; then
+      log "ERROR: lock wait timeout"
+      exit 1
+    fi
+  else
+    if ! flock -n 9; then
+      log "Another backup is already running; exit 0"
+      exit 0
+    fi
   fi
 }
 
@@ -164,7 +195,7 @@ retention_local() {
     rm -f -- "$DUMP_DIR/$f" "$DUMP_DIR/$f.sha256"
     log "Retention removed old dump: $f"
   done
-  mapfile -t tmp_old < <(find "$DUMP_DIR" -maxdepth 1 -type f -name 'zalocrm-*.sql.gz.tmp' -mtime +1 -printf '%p\n')
+  mapfile -t tmp_old < <(find "$DUMP_DIR" -maxdepth 1 -type f -name 'zalocrm-*.sql.gz.tmp' -mmin +1440 -printf '%p\n')
   for f in "${tmp_old[@]:-}"; do
     rm -f -- "$f"
     log "Retention removed stale tmp: $(basename "$f")"
@@ -244,7 +275,6 @@ latest_dump() {
 weekly() {
   local dump_base dump expected
   disk_gate
-  if [[ "$DRY_RUN" -eq 0 ]]; then ping_hc "/start"; STARTED=1; fi
 
   dump_base="$(latest_dump)"
   [[ -n "$dump_base" ]] || { echo "ERROR: no dump found in $DUMP_DIR" >&2; exit 1; }
@@ -256,7 +286,7 @@ weekly() {
   else
     expected="$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -Atc "select count(*) from _prisma_migrations where finished_at is not null")"
     EXPECTED_MIGRATIONS="$expected" "$OPS_DIR/verify-restore.sh" --dump "$dump"
-    rclone cryptcheck "$MEDIA_SOURCE" "${REMOTE%/}media-mirror/" --one-way
+    rclone cryptcheck "$MEDIA_SOURCE" "${REMOTE%/}media-mirror/" --one-way --min-age "$WEEKLY_MEDIA_MIN_AGE"
     if [[ ! -f "$STATE_DIR/last-daily-success" ]] || ! find "$STATE_DIR" -maxdepth 1 -name last-daily-success -mmin -2160 | grep -q .; then
       echo "ERROR: last-daily-success is missing or older than 36h" >&2
       exit 1
@@ -272,8 +302,10 @@ weekly() {
 }
 
 main() {
-  parse_args "$@"
+  pre_parse_help "$@"
   validate_env_file
+  apply_defaults
+  parse_args "$@"
   init_after_config
   ensure_dirs_and_lock
   case "$MODE" in

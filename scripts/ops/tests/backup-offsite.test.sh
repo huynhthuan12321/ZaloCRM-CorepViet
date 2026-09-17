@@ -20,7 +20,10 @@ make_shims() {
   mkdir -p "$dir"
   cat > "$dir/flock" <<'SH'
 #!/usr/bin/env bash
-if [[ "${LOCK_HELD:-0}" == "1" ]]; then exit 1; fi
+if [[ "${LOCK_HELD:-0}" == "1" ]]; then
+  if [[ "${1:-}" == "-w" ]]; then exit 1; fi
+  if [[ "${1:-}" == "-n" ]]; then exit 1; fi
+fi
 exit 0
 SH
   cat > "$dir/df" <<'SH'
@@ -105,6 +108,7 @@ run_backup() {
     LOCK_HELD="${LOCK_HELD:-0}" \
     MIGRATIONS_COUNT="${MIGRATIONS_COUNT:-127}" \
     BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-$dir/no-backup.env}" \
+    BACKUP_ENV_SKIP_OWNER_CHECK="${BACKUP_ENV_SKIP_OWNER_CHECK:-0}" \
     bash "$SCRIPT" "$@"
 }
 
@@ -175,7 +179,7 @@ case_retention() {
 
 case_no_forbidden_rclone() {
   log_case "forbidden rclone verbs"
-  if grep -R -E 'rclone (sync|move|delete|purge|dedupe)( |$)' "$TEST_ROOT" >/dev/null 2>&1; then
+  if grep -R -E 'rclone (sync|move|delete|purge|dedupe)( |$)' "$TEST_ROOT" "$SCRIPT" >/dev/null 2>&1; then
     return 1
   fi
   pass "no forbidden rclone verbs in argv logs"
@@ -230,6 +234,7 @@ case_weekly() {
   printf 'stamp=old\n' > "$dir/ops/state/last-daily-success"
   run_backup "$dir" --mode weekly >"$out" 2>&1 || return 1
   assert_grep 'verify EXPECTED_MIGRATIONS=127' "$dir/argv.log" || return 1
+  assert_grep 'rclone cryptcheck .*gdrive-crypt:media-mirror/.*--one-way.*--min-age' "$dir/argv.log" || return 1
   old="$(new_case weekly_old_daily)"; out="$old/out.log"
   printf dump > "$old/ops/backups/zalocrm-20260101-010101.sql.gz"
   printf 'stamp=old\n' > "$old/ops/state/last-daily-success"
@@ -237,6 +242,48 @@ case_weekly() {
   run_backup "$old" --mode weekly >"$out" 2>&1 && return 1 || true
   assert_grep 'older than 36h' "$out" || return 1
   pass "weekly passes expected migrations and fails stale daily"
+}
+
+
+case_weekly_lock_timeout() {
+  log_case "weekly lock timeout"
+  local dir out
+  dir="$(new_case weekly_lock_timeout)"; out="$dir/out.log"
+  printf dump > "$dir/ops/backups/zalocrm-20260101-010101.sql.gz"
+  LOCK_HELD=1 run_backup "$dir" --mode weekly >"$out" 2>&1 && return 1 || true
+  assert_grep 'lock wait timeout' "$out" || return 1
+  pass "weekly lock wait timeout fails"
+}
+
+case_backup_env_load_order() {
+  log_case "backup.env load order"
+  local dir out envf
+  dir="$(new_case env_load_order)"; out="$dir/out.log"; envf="$dir/backup.env"
+  mkdir -p "$dir/ops2" "$dir/media2"
+  printf 'media2\n' > "$dir/media2/b.txt"
+  cat > "$envf" <<EOF
+OPS_DIR=$dir/ops2
+MEDIA_SOURCE=$dir/media2
+MIN_DUMP_BYTES=5000
+EOF
+  chmod 600 "$envf"
+  env -i \
+    PATH="/usr/bin:/bin" \
+    HOME="$HOME" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    OPS_SHIM_PATH="$dir/bin:" \
+    ARGV_LOG="$dir/argv.log" \
+    REMOTE="gdrive-crypt:" \
+    RCLONE_CONFIG="$dir/rclone.conf" \
+    HC_DAILY_URL="" \
+    BACKUP_ENV_FILE="$envf" \
+    BACKUP_ENV_SKIP_OWNER_CHECK=1 \
+    DUMP_BYTES=20000 \
+    DF_PCT=40 \
+    bash "$SCRIPT" --mode daily >"$out" 2>&1
+  ls "$dir/ops2/backups"/zalocrm-*.sql.gz >/dev/null || return 1
+  assert_file "$dir/ops2/state/last-daily-success" || return 1
+  pass "backup.env sourced before derived defaults"
 }
 
 main() {
@@ -253,7 +300,9 @@ main() {
     case_env_mode \
     case_hc_not_in_output \
     case_dry_run \
-    case_weekly; do
+    case_weekly \
+    case_weekly_lock_timeout \
+    case_backup_env_load_order; do
     if "$c"; then :; else fail "$c"; fi
   done
   printf '\nSummary: PASS=%s FAIL=%s\n' "$PASS_COUNT" "$FAIL_COUNT"
