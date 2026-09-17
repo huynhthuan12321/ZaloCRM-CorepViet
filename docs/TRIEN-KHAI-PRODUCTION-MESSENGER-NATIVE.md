@@ -6,7 +6,7 @@
 | Ngày audit | 2026-09-16, ~19:45–20:10 (giờ VN) |
 | Cập nhật 1.1 | 2026-09-17: đánh số PR theo Implementation Plan thực tế (PR-00…PR-09, PR-02 tách 02a/02b — §19); cập nhật tiến độ PR-00/PR-01; số liệu audit production giữ nguyên ngày 2026-09-16 |
 | Cập nhật 1.2 | 2026-09-17: (1) phân loại lỗi Graph `190` / `10`·`200` thành TOKEN_INVALID / ACCESS_BLOCKED / UNCLASSIFIED (§7.8); (2) WebhookDelivery + ChannelEvent cùng một transaction, 200 chỉ sau COMMIT (§7.2); (3) trạng thái `UNKNOWN_DELIVERY` cho timeout sau khi đã gửi (§7.3.1); (4) tách D0 thành D0A…D0E (§13); (5) kiểm tra lại backup 17/09 06:16 — có dump DB tự động 00:00 (§11.1) |
-| Tiến độ code | **PR-00 xong** (commit `067e388`, branch `feat/messenger-pr-00-safety-foundation`) · **PR-01 xong, chờ review/commit** (branch `feat/messenger-pr-01-zalo-characterization`) · PR-02a trở đi **chưa bắt đầu** |
+| Tiến độ code | **PR-00 xong** (commit `067e388`, branch `feat/messenger-pr-00-safety-foundation`) · **PR-01 đã commit** (`f4b13e7`, branch `feat/messenger-pr-01-zalo-characterization`) · **OPS 🟡 có script, chờ review/commit, chưa chạy production** (branch `feat/ops-deploy-backup-scripts`) · PR-02a trở đi **chưa bắt đầu** |
 | Phạm vi | Repo `D:\ZaloCRM-CorepViet` (HEAD `850dea1`) + VPS `vpssieutoc` 157.66.219.190, `/root/ZaloCRM-CorepViet` |
 | Cách audit | Chỉ đọc. Không restart, không migration, không sửa `.env`/Caddy, không đọc giá trị secret, không đưa dữ liệu khách vào báo cáo |
 | **Trạng thái** | **NO-GO** cho migration/deploy Messenger lên production — xem §18, §20 |
@@ -160,7 +160,7 @@ Snapshot lúc 2026-09-16 19:47–20:05.
   - Build image mới rồi tag `<sha-mới>`.
   - Chỉ dùng **đúng một** lệnh `docker compose -f docker-compose.yml up -d --no-deps app`.
   - Sửa `VPS-FIRST-DEPLOY.md` bước 8.
-- **Phase:** tài liệu (`DEPLOY.md`, `VPS-FIRST-DEPLOY.md`) — ✅ đã sửa ở PR-00. Script `scripts/ops/deploy.sh` (tag image + rollback) — ⏳ **chưa làm**, thuộc track **OPS** (§19), bắt buộc trước D1.
+- **Phase:** tài liệu (`DEPLOY.md`, `VPS-FIRST-DEPLOY.md`) — ✅ đã sửa ở PR-00. Script `scripts/ops/deploy.sh` (tag image + rollback) — 🟡 có script, chờ review/commit, chưa chạy production ở track **OPS** (§19), bắt buộc trước D1.
 
 ### F-07 — Disk 76% · **P2**
 - **Evidence:** `/` 57/79 G; build cache 8.88 G; images thu hồi được 5.6 G.
@@ -420,7 +420,7 @@ Send API của Meta **không có idempotency key phía client**. Nếu request �
 | `shared/http/health.ts`, `app.ts` | Khối `messenger: {enabled, status}` trong `/health/ready`, không ảnh hưởng status code, không lộ tên key | PR-00 | ✅ |
 | `.env.example` ×2, `DEPLOY.md`, `VPS-FIRST-DEPLOY.md`, `docs/runbooks/BACKUP-RESTORE.md` | Mục Messenger; sửa overlay / firewall / lệnh compose chuẩn / rollback bằng image tag; runbook backup-restore (lệnh dưới COMMAND REQUIRES APPROVAL) | PR-00 | ✅ |
 | `backend/tests/characterization/` (mới) | 10 nhóm test Zalo (§3.3), mock I/O | PR-01 | ✅ chờ commit |
-| `scripts/ops/deploy.sh`, `backup-media.sh`, `verify-restore.sh` (mới) | Tag image theo SHA, lệnh compose chuẩn, rollback không build lại; backup media; verify restore | OPS | ⏳ chưa làm |
+| `scripts/ops/deploy.sh`, `backup-media.sh`, `verify-restore.sh` (mới) | Tag image theo SHA, lệnh compose chuẩn, rollback không build lại; backup media; verify restore | OPS | 🟡 có script, chờ review/commit, chưa chạy production |
 | `prisma/schema.prisma`, migration `messenger_expand` | 7 model + cột nullable (§9.1) | PR-02a | ⏳ |
 | `shared/tenant/org-scoped-models.ts` | Thêm 7 model mới | PR-02a | ⏳ |
 | `modules/chat/*`, `modules/zalo/*`, raw SQL 12 file, frontend 27 file, `scripts/ops/backfill-message-org-id.ts` | Xử lý `zaloAccountId` nullable; lọc `zaloAccountId != null` trong ngữ cảnh Zalo; XOR; backfill `messages.org_id` (§9.2) | PR-02b | ⏳ |
@@ -609,25 +609,19 @@ ls -la /root/ZaloCRM-CorepViet/backups/last/ && gzip -t /root/ZaloCRM-CorepViet/
 
 ```bash
 # B-2: sao lưu media (không nén vì phần lớn là ảnh/video) — cần ~3.8G trống
-mkdir -p /opt/backups/zalocrm-media
-tar -C /var/lib/docker/volumes/zalocrm-corepviet_file_storage/_data -cf /opt/backups/zalocrm-media/file_storage-$(date +%Y%m%d-%H%M).tar .
-tar -tf /opt/backups/zalocrm-media/file_storage-*.tar | grep -vc '/$'   # phải = số file trong volume
+scripts/ops/backup-media.sh --dry-run
+scripts/ops/backup-media.sh
+cat /opt/backups/zalocrm-media/file_storage-<stamp>.tar.sha256
+tar -tf /opt/backups/zalocrm-media/file_storage-<stamp>.tar | awk '!/\/$/ {count++} END {print count + 0}'   # phải = số file trong volume
+find /var/lib/docker/volumes/zalocrm-corepviet_file_storage/_data -type f | wc -l
 ```
 
 ```bash
 # B-3: restore test vào container tạm, KHÔNG gắn network production, KHÔNG publish port
-docker run -d --name zalocrm-restore-test --network none \
-  -e POSTGRES_USER=restore -e POSTGRES_PASSWORD=restore-temp -e POSTGRES_DB=zalocrm \
-  --memory 1g postgres:16-alpine
-sleep 8
-time (gunzip -c /root/ZaloCRM-CorepViet/backups/last/*-latest.sql.gz | docker exec -i zalocrm-restore-test psql -U restore -d zalocrm -q -v ON_ERROR_STOP=1)
-docker exec -i zalocrm-restore-test psql -U restore -d zalocrm -At -c "
-  select 'migrations', count(*), count(*) filter (where finished_at is null) from _prisma_migrations;
-  select 'messages', count(*) from messages; select 'conversations', count(*) from conversations;
-  select 'contacts', count(*) from contacts; select 'organizations', count(*) from organizations;
-  select 'db_size', pg_size_pretty(pg_database_size('zalocrm'));"
+scripts/ops/verify-restore.sh --dry-run
+EXPECTED_MIGRATIONS=127 scripts/ops/verify-restore.sh
 ```
-Nếu dump có lệnh gán owner/role khác (`crmuser`), tạo role trước: `docker exec zalocrm-restore-test psql -U restore -c "create role crmuser"`.
+Script restore dùng `POSTGRES_USER=crmuser` mặc định để khớp owner trong dump, chỉ cho phép container tên `zalocrm-restore-*`, chạy với `--network none --memory 1g`, chạy `gzip -t`, in số dòng `messages` / `conversations` / `contacts` / `organizations`, kiểm tra `_prisma_migrations` đủ 127 khi đặt `EXPECTED_MIGRATIONS=127`, đo restore RTO + tổng thời gian và tự xoá container tạm; không kết nối DB production để ghi.
 
 ```bash
 # B-4: diễn tập migration trên bản restore (sau khi PR-02a/PR-02b có image)
@@ -895,9 +889,9 @@ Giữ nguyên §3 của V3 (`docs/RA-SOAT-PHUONG-AN-MESSENGER-NATIVE.md`) và th
 ### P1
 | CHECK | STATUS | BLOCKER? | ACTION |
 |---|---|---|---|
-| Image rollback có tag | ❌ chỉ `latest` | Có (trước D1) | OPS `scripts/ops/deploy.sh` (chưa làm) + H-5 tag tay |
-| Lệnh compose chuẩn, sửa tài liệu overlay | ⚠️ tài liệu ✅ PR-00; script ❌ | Có (trước D1) | OPS `deploy.sh` |
-| Script backup media + verify restore | ❌ (chỉ có runbook `docs/runbooks/BACKUP-RESTORE.md`) | Có (trước D2) | OPS `backup-media.sh`, `verify-restore.sh` |
+| Image rollback có tag | 🟡 có script, chờ review/commit, chưa chạy production | Có (trước D1) | OPS `scripts/ops/deploy.sh` + H-5 tag tay nếu cần |
+| Lệnh compose chuẩn, sửa tài liệu overlay | 🟡 tài liệu PR-00; script OPS chờ review/commit | Có (trước D1) | OPS `deploy.sh` |
+| Script backup media + verify restore | 🟡 có script, chờ review/commit, chưa chạy production | Có (trước D2) | OPS `backup-media.sh`, `verify-restore.sh` |
 | Port 3080/9000/5678 đóng với Internet | ❌ | Có (trước D9) | D0D (3080), D0E (9000/5678) |
 | Phân loại lỗi Graph 190 / 10·200 + `UNKNOWN_DELIVERY` | ✅ tài liệu v1.2 (§7.3.1, §7.8); code ❌ | Có (trước PR-04 merge) | PR-04 |
 | Webhook: delivery + event cùng transaction, 200 sau COMMIT | ✅ tài liệu v1.2 (§7.2); code ❌ | Có (trước PR-03 merge) | PR-03 |
@@ -938,8 +932,8 @@ Giữ nguyên §3 của V3 (`docs/RA-SOAT-PHUONG-AN-MESSENGER-NATIVE.md`) và th
 | PR | Trạng thái | Scope | Files / modules | Migration? | Đổi hành vi? | Tests | Rollback | Phụ thuộc |
 |---|---|---|---|---|---|---|---|---|
 | **PR-00** Production Safety Foundation | ✅ commit `067e388` | Keyring `token-encryption.util` theo `keyVersion` + validate 64 hex; `messenger-config.ts` (cờ phân cấp, status `disabled/ready/misconfigured`, không crash); `validate-production-config` tách error/warning; khối `messenger` trong `/health/ready`; `aes-gcm.ts` @deprecated + guard test; `.env.example` ×2; sửa `DEPLOY.md`, `VPS-FIRST-DEPLOY.md`; runbook `BACKUP-RESTORE.md` | `config/*`, `integrations/_shared/token-encryption.util.ts`, `shared/crypto/aes-gcm.ts`, `shared/http/health.ts`, `app.ts`, docs, 5 file unit test | Không | Không | Golden vector / round-trip / tamper / key version; parse config; health; guard kiến trúc | Rollback ứng dụng | Không |
-| **PR-01** Zalo characterization | ✅ xong, **chờ review + commit** | 10 nhóm: inbound, outbound, conversation, contact, assignment, labels, broadcast, websocket, worker/queue, AI handoff; sửa mock ở 10 test cũ cản baseline | `backend/tests/characterization/*` (6 file, 87 test), `tests/test-helpers.ts` + 9 test | Không | Không (chỉ test) | Suite: không failure mới; file fail 49 → 38 | Revert commit | PR-00 |
-| **OPS** Deploy / backup scripts | ⏳ chưa làm | `scripts/ops/deploy.sh` (tag image theo SHA, `docker compose -f docker-compose.yml up -d --no-deps app`, rollback không build), `backup-media.sh`, `verify-restore.sh` (dùng container tạm `--network none`) | `scripts/ops/*` | Không | Không | `deploy.sh --dry-run`; shellcheck; chạy verify-restore trên máy dev | Revert commit | PR-00. **Bắt buộc trước D1** |
+| **PR-01** Zalo characterization | ✅ commit `f4b13e7` | 10 nhóm: inbound, outbound, conversation, contact, assignment, labels, broadcast, websocket, worker/queue, AI handoff; sửa mock ở 10 test cũ cản baseline | `backend/tests/characterization/*` (6 file, 87 test), `tests/test-helpers.ts` + 9 test | Không | Không (chỉ test) | Suite: không failure mới; file fail 49 → 38 | Revert commit | PR-00 |
+| **OPS** Deploy / backup scripts | 🟡 có script, chờ review/commit, chưa chạy production | `scripts/ops/deploy.sh` (tag image theo SHA, chặn same-SHA trừ `ALLOW_SAME_SHA=1`, `docker compose -f docker-compose.yml up -d --no-deps app`, rollback `--no-build` không qua disk/dirty gate), `backup-media.sh`, `verify-restore.sh` (dùng container tạm `zalocrm-restore-*`, `--network none --memory 1g`, `EXPECTED_MIGRATIONS=127`) | `scripts/ops/*` | Không | Không | `deploy.sh --dry-run`; shellcheck; `bash -n`; chạy verify-restore trên dump giả lập local nếu có Docker; chạy production sau duyệt | Revert commit | PR-00. **Bắt buộc trước D1** |
 | **Meta Spike** (track riêng) | ⏳ chưa làm | n8n endpoint tạm (Raw Body + Crypto node, không lưu execution); verify GET, HMAC, nhận tin từ tài khoản có Role / không Role; kiểm tra hạn `v21.0` | Không đụng repo | Không | Không | Kết quả ghi vào §17 | Xoá workflow tạm | Không. **Phải PASS trước PR-02a** |
 | **PR-02a** Additive schema | ⏳ chưa bắt đầu | 7 model (ChannelAccount, TokenCredential, ContactIdentity, ContactMergeAudit, WebhookDelivery, ChannelEvent, OutboundCommand) + cột nullable `conversations.channel_account_id`, `messages.org_id`, `messages.platform_message_id` + FK form mapping; `@deprecated` 4 chỗ token cũ; thêm model vào `org-scoped-models.ts`. **Không** có route, không đổi `zaloAccountId` (§9.1) | `prisma/schema.prisma`, `prisma/migrations/2026xxxx_messenger_expand`, `shared/tenant/org-scoped-models.ts` | **Có** (expand-only) | Không | Migrate trên DB trống + bản restore (B-4); `prisma validate`; test partial unique `token_credentials_one_active`; suite + characterization pass | Rollback ứng dụng; schema giữ (§15.4) | PR-01 merge, **Meta Spike PASS**, **backup DB + media**, **restore test OK** (Gate §11) |
 | **PR-02b** Nullable + XOR + backfill | ⏳ | 02b-1 code chịu `zaloAccountId` null (~104 deref + 12 raw SQL + frontend 27 file) và ghi `messages.org_id` cho tin mới; 02b-2 backfill batch; 02b-3/4/5 migration DROP NOT NULL + XOR `conversations_channel_xor` + FK + unique index + `messages.org_id` NOT NULL (§9.2) | `modules/chat/**`, `modules/zalo/**`, analytics raw SQL, frontend, `scripts/ops/backfill-message-org-id.ts`, 3 migration | **Có** (3 file, tách bước) | Không với Zalo | Characterization PR-01 pass; raw SQL loại trừ conversation Messenger; backfill idempotent; XOR reject cả hai null / cả hai có; đếm dòng trước/sau | 02b-1: rollback app; 02b-3…5: drop constraint (trước tin Messenger đầu tiên) | PR-02a (đã lên production). **Xong trước PR-03** |
@@ -960,7 +954,7 @@ Giữ nguyên §3 của V3 (`docs/RA-SOAT-PHUONG-AN-MESSENGER-NATIVE.md`) và th
 ### Trả lời 5 câu hỏi
 
 **1. Code đã sẵn sàng để bắt đầu implement Messenger chưa?**
-**Có — và đã bắt đầu.** PR-00 đã commit (`067e388`), PR-01 xong và chờ review/commit. Repo sạch, Prisma 7.5 / BullMQ 5 / socket.io 4 đều phù hợp, không có code Lead Ads cũ phải gỡ. **PR-02a chưa được mở** cho tới khi đủ 4 điều kiện: (1) PR-01 qua gate, (2) Meta Spike PASS, (3) có backup DB + media, (4) restore test thành công.
+**Có — và đã bắt đầu.** PR-00 đã commit (`067e388`), PR-01 đã commit (`f4b13e7`). Repo sạch, Prisma 7.5 / BullMQ 5 / socket.io 4 đều phù hợp, không có code Lead Ads cũ phải gỡ. **PR-02a chưa được mở** cho tới khi đủ 4 điều kiện: (1) PR-01 qua gate, (2) Meta Spike PASS, (3) có backup DB + media, (4) restore test thành công.
 
 **2. DB đã sẵn sàng cho migration chưa?**
 **Về kỹ thuật: có.**
@@ -992,7 +986,7 @@ Giữ nguyên §3 của V3 (`docs/RA-SOAT-PHUONG-AN-MESSENGER-NATIVE.md`) và th
 
 Chưa được deploy migration hay tính năng Messenger lên VPS production.
 
-**Được phép ngay (không cần gate):** review + commit PR-01; viết track OPS (`deploy.sh`, `backup-media.sh`, `verify-restore.sh`); chạy Meta Spike; thực hiện các lệnh B-1…B-6 sau khi duyệt.
+**Được phép ngay (không cần gate):** review track OPS (`deploy.sh`, `backup-media.sh`, `verify-restore.sh`); chạy Meta Spike; thực hiện các lệnh B-1…B-6 sau khi duyệt.
 
 **Được mở PR-02a (viết code) khi:** PR-01 qua gate · Meta Spike PASS · có backup DB + media · restore test thành công.
 
@@ -1013,8 +1007,8 @@ Chưa lệnh nào được chạy.
 | ID | Lệnh | Mục đích | Rủi ro |
 |---|---|---|---|
 | B-1 | `docker exec zalo-crm-backup /backup.sh` | Dump thủ công | Tải DB ngắn (153 MB) |
-| B-2 | `tar -C .../zalocrm-corepviet_file_storage/_data -cf /opt/backups/zalocrm-media/...tar .` | Backup media | Dùng ~3.8 G disk |
-| B-3 | `docker run -d --name zalocrm-restore-test --network none ... postgres:16-alpine` + restore | Restore test | RAM 1 G tạm thời |
+| B-2 | `scripts/ops/backup-media.sh` | Backup media + đếm file + checksum | Dùng ~3.8 G disk; dừng nếu disk dự kiến > 80% |
+| B-3 | `scripts/ops/verify-restore.sh` | Restore test vào `zalocrm-restore-test --network none` | RAM 1 G tạm thời; tự dọn container bằng trap |
 | B-4 | `docker run --rm --network container:zalocrm-restore-test ... prisma migrate deploy` | Diễn tập migration | Chỉ đụng DB tạm |
 | B-5 | `docker rm -f zalocrm-restore-test` | Dọn | — |
 | B-6 | Cài rclone + cấu hình off-site + cron | Off-site | Cần credential đích do chủ hệ thống nhập |

@@ -10,6 +10,7 @@
 | Ngày | Số file `*.sql.gz` trong `/root/ZaloCRM-CorepViet/backups` | Media backup | Off-site | Restore test |
 |---|---|---|---|---|
 | 2026-09-16 | **0** | Không | Không | Chưa từng |
+| 2026-09-17 | Có dump tự động theo audit v1.2 | Chưa | Chưa | Chưa |
 
 ⇒ **Backup gate: FAIL.** Không chạy `prisma migrate deploy` trên production cho tới khi mục 5 PASS.
 
@@ -38,41 +39,43 @@ df -h /
 | ID | Lệnh | Lý do | Ảnh hưởng |
 |---|---|---|---|
 | B-1 | `docker exec zalo-crm-backup /backup.sh` | Tạo dump ngay, không chờ 00:00 | Tải đọc DB ngắn; thêm ~vài chục MB (nén) |
-| B-2 | `mkdir -p /opt/backups/zalocrm-media && tar -C /var/lib/docker/volumes/zalocrm-corepviet_file_storage/_data -cf /opt/backups/zalocrm-media/file_storage-$(date +%Y%m%d-%H%M).tar .` | Backup media | Dùng ~dung lượng volume; kiểm tra `df -h /` trước (dừng nếu > 80% sau khi backup) |
+| B-2 | `scripts/ops/backup-media.sh` | Backup media, đếm file trong tar, ghi checksum với tên file tương đối | Dùng ~dung lượng volume; script dừng nếu disk dự kiến > 80% |
 
 Xác minh sau B-1/B-2:
 
 ```bash
-gzip -t /root/ZaloCRM-CorepViet/backups/last/*-latest.sql.gz && echo GZIP_OK
-tar -tf /opt/backups/zalocrm-media/file_storage-<stamp>.tar | grep -vc '/$'   # = số file trong volume
+gzip -t /root/ZaloCRM-CorepViet/backups/last/*.sql.gz && echo GZIP_OK
+cat /opt/backups/zalocrm-media/file_storage-<stamp>.tar.sha256
+tar -tf /opt/backups/zalocrm-media/file_storage-<stamp>.tar | awk '!/\/$/ {count++} END {print count + 0}'
 find /var/lib/docker/volumes/zalocrm-corepviet_file_storage/_data -type f | wc -l
 ```
 
 ## 4. Restore test (không đụng DB production) — COMMAND REQUIRES APPROVAL
 
-Chạy một PostgreSQL tạm, tách biệt, không mount volume production, không publish cổng:
+Chạy bằng script để luôn dùng container tạm tên `zalocrm-restore-*`, `--network none`, `--memory 1g`, kiểm tra `gzip -t`, `ON_ERROR_STOP=1`,
+đo riêng restore RTO và tổng thời gian, rồi dọn container bằng `trap`:
 
 ```bash
-docker run -d --name zalocrm-restore-test -e POSTGRES_USER=restore -e POSTGRES_PASSWORD=<tạm-thời> \
-  -e POSTGRES_DB=zalocrm postgres:16-alpine
-# chờ ready
-docker exec zalocrm-restore-test pg_isready -U restore
-time (gunzip -c /root/ZaloCRM-CorepViet/backups/last/*-latest.sql.gz \
-  | docker exec -i zalocrm-restore-test psql -U restore -d zalocrm -q -v ON_ERROR_STOP=1)
+scripts/ops/verify-restore.sh --dry-run
+EXPECTED_MIGRATIONS=127 scripts/ops/verify-restore.sh
 ```
 
-Kiểm tra (chỉ đếm, không in dữ liệu khách hàng):
+Script tự kiểm tra (chỉ đếm, không in dữ liệu khách hàng):
 
 ```bash
-docker exec zalocrm-restore-test psql -U restore -d zalocrm -Atc \
-  "select count(*) from _prisma_migrations where finished_at is not null"
-docker exec zalocrm-restore-test psql -U restore -d zalocrm -Atc \
-  "select (select count(*) from organizations),(select count(*) from conversations),(select count(*) from messages)"
+select count(*) from _prisma_migrations;
+select count(*) from _prisma_migrations where finished_at is null;
+select count(*) from organizations;
+select count(*) from contacts;
+select count(*) from conversations;
+select count(*) from messages;
 ```
+
+Nếu đặt `EXPECTED_MIGRATIONS=127`, script sẽ fail khi tổng số dòng `_prisma_migrations` khác 127.
 
 So sánh với production (read-only, cùng câu lệnh trên `zalo-crm-db`). Chênh lệch chỉ được phép bằng dữ liệu phát sinh sau thời điểm dump.
 
-Dọn dẹp (COMMAND REQUIRES APPROVAL — xoá container tạm, không phải production):
+Dọn dẹp: `verify-restore.sh` luôn chạy `docker rm -f zalocrm-restore-test` khi kết thúc. Nếu phải dọn tay:
 
 ```bash
 docker rm -f zalocrm-restore-test
