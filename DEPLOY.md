@@ -72,3 +72,11 @@ Tune resource limits in `.env` for the real VPS:
 2. Circuit breaker state is in-memory. Restarting the app resets providers to closed until the threshold is reached again.
 3. Single-container updates have short downtime. Blue-green or rolling deployment is out of scope for this VPS PR.
 4. Logging remains console-based rather than structured JSON. A Pino/Winston migration should be a separate PR.
+
+## D0D Port 3080 hardening note (2026-09-17)
+
+Production D0D changed `docker-compose.yml` so the app port is bound to `172.17.0.1:${APP_PORT:-3080}:3000` instead of `0.0.0.0:3080`. The VPS backup made during D0D is:
+
+`/root/zalocrm-ops/config-backups/docker-compose.yml.20260917-191230`
+
+Important rollback/deploy caveat: deploying or rolling back to a SHA that does not contain local commit `99e16ca` (`chore(ops): bind app port to docker bridge 172.17.0.1 (D0D)`) will reopen public `0.0.0.0:3080`. Any such rollback/deploy must include an explicit gate to close 3080 again or verify the compose blob still matches the D0D hardened version.
