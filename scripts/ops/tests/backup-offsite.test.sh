@@ -286,23 +286,40 @@ EOF
   pass "backup.env sourced before derived defaults"
 }
 
+case_cron_logrotate_newline() {
+  log_case "cron/logrotate newline and cron format"
+  local cron_file logrotate_file cron_base job_count
+  cron_file="$ROOT_DIR/scripts/ops/cron/zalocrm-backup"
+  logrotate_file="$ROOT_DIR/scripts/ops/logrotate/zalocrm-backup"
+  [[ "$(tail -c1 "$cron_file" | od -An -c | tr -d ' ')" == "\\n" ]] || return 1
+  [[ "$(tail -c1 "$logrotate_file" | od -An -c | tr -d ' ')" == "\\n" ]] || return 1
+  job_count="$(grep -Ec '^[0-9]+[[:space:]]+[0-9]+[[:space:]]+[*0-9]+[[:space:]]+[*0-9]+[[:space:]]+[*0-9]+[[:space:]]+root[[:space:]]+' "$cron_file")"
+  [[ "$job_count" == "2" ]] || return 1
+  awk 'BEGIN{ok=1} /^30 2 \* \* \* root / || /^30 4 \* \* 0 root / { if (NF < 7) ok=0; count++ } END{ exit !(ok && count==2) }' "$cron_file" || return 1
+  cron_base="$(basename "$cron_file")"
+  [[ "$cron_base" != *.* ]] || return 1
+  pass "cron/logrotate newline and cron format"
+}
 main() {
   rm -rf "$TEST_ROOT"
   mkdir -p "$TEST_ROOT"
-  for c in \
-    case_daily_happy \
-    case_pg_dump_fail \
-    case_small_dump \
-    case_disk_gate \
-    case_retention \
-    case_no_forbidden_rclone \
-    case_lock_held \
-    case_env_mode \
-    case_hc_not_in_output \
-    case_dry_run \
-    case_weekly \
-    case_weekly_lock_timeout \
-    case_backup_env_load_order; do
+  cases=(
+    case_daily_happy
+    case_pg_dump_fail
+    case_small_dump
+    case_disk_gate
+    case_retention
+    case_no_forbidden_rclone
+    case_lock_held
+    case_env_mode
+    case_hc_not_in_output
+    case_dry_run
+    case_weekly
+    case_weekly_lock_timeout
+    case_backup_env_load_order
+    case_cron_logrotate_newline
+  )
+  for c in "${cases[@]}"; do
     if "$c"; then :; else fail "$c"; fi
   done
   printf '\nSummary: PASS=%s FAIL=%s\n' "$PASS_COUNT" "$FAIL_COUNT"
