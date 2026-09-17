@@ -161,7 +161,7 @@ services:
       #   - rate-limits per IP
       #   - keeps the admin console (:9001) firewalled to ops VPN only.
       # The :9001 admin console IS bound to 127.0.0.1 below — never expose it.
-      - "${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
