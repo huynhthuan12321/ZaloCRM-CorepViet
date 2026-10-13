@@ -76,7 +76,8 @@ services:
         max-file: "5"
 
   # One-account TikTok Personal pilot. This service is inert unless operators
-  # explicitly select the profile and supply the account/epoch shown by CRM.
+  # explicitly select the profile and supply the account plus a bootstrap epoch.
+  # The worker refreshes the current epoch from CRM before reporting session state.
   tiktok-personal-worker:
     profiles: ["tiktok-personal"]
     build:

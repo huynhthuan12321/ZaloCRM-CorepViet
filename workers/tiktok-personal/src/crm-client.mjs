@@ -41,6 +41,17 @@ export async function publishSession(config, observation, fetchImpl = fetch) {
   );
 }
 
+export async function claimSessionControl(config, fetchImpl = fetch) {
+  return postSigned(
+    config,
+    '/internal/channel-workers/tiktok/control/claim',
+    `control:${config.accountId}`,
+    { accountId: config.accountId },
+    'application/vnd.zalocrm.tiktok-control+json',
+    fetchImpl,
+  );
+}
+
 export function eventEnvelope(config, thread, message, observedAt = new Date().toISOString()) {
   return {
     version: 1,

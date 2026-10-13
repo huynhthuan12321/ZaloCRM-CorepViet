@@ -2,8 +2,8 @@
 <!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <template>
   <section class="tiktok-panel" aria-label="Kết nối TikTok Personal" :aria-busy="busy">
-    <strong>TikTok Personal</strong>
-    <p class="hint">Thử nghiệm một tài khoản. QR chỉ hiện cho quản trị viên.</p>
+    <strong>Đăng nhập TikTok</strong>
+    <p class="hint">Thử nghiệm một tài khoản. Chọn mã QR hoặc tài khoản và mật khẩu.</p>
 
     <form v-if="!account" @submit.prevent="createAccount">
       <label for="tiktok-username">Username TikTok</label>
@@ -13,10 +13,61 @@
 
     <div v-else class="account">
       <span><strong>{{ account.displayName }}</strong> · {{ statusLabel(connection?.account.status ?? account.status) }}</span>
-      <button v-if="connection?.account.status !== 'CONNECTED'" type="button" :disabled="busy" @click="connect">
-        {{ connection?.epoch ? 'Tạo QR mới' : 'Bắt đầu kết nối' }}
+      <fieldset v-if="connection?.account.status !== 'CONNECTED'" class="login-method">
+        <legend>Phương thức đăng nhập</legend>
+        <label>
+          <input v-model="loginMethod" type="radio" value="qr" />
+          Sử dụng mã QR
+        </label>
+        <label>
+          <input v-model="loginMethod" type="radio" value="password" />
+          Sử dụng số điện thoại, email hoặc username
+        </label>
+      </fieldset>
+
+      <button
+        v-if="connection?.account.status !== 'CONNECTED' && loginMethod === 'qr'"
+        type="button"
+        :disabled="busy"
+        @click="connectWithQr"
+      >
+        Tạo mã QR
       </button>
-      <button v-else type="button" :disabled="busy" @click="setOutbound(!connection.account.outboundEnabled)">
+
+      <form
+        v-if="connection?.account.status !== 'CONNECTED' && loginMethod === 'password'"
+        class="password-login"
+        @submit.prevent="connectWithPassword"
+      >
+        <label for="tiktok-login-identifier">Số điện thoại, email hoặc username</label>
+        <input
+          id="tiktok-login-identifier"
+          v-model.trim="loginIdentifier"
+          autocomplete="username"
+          maxlength="128"
+          placeholder="Email hoặc username"
+        />
+        <label for="tiktok-login-password">Mật khẩu</label>
+        <input
+          id="tiktok-login-password"
+          v-model="loginPassword"
+          type="password"
+          autocomplete="current-password"
+          maxlength="256"
+          placeholder="Mật khẩu TikTok"
+        />
+        <button type="submit" :disabled="busy || !loginIdentifier || !loginPassword">
+          Đăng nhập
+        </button>
+        <small>Mật khẩu chỉ chuyển một lần đến worker, không lưu trong cơ sở dữ liệu hoặc log.</small>
+      </form>
+
+      <button
+        v-if="connection?.account.status === 'CONNECTED'"
+        type="button"
+        :disabled="busy"
+        @click="setOutbound(!connection.account.outboundEnabled)"
+      >
         {{ connection.account.outboundEnabled ? 'Tắt gửi tin' : 'Bật gửi tin' }}
       </button>
       <button type="button" :disabled="busy" @click="loadConnection">Làm mới trạng thái</button>
@@ -26,7 +77,7 @@
 
       <div v-if="connection?.runtime?.qrDataUrl" class="qr" aria-live="polite">
         <img :src="connection.runtime.qrDataUrl" alt="Mã QR đăng nhập TikTok" width="240" height="240" />
-        <small>Quét bằng ứng dụng TikTok. Không gửi cookie, OTP hoặc mật khẩu vào CRM.</small>
+        <small>Quét bằng ứng dụng TikTok. Không nhập OTP khi đang dùng phương thức QR.</small>
       </div>
       <div v-if="connection" class="details" aria-live="polite">
         <small>Account ID: <code>{{ account.id }}</code></small>
@@ -55,13 +106,16 @@ const props = defineProps<{ accounts: Account[] }>();
 const emit = defineEmits<{ changed: [] }>();
 const account = computed(() => props.accounts.find(item => item.provider === 'TIKTOK_WEB_SESSION') ?? null);
 const username = ref('');
+const loginMethod = ref<'qr' | 'password'>('qr');
+const loginIdentifier = ref('');
+const loginPassword = ref('');
 const connection = ref<Connection | null>(null);
 const busy = ref(false);
 const error = ref('');
 let timer: number | undefined;
 
 const statusLabel = (status?: string) => ({
-  CONNECTED: 'đã kết nối', QR_PENDING: 'đang chờ QR', CHALLENGE: 'cần xác minh trong TikTok',
+  CONNECTED: 'đã kết nối', QR_PENDING: 'đang chờ đăng nhập', CHALLENGE: 'cần xác minh trong TikTok',
   SESSION_EXPIRED: 'phiên hết hạn', IDENTITY_MISMATCH: 'sai tài khoản', ERROR: 'lỗi', DISCONNECTED: 'chưa kết nối',
 }[status ?? ''] ?? status ?? 'không rõ');
 
@@ -85,15 +139,28 @@ async function loadConnection() {
   } catch { error.value = 'Không đọc được trạng thái kết nối TikTok.'; }
 }
 
-async function connect() {
+async function connect(payload: { method: 'qr' } | { method: 'password'; identifier: string; password: string }) {
   if (!account.value) return;
   busy.value = true; error.value = '';
   try {
-    await api.post(`/channel-accounts/tiktok/${account.value.id}/connect`);
+    await api.post(`/channel-accounts/tiktok/${account.value.id}/connect`, payload);
     await loadConnection(); emit('changed');
-  } catch { error.value = 'Không tạo được phiên đăng nhập TikTok.'; }
-  finally { busy.value = false; }
+  } catch {
+    error.value = payload.method === 'qr'
+      ? 'Không tạo được mã QR TikTok.'
+      : 'Không chuyển được yêu cầu đăng nhập TikTok.';
+  } finally {
+    if (payload.method === 'password') loginPassword.value = '';
+    busy.value = false;
+  }
 }
+
+const connectWithQr = () => connect({ method: 'qr' });
+const connectWithPassword = () => connect({
+  method: 'password',
+  identifier: loginIdentifier.value,
+  password: loginPassword.value,
+});
 
 async function setOutbound(enabled: boolean) {
   if (!account.value) return;
@@ -116,6 +183,9 @@ async function disconnect() {
 }
 
 watch(() => account.value?.id, () => void loadConnection(), { immediate: true });
+watch(() => account.value?.displayName, value => {
+  if (!loginIdentifier.value && value) loginIdentifier.value = value.replace(/^@/, '');
+}, { immediate: true });
 onMounted(() => { timer = window.setInterval(() => void loadConnection(), 3000); });
 onUnmounted(() => { if (timer) window.clearInterval(timer); });
 </script>
@@ -123,9 +193,13 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
 <style scoped>
 .tiktok-panel { margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,.12); }
 .hint { font-size:12px; opacity:.72; }
-form,.account,.qr,.details { display:grid; gap:8px; margin-top:10px; }
+form,.account,.qr,.details,.login-method { display:grid; gap:8px; margin-top:10px; }
 input,button { max-width:100%; min-height:44px; }
 input { padding:8px 10px; }
+.login-method { border:1px solid rgba(255,255,255,.18); border-radius:8px; padding:10px; }
+.login-method label { display:flex; align-items:center; gap:8px; }
+.login-method input { min-height:auto; }
+.password-login small { opacity:.72; line-height:1.45; }
 button:focus-visible,input:focus-visible { outline:3px solid #60a5fa; outline-offset:2px; }
 button:disabled { cursor:not-allowed; opacity:.55; }
 .qr img { width:240px; max-width:100%; height:auto; background:#fff; padding:8px; border-radius:8px; }

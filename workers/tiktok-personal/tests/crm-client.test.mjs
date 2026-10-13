@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Nguyen Tien Loc
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { eventEnvelope, sessionPayload } from '../src/crm-client.mjs';
+import { claimSessionControl, eventEnvelope, sessionPayload } from '../src/crm-client.mjs';
 
 const cfg = {
   accountId: '11111111-1111-4111-8111-111111111111',
@@ -37,4 +37,24 @@ test('session payload contains only QR image and observed identity', () => {
     observedAt: '2026-10-13T00:00:00.000Z',
     identityUsername: 'shop_demo',
   });
+});
+
+test('claims the current epoch without sending login credentials', async () => {
+  let request;
+  const result = await claimSessionControl({
+    ...cfg,
+    crmOrigin: 'http://app:3000',
+    secret: 'x'.repeat(32),
+  }, async (url, init) => {
+    request = { url: String(url), init };
+    return new Response(JSON.stringify({
+      epoch: '10',
+      expectedUsername: 'shop_demo',
+      action: null,
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  assert.equal(result.epoch, '10');
+  assert.match(request.url, /tiktok\/control\/claim$/);
+  assert.deepEqual(JSON.parse(request.init.body), { accountId: cfg.accountId });
+  assert.equal(request.init.body.includes('password'), false);
 });

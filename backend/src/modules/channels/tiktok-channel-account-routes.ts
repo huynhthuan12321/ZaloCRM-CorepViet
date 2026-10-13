@@ -18,14 +18,29 @@ import {
   recordTikTokConnectionState,
   tiktokConnectionState,
 } from './tiktok-connection-state.js';
+import {
+  claimTikTokLoginAction,
+  clearTikTokLoginAction,
+  queueTikTokLoginAction,
+} from './tiktok-login-control.js';
 
 const SESSION_CONTENT_TYPE = 'application/vnd.zalocrm.tiktok-session+json';
+const CONTROL_CONTENT_TYPE = 'application/vnd.zalocrm.tiktok-control+json';
 const usernamePattern = /^[A-Za-z0-9_.]{2,64}$/;
 const createSchema = z.object({
   username: z.string().trim().transform(value => value.replace(/^@/, '')).pipe(z.string().regex(usernamePattern)),
   displayName: z.string().trim().min(1).max(120).optional(),
 }).strict();
 const outboundSchema = z.object({ enabled: z.boolean() }).strict();
+const connectSchema = z.discriminatedUnion('method', [
+  z.object({ method: z.literal('qr') }).strict(),
+  z.object({
+    method: z.literal('password'),
+    identifier: z.string().trim().min(2).max(128),
+    password: z.string().min(1).max(256),
+  }).strict(),
+]);
+const controlClaimSchema = z.object({ accountId: z.string().uuid() }).strict();
 const sessionSchema = z.object({
   accountId: z.string().uuid(),
   epoch: z.string().regex(/^[1-9]\d{0,19}$/),
@@ -92,6 +107,8 @@ export async function tiktokChannelAccountRoutes(app: FastifyInstance) {
     preHandler: [authMiddleware, requireGrant('conversation', 'access')],
   }, async (request, reply) => {
     if (!cfg().effective.enabled) return reply.code(404).send({ error: 'Not found' });
+    const parsed = connectSchema.safeParse(request.body ?? { method: 'qr' });
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid TikTok login request' });
     const { id } = request.params as { id: string };
     if (!(await hasChannelAccess(actor(request), id, 'admin'))) return reply.code(404).send({ error: 'Not found' });
     const connect = () => prisma.$transaction(async tx => {
@@ -141,7 +158,9 @@ export async function tiktokChannelAccountRoutes(app: FastifyInstance) {
     }
     if (epoch === null) return reply.code(404).send({ error: 'Not found' });
     clearTikTokConnectionState(id);
-    const payload = { status: 'QR_PENDING', epoch: epoch.toString() };
+    clearTikTokLoginAction(id);
+    queueTikTokLoginAction(id, epoch.toString(), parsed.data);
+    const payload = { status: 'QR_PENDING', epoch: epoch.toString(), method: parsed.data.method };
     if (io) await emitAuthorizedChannelEvent({
       io,
       orgId: request.user!.orgId,
@@ -234,6 +253,7 @@ export async function tiktokChannelAccountRoutes(app: FastifyInstance) {
       })] : []),
     ]);
     clearTikTokConnectionState(id);
+    clearTikTokLoginAction(id);
     if (io) await emitAuthorizedChannelEvent({
       io,
       orgId: request.user!.orgId,
@@ -249,6 +269,41 @@ export async function tiktokChannelAccountRoutes(app: FastifyInstance) {
     parseAs: 'string',
     bodyLimit: 768 * 1024,
   }, (_request, body, done) => done(null, body));
+  app.addContentTypeParser(CONTROL_CONTENT_TYPE, {
+    parseAs: 'string',
+    bodyLimit: 8 * 1024,
+  }, (_request, body, done) => done(null, body));
+
+  app.post('/internal/channel-workers/tiktok/control/claim', async (request, reply) => {
+    if (!cfg().effective.enabled) return reply.code(404).send({ error: 'Not found' });
+    const rawBody = typeof request.body === 'string' ? request.body : '';
+    let decoded: unknown;
+    try { decoded = JSON.parse(rawBody); } catch { decoded = null; }
+    const parsed = controlClaimSchema.safeParse(decoded);
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid control claim' });
+    const account = await runSystemQuery(() => prisma.channelAccount.findFirst({
+      where: { id: parsed.data.accountId, provider: 'TIKTOK_WEB_SESSION', enabled: true },
+      include: { session: { select: { epoch: true } } },
+    }));
+    if (!account) return reply.code(404).send({ error: 'Unknown account' });
+    const verified = verifyChannelWorkerRequest(rawBody, {
+      signature: request.headers['x-channel-signature'] as string | undefined,
+      timestamp: request.headers['x-channel-timestamp'] as string | undefined,
+      nonce: request.headers['x-channel-nonce'] as string | undefined,
+    }, account.id, 'TIKTOK_WEB_SESSION');
+    if (!verified.valid) return reply.code(401).send({ error: 'Unauthorized', code: verified.reason });
+    if (verified.nonce !== `control:${account.id}`) {
+      return reply.code(401).send({ error: 'Unauthorized', code: 'nonce_mismatch' });
+    }
+    if (!account.session || !account.externalAccountId) return reply.code(204).send();
+    const epoch = account.session.epoch.toString();
+    return {
+      accountId: account.id,
+      epoch,
+      expectedUsername: account.externalAccountId,
+      action: claimTikTokLoginAction(account.id, epoch),
+    };
+  });
 
   app.post('/internal/channel-workers/tiktok/session', async (request, reply) => {
     if (!cfg().effective.enabled) return reply.code(404).send({ error: 'Not found' });

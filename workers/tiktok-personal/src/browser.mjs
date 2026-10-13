@@ -3,6 +3,7 @@
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { readThreadDocument } from './dom-reader.mjs';
+import { openPasswordLogin } from './password-login.mjs';
 import { openQrLogin } from './qr-login.mjs';
 
 const conversationItem = '[data-e2e="dm-new-conversation-item"]';
@@ -47,6 +48,22 @@ export async function launchTikTokBrowser(config) {
   });
   const page = context.pages()[0] ?? await context.newPage();
   await page.goto(config.messagesUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+
+  async function beginLogin(action) {
+    if (action.method === 'password') {
+      await openPasswordLogin(page, action);
+      return;
+    }
+    await page.goto('https://www.tiktok.com/login?lang=en', {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    if (!await openQrLogin(page)) throw Error('TIKTOK_QR_LOGIN_CHOICE_UNAVAILABLE');
+    await page.waitForURL(/\/login\/qrcode(?:\?|$)/, {
+      waitUntil: 'domcontentloaded',
+      timeout: 10_000,
+    }).catch(() => undefined);
+  }
 
   async function observeSession() {
     const challenge = await page.getByText(/captcha|verify to continue|security verification/i)
@@ -150,6 +167,7 @@ export async function launchTikTokBrowser(config) {
   return {
     page,
     context,
+    beginLogin,
     observeSession,
     listThreads,
     openThread,

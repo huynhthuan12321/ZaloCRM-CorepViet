@@ -4,6 +4,7 @@ import { resolveConfig } from './config.mjs';
 import { launchTikTokBrowser } from './browser.mjs';
 import {
   claimCommand,
+  claimSessionControl,
   publishEvent,
   publishSession,
   reportCommand,
@@ -65,13 +66,41 @@ async function dispatchOne() {
 console.log(`TikTok worker started account=${config.accountId} username=@${config.expectedUsername}`);
 try {
   while (!stopping) {
+    const control = await claimSessionControl(config).catch(error => {
+      console.warn(`control_claim_failed status=${error?.status ?? 'network'}`);
+      return null;
+    });
+    if (control?.epoch) {
+      if (control.expectedUsername.toLowerCase() !== config.expectedUsername.toLowerCase()) {
+        console.warn('control_claim_failed status=identity_mismatch');
+        stopping = true;
+        continue;
+      }
+      if (config.epoch !== control.epoch) {
+        config.epoch = control.epoch;
+        lastSessionKey = '';
+        lastSessionAt = 0;
+      }
+      if (control.action) {
+        try {
+          await browser.beginLogin(control.action);
+        } catch (error) {
+          console.warn(`login_action_failed code=${error?.message ?? 'unknown'}`);
+        } finally {
+          if (control.action.method === 'password') control.action.password = '';
+        }
+      }
+    }
     const session = await browser.observeSession().catch(() => ({
       state: 'error',
       errorCode: 'BROWSER_OBSERVATION_FAILED',
       observedAt: new Date().toISOString(),
     }));
     await reportSession(session).catch(error => {
-      if (error?.status === 409) stopping = true;
+      if (error?.status === 409) {
+        lastSessionKey = '';
+        lastSessionAt = 0;
+      }
       console.warn(`session_report_failed status=${error?.status ?? 'network'}`);
     });
     if (session.state === 'authenticated' && !busy) {
