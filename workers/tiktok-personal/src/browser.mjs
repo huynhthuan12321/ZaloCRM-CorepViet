@@ -126,8 +126,10 @@ export async function launchTikTokBrowser(config) {
   }
 
   async function observeSession() {
-    const ownProfile = await page.locator('a[data-e2e="nav-profile"]').first()
-      .getAttribute('href').catch(() => null);
+    const ownProfileLink = page.locator('a[data-e2e="nav-profile"]').first();
+    const ownProfile = await ownProfileLink.count() > 0
+      ? await ownProfileLink.getAttribute('href', { timeout: 1000 }).catch(() => null)
+      : null;
     if (ownProfile) {
       const username = new URL(ownProfile, 'https://www.tiktok.com').pathname.match(/^\/@([^/]+)\/?$/)?.[1];
       if (username?.toLowerCase() !== config.expectedUsername.toLowerCase()) {
