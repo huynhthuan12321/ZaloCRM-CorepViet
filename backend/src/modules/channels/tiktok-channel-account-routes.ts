@@ -44,7 +44,7 @@ const controlClaimSchema = z.object({ accountId: z.string().uuid() }).strict();
 const sessionSchema = z.object({
   accountId: z.string().uuid(),
   epoch: z.string().regex(/^[1-9]\d{0,19}$/),
-  state: z.enum(['qr_required', 'authenticated', 'challenge', 'expired', 'error']),
+  state: z.enum(['login_pending', 'qr_required', 'authenticated', 'challenge', 'expired', 'error']),
   observedAt: z.string().datetime(),
   qrDataUrl: z.string().max(512_000).optional(),
   identityUsername: z.string().trim().regex(usernamePattern).optional(),
@@ -355,6 +355,7 @@ export async function tiktokChannelAccountRoutes(app: FastifyInstance) {
       ]));
     } else {
       const status = {
+        login_pending: 'QR_PENDING',
         qr_required: 'QR_PENDING',
         challenge: 'CHALLENGE',
         expired: 'SESSION_EXPIRED',

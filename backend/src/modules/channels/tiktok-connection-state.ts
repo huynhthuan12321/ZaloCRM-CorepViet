@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyen Tien Loc
 export interface TikTokConnectionRuntime {
-  state: 'qr_required' | 'authenticated' | 'challenge' | 'expired' | 'error';
+  state: 'login_pending' | 'qr_required' | 'authenticated' | 'challenge' | 'expired' | 'error';
   epoch: string;
   qrDataUrl?: string;
   identityUsername?: string;

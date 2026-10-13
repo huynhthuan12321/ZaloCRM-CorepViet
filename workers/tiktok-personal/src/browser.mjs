@@ -7,6 +7,34 @@ import { openPasswordLogin } from './password-login.mjs';
 import { openQrLogin } from './qr-login.mjs';
 
 const conversationItem = '[data-e2e="dm-new-conversation-item"]';
+const challengeText = /captcha|verify to continue|security verification|verify your identity|2-step verification|verification code|confirm on your device|drag the slider/i;
+const rejectedPasswordText = /incorrect (?:account|username|email|password)|wrong password|couldn't log in|could not log in|account doesn't exist|too many attempts|maximum (?:number of )?attempts|try again later/i;
+const expiredQrText = /qr code (?:has )?expired|code expired|refresh (?:the )?qr code/i;
+
+export function classifyLoginPageText(text) {
+  if (challengeText.test(text)) return { state: 'challenge' };
+  if (rejectedPasswordText.test(text)) {
+    return { state: 'error', errorCode: 'TIKTOK_LOGIN_REJECTED' };
+  }
+  if (expiredQrText.test(text)) return { state: 'expired' };
+  return null;
+}
+
+export function loginRejectionReason(text) {
+  if (/too many attempts|maximum (?:number of )?attempts|try again later/i.test(text)) return 'attempt_limit';
+  if (/incorrect (?:account|username|email|password)|wrong password/i.test(text)) return 'credentials_rejected';
+  if (/account doesn't exist/i.test(text)) return 'account_not_found';
+  if (/couldn't log in|could not log in/i.test(text)) return 'login_unavailable';
+  return undefined;
+}
+
+export function shouldReturnToInbox(url, hasMessagesLink) {
+  const parsed = new URL(url);
+  return parsed.origin === 'https://www.tiktok.com'
+    && !/^\/login(?:\/|$)/.test(parsed.pathname)
+    && parsed.pathname !== '/messages'
+    && hasMessagesLink;
+}
 
 async function firstVisible(page, selectors) {
   for (const selector of selectors) {
@@ -48,8 +76,25 @@ export async function launchTikTokBrowser(config) {
   });
   const page = context.pages()[0] ?? await context.newPage();
   await page.goto(config.messagesUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  let loginMode = 'qr';
+  let loginStartedAt = 0;
+  let lastDiagnostic = '';
+
+  function recordDiagnostic(state, text = '') {
+    const diagnostic = JSON.stringify({
+      state,
+      path: new URL(page.url()).pathname,
+      reason: loginRejectionReason(text),
+    });
+    if (diagnostic !== lastDiagnostic) {
+      console.log(`login_observation ${diagnostic}`);
+      lastDiagnostic = diagnostic;
+    }
+  }
 
   async function beginLogin(action) {
+    loginMode = action.method;
+    loginStartedAt = Date.now();
     if (action.method === 'password') {
       await openPasswordLogin(page, action);
       return;
@@ -58,7 +103,9 @@ export async function launchTikTokBrowser(config) {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     });
-    if (!await openQrLogin(page)) throw Error('TIKTOK_QR_LOGIN_CHOICE_UNAVAILABLE');
+    if (!await openQrLogin(page, { timeoutMs: 20_000 })) {
+      throw Error('TIKTOK_QR_LOGIN_CHOICE_UNAVAILABLE');
+    }
     await page.waitForURL(/\/login\/qrcode(?:\?|$)/, {
       waitUntil: 'domcontentloaded',
       timeout: 10_000,
@@ -66,13 +113,18 @@ export async function launchTikTokBrowser(config) {
   }
 
   async function observeSession() {
-    const challenge = await page.getByText(/captcha|verify to continue|security verification/i)
-      .first().isVisible().catch(() => false);
-    if (challenge) return { state: 'challenge', observedAt: new Date().toISOString() };
+    // TikTok may redirect a successful QR/password login to the For You page.
+    // The inbox selectors cannot verify that page; return through the normal UI.
+    const messagesLink = await page.locator('a[href="/messages"],a[href^="/messages?"]').first()
+      .isVisible().catch(() => false);
+    if (shouldReturnToInbox(page.url(), messagesLink)) {
+      await page.goto(config.messagesUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    }
     const authenticated = await page.locator(
       '[data-e2e="dm-new-conversation-list"],#main-content-messages',
     ).first().isVisible().catch(() => false);
     if (authenticated) {
+      recordDiagnostic('inbox_visible');
       const identityUsername = await page.locator('a[href^="/@"]').evaluateAll((links, expected) => {
         const usernames = links.map(link => {
           try {
@@ -90,7 +142,7 @@ export async function launchTikTokBrowser(config) {
       }
       return { state: 'authenticated', identityUsername, observedAt: new Date().toISOString() };
     }
-    if (await openQrLogin(page).catch(() => false)) {
+    if (loginMode === 'qr' && await openQrLogin(page, { timeoutMs: 2_000 }).catch(() => false)) {
       await page.waitForURL(/\/login\/qrcode(?:\?|$)/, {
         waitUntil: 'domcontentloaded',
         timeout: 10_000,
@@ -98,10 +150,32 @@ export async function launchTikTokBrowser(config) {
       await page.locator('canvas').first().waitFor({ state: 'visible', timeout: 10_000 })
         .catch(() => undefined);
     }
+    const bodyText = await page.locator('body').innerText({ timeout: 5_000 }).catch(() => '');
+    const classified = classifyLoginPageText(bodyText);
+    if (classified) {
+      recordDiagnostic(classified.state, bodyText);
+      return { ...classified, observedAt: new Date().toISOString() };
+    }
     const qr = await qrDataUrl(page);
+    if (!qr) {
+      recordDiagnostic('login_pending');
+      const elapsed = loginStartedAt ? Date.now() - loginStartedAt : 0;
+      if (loginMode === 'password' && elapsed >= 30_000) {
+        return {
+          state: 'error',
+          errorCode: 'PASSWORD_LOGIN_NOT_COMPLETED',
+          observedAt: new Date().toISOString(),
+        };
+      }
+      return {
+        state: 'login_pending',
+        observedAt: new Date().toISOString(),
+      };
+    }
+    recordDiagnostic('qr_required');
     return {
-      state: qr ? 'qr_required' : 'expired',
-      ...(qr ? { qrDataUrl: qr } : {}),
+      state: 'qr_required',
+      qrDataUrl: qr,
       observedAt: new Date().toISOString(),
     };
   }

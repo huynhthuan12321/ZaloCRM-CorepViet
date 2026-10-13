@@ -96,14 +96,16 @@ try {
       errorCode: 'BROWSER_OBSERVATION_FAILED',
       observedAt: new Date().toISOString(),
     }));
+    let sessionAccepted = true;
     await reportSession(session).catch(error => {
+      sessionAccepted = false;
       if (error?.status === 409) {
         lastSessionKey = '';
         lastSessionAt = 0;
       }
       console.warn(`session_report_failed status=${error?.status ?? 'network'}`);
     });
-    if (session.state === 'authenticated' && !busy) {
+    if (sessionAccepted && session.state === 'authenticated' && !busy) {
       busy = true;
       try {
         await syncInbound();

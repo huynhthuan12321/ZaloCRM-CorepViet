@@ -13,12 +13,14 @@ function fakePage() {
   });
   const input = selector => ({
     first() { return this; },
+    async waitFor() { operations.push(['waitFor', selector]); },
     async fill(value) { operations.push(['fill', selector, value]); },
     async click() { operations.push(['click', selector]); },
   });
   return {
     operations,
     async goto(url) { operations.push(['goto', url]); },
+    async waitForTimeout(milliseconds) { operations.push(['wait', milliseconds]); },
     getByText(pattern) { return clickable(String(pattern)); },
     getByRole(_role, options) { return clickable(String(options.name)); },
     locator(selector) { return input(selector); },
@@ -41,8 +43,7 @@ test('fills username and password through the official TikTok login form', async
     ['fill', 'input[name="username"]', 'shop_demo'],
     ['fill', 'input[type="password"]', 'one-time-secret'],
   ]);
-  assert.deepEqual(page.operations.at(-1), [
-    'click',
-    '[data-e2e="login-button"], button[type="submit"]',
-  ]);
+  assert.ok(page.operations.some(item => item[0] === 'click'
+    && item[1] === '[data-e2e="login-button"], button[type="submit"]'));
+  assert.deepEqual(page.operations.at(-1), ['wait', 1500]);
 });

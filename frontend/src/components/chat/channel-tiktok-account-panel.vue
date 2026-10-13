@@ -82,7 +82,11 @@
       <div v-if="connection" class="details" aria-live="polite">
         <small>Account ID: <code>{{ account.id }}</code></small>
         <small>Epoch: <code>{{ connection.epoch ?? 'chưa tạo' }}</code></small>
-        <small v-if="connection.runtime?.errorCode">Mã lỗi: {{ connection.runtime.errorCode }}</small>
+        <small v-if="connection.runtime?.state === 'login_pending'">TikTok đang xử lý yêu cầu đăng nhập.</small>
+        <small v-if="connection.runtime?.state === 'challenge'">Hãy hoàn tất xác minh hoặc xác nhận trong ứng dụng TikTok.</small>
+        <small v-if="connection.runtime?.errorCode" class="error">
+          {{ runtimeErrorLabel(connection.runtime.errorCode) }}
+        </small>
       </div>
     </div>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
@@ -118,6 +122,12 @@ const statusLabel = (status?: string) => ({
   CONNECTED: 'đã kết nối', QR_PENDING: 'đang chờ đăng nhập', CHALLENGE: 'cần xác minh trong TikTok',
   SESSION_EXPIRED: 'phiên hết hạn', IDENTITY_MISMATCH: 'sai tài khoản', ERROR: 'lỗi', DISCONNECTED: 'chưa kết nối',
 }[status ?? ''] ?? status ?? 'không rõ');
+
+const runtimeErrorLabel = (code: string) => ({
+  TIKTOK_LOGIN_REJECTED: 'TikTok từ chối đăng nhập. Kiểm tra lại tài khoản, mật khẩu hoặc giới hạn thử đăng nhập.',
+  PASSWORD_LOGIN_NOT_COMPLETED: 'TikTok chưa hoàn tất đăng nhập. Tài khoản có thể cần xác minh thêm trong TikTok.',
+  IDENTITY_NOT_OBSERVED: 'Đã mở được hộp thư nhưng chưa xác nhận được đúng username của tài khoản.',
+}[code] ?? `Mã lỗi TikTok: ${code}`);
 
 async function createAccount() {
   busy.value = true; error.value = '';
