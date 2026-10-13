@@ -38,3 +38,11 @@
 - Bổ sung log `login_observation` chỉ có state, pathname và nhóm lý do (`attempt_limit`, `credentials_rejected`, `account_not_found`, `login_unavailable`). Không ghi nội dung trang, input, query URL, cookie hay token.
 - Worker: 13/13 kiểm tra đạt với `node --test --test-isolation=none tests/*.test.mjs` (sandbox chặn spawn của npm test thông thường).
 - Cần một lần chủ tài khoản thử QR mới để thu bằng chứng trực tiếp. Chưa coi unit test là đăng nhập thật PASS.
+
+## Bằng chứng lần thử tiếp theo (epoch 24)
+
+- Log worker sau khi triển khai `99beae1`: `login_observation {"state":"error","path":"/login/phone-or-email/email","reason":"attempt_limit"}`. Bộ phân loại gặp thông báo thuộc nhóm giới hạn lần thử/try again later. Đây là kết quả quan sát trang đăng nhập mật khẩu, chưa xác định giới hạn áp dụng theo tài khoản, IP hay thiết bị, và chưa có thời gian mở lại do TikTok cung cấp.
+- Ảnh điện thoại khi xác nhận QR: “Không thể đăng nhập. Hãy thử phương thức đăng nhập khác.” Chứng minh TikTok báo thất bại tại bước cho phép đăng nhập; chưa có bằng chứng xác định nguyên nhân riêng của QR.
+- Ảnh CRM nhập `voicoffee.vn`, trong khi connector yêu cầu `setupxebanhcorep`. Chủ tài khoản đã xác nhận tiếp tục kết nối `@setupxebanhcorep`; không đổi account/profile hay mở rộng nhiều tài khoản.
+- Không tự gửi lại yêu cầu đăng nhập, không xóa profile, không thay IP hay né cơ chế bảo vệ để vượt giới hạn. Cần chủ tài khoản kiểm tra đăng nhập bình thường trên TikTok với đúng tài khoản; nếu vẫn lỗi, xử lý với hỗ trợ TikTok. Chỉ thử CRM lại khi TikTok cho phép đăng nhập và thu bằng chứng mới.
+- Không coi hai lần thử thất bại là bằng chứng connector live đã đạt nghiệm thu. App Zalo vẫn healthy trong lúc kiểm tra.
