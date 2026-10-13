@@ -53,6 +53,21 @@ Máy Windows phát triển không có lệnh Docker nên chưa chạy `docker co
 chưa build image worker tại local. Hai kiểm tra này là cổng bắt buộc trên VPS trước
 khi recreate app hoặc khởi động worker.
 
+## Triển khai VPS
+
+Đã triển khai commit `dbf0e9e44267db25bba883a4057038c4654589d7` lên VPS ngày
+13/10/2026:
+
+- `docker compose config --quiet`: PASS.
+- App image `b53c7b3b5dd6`, 4,85 GB; container app healthy ở health nội bộ và domain.
+- Worker image `285f33973f9c`, 1,85 GB; chỉ build sẵn, container chưa được tạo/chạy.
+- Runtime health: TikTok `disabled`, inbound `false`, outbound `false`.
+- Giữ image app `717a50f` để rollback. Build cache đã xóa.
+- Dung lượng sau triển khai: 58/79 GB, còn 18 GB, 77%.
+
+Chưa tạo `ChannelAccount`, chưa ghi worker secret/account/epoch, chưa mở QR và chưa
+kết nối tài khoản TikTok trong lần deploy này.
+
 ## Giới hạn đã biết
 
 - TikTok không cung cấp hợp đồng DOM ổn định cho luồng này; selector phải được kiểm lại
