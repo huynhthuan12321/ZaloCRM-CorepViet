@@ -96,3 +96,29 @@ TikTok trong lần start lỗi.
 3. Recreate riêng app để áp dụng cờ. Schema TT00–TT10 là additive, không down-migrate.
 4. Nếu cần rollback image app, dùng image/commit production trước TT11 và vẫn giữ các
    cờ TikTok tắt.
+
+## Bổ sung phương thức đăng nhập và epoch động
+
+Đã triển khai commit `ce779d2` trên VPS ngày 13/10/2026:
+
+- Panel TikTok đổi thành mục **Đăng nhập TikTok**, hỗ trợ chọn mã QR hoặc số điện
+  thoại/email/username và mật khẩu.
+- Mật khẩu chỉ nằm trong RAM của app, hết hạn sau hai phút và bị xóa khi worker nhận.
+  Không có cột DB, log hoặc biến môi trường mới chứa mật khẩu.
+- Worker lấy epoch hiện hành từ CRM qua request HMAC trước mỗi vòng. Việc tạo lại QR
+  không còn yêu cầu sửa `.env` hoặc restart worker.
+- Xác minh production: DB đã lên epoch `17`, worker dùng epoch động để báo trạng thái
+  `QR_PENDING` thành công; không còn vòng restart `409`.
+- App và worker đều restart count `0`; health public `ok`; TikTok vẫn `read_only`,
+  inbound `true`, outbound `false`.
+- Image mới: app `0dc4f6d90ee7`, worker `8b2be409c063`. Giữ app/worker `1b910e3`
+  và app `717a50f` để rollback.
+- Sau khi xóa build cache, phân vùng `/` dùng 63/79 GB, còn khoảng 12 GB, mức 85%.
+
+Kiểm tra đã đạt: backend build, frontend build, 85 test backend liên quan kênh,
+69 test frontend và 9 test worker. DOM đăng nhập TikTok ngày 13/10/2026 đã được
+đối chiếu với hai nhánh hiện hành: mã QR và phone/email/username.
+
+Chưa dùng mật khẩu tài khoản thật trong quá trình triển khai. Nếu TikTok hiện CAPTCHA
+hoặc xác minh bổ sung, worker dừng ở trạng thái `CHALLENGE`; người vận hành phải xử lý
+trực tiếp, hệ thống không tự giải hoặc né cơ chế bảo vệ.
