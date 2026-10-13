@@ -13,6 +13,15 @@ const MOCK: ChannelCapabilities = Object.freeze({
   stableMessageId: true, nativeSelfSync: true, history: 'partial',
   reliableSendConfirmation: true, aiAutoSend: false, automation: false, broadcast: false,
 });
+const LIVE_READ: ChannelCapabilities = Object.freeze({
+  textRead: true, textSend: false, imageRead: false, imageSend: false, canInitiate: false,
+  stableMessageId: true, nativeSelfSync: true, history: 'partial',
+  reliableSendConfirmation: false, aiAutoSend: false, automation: false, broadcast: false,
+});
 export function browserChannelCapabilities(provider: BrowserChannelProvider, cfg: TikTokPersonalConfig): ChannelCapabilities {
-  return provider === 'MOCK_BROWSER' && cfg.effective.mock ? MOCK : NONE;
+  if (provider === 'MOCK_BROWSER') return cfg.effective.mock ? MOCK : NONE;
+  if (provider === 'TIKTOK_WEB_SESSION' && cfg.effective.inbound) {
+    return cfg.effective.outbound ? { ...LIVE_READ, textSend: true } : LIVE_READ;
+  }
+  return NONE;
 }

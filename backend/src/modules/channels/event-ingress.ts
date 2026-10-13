@@ -4,9 +4,9 @@ import type { FastifyInstance } from 'fastify';
 import type { Server } from 'socket.io';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { runSystemQuery } from '../../shared/tenant/tenant-context.js';
-import { resolveTikTokPersonalConfig } from '../../config/tiktok-personal-config.js';
 import { parseChannelObservation, processChannelEvent } from './channel-event-processor.js';
-import { verifyMockWorkerRequest } from './worker-auth.js';
+import { allowedChannelProviders } from './channel-scope.js';
+import { verifyChannelWorkerRequest } from './worker-auth.js';
 
 const CONTENT_TYPE = 'application/vnd.zalocrm.channel-event+json';
 
@@ -17,7 +17,7 @@ export async function channelEventIngressRoutes(app: FastifyInstance) {
   });
 
   app.post('/internal/channel-workers/events', async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
+    if (!allowedChannelProviders().length) return reply.code(404).send({ error: 'Not found' });
     const rawBody = typeof request.body === 'string' ? request.body : '';
     let decoded: unknown;
     try {
@@ -28,11 +28,21 @@ export async function channelEventIngressRoutes(app: FastifyInstance) {
     const accountId = decoded && typeof decoded === 'object' && 'accountId' in decoded
       ? String(decoded.accountId)
       : '';
-    const verified = verifyMockWorkerRequest(rawBody, {
+    const account = await runSystemQuery(() => prisma.channelAccount.findFirst({
+      where: {
+        id: accountId,
+        provider: { in: allowedChannelProviders() },
+      },
+      select: { id: true, orgId: true, provider: true },
+    }));
+    if (!account || !['MOCK_BROWSER', 'TIKTOK_WEB_SESSION'].includes(account.provider)) {
+      return reply.code(404).send({ error: 'Unknown account' });
+    }
+    const verified = verifyChannelWorkerRequest(rawBody, {
       signature: request.headers['x-channel-signature'] as string | undefined,
       timestamp: request.headers['x-channel-timestamp'] as string | undefined,
       nonce: request.headers['x-channel-nonce'] as string | undefined,
-    }, accountId);
+    }, accountId, account.provider as 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION');
     if (!verified.valid) return reply.code(401).send({ error: 'Unauthorized', code: verified.reason });
 
     let observation;
@@ -44,12 +54,6 @@ export async function channelEventIngressRoutes(app: FastifyInstance) {
     if (verified.nonce !== observation.eventKey) {
       return reply.code(401).send({ error: 'Unauthorized', code: 'nonce_mismatch' });
     }
-
-    const account = await runSystemQuery(() => prisma.channelAccount.findFirst({
-      where: { id: observation.accountId, provider: 'MOCK_BROWSER' },
-      select: { id: true, orgId: true },
-    }));
-    if (!account) return reply.code(404).send({ error: 'Unknown account' });
 
     const event = await runSystemQuery(() => prisma.channelEvent.upsert({
       where: {

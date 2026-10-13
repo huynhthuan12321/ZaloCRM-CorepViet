@@ -42,9 +42,12 @@ async function channelCapabilities(request: FastifyRequest, account: {
   id: string; provider: string; status: string; enabled: boolean; outboundEnabled: boolean;
 }) {
   const cfg = resolveTikTokPersonalConfig();
-  const configured = browserChannelCapabilities(account.provider as 'MOCK_BROWSER', cfg);
+  const configured = browserChannelCapabilities(
+    account.provider as 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION',
+    cfg,
+  );
   const extension = channelExtensionPolicy(configured, cfg);
-  const canChat = !!(account.provider === 'MOCK_BROWSER'
+  const canChat = !!(['MOCK_BROWSER', 'TIKTOK_WEB_SESSION'].includes(account.provider)
     && account.enabled
     && account.outboundEnabled
     && account.status === 'CONNECTED'

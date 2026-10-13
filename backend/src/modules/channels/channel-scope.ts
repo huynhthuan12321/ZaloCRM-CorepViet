@@ -11,9 +11,12 @@ const permitted: Record<ChannelPermission, string[]> = {
   read: ['read', 'chat', 'admin'], chat: ['chat', 'admin'], admin: ['admin'],
 };
 
-/** Live providers remain unavailable; mock permission never implies TikTok permission. */
 export function allowedChannelProviders(): string[] {
-  return resolveTikTokPersonalConfig().effective.mock ? ['MOCK_BROWSER'] : [];
+  const cfg = resolveTikTokPersonalConfig();
+  return [
+    ...(cfg.effective.mock ? ['MOCK_BROWSER'] : []),
+    ...(cfg.effective.enabled ? ['TIKTOK_WEB_SESSION'] : []),
+  ];
 }
 
 export function channelAccountPredicate(

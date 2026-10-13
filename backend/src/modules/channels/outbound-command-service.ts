@@ -5,6 +5,7 @@ import type { Server } from 'socket.io';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { emitAuthorizedChannelEvent } from './channel-socket.js';
+import { allowedChannelProviders } from './channel-scope.js';
 
 export type WorkerResult =
   | { kind: 'confirmed'; externalMessageId: string }
@@ -12,10 +13,12 @@ export type WorkerResult =
   | { kind: 'unknown'; errorCode: string };
 
 export async function claimOutboundCommand(accountId: string, epoch: bigint) {
+  const providers = allowedChannelProviders();
+  if (!providers.length) return null;
   const account = await runSystemQuery(() => prisma.channelAccount.findFirst({
     where: {
       id: accountId,
-      provider: 'MOCK_BROWSER',
+      provider: { in: allowedChannelProviders() },
       enabled: true,
       outboundEnabled: true,
       status: 'CONNECTED',
@@ -37,7 +40,7 @@ export async function claimOutboundCommand(accountId: string, epoch: bigint) {
         WHERE oc.channel_account_id = ${accountId}
           AND oc.org_id = ${account.orgId}
           AND oc.status = 'PENDING'
-          AND ca.provider = 'MOCK_BROWSER'
+          AND ca.provider IN (${Prisma.join(providers)})
           AND ca.enabled = true
           AND ca.outbound_enabled = true
           AND ca.status = 'CONNECTED'
@@ -126,7 +129,7 @@ export async function resolveOutboundCommand(args: {
         channelSendState: finalStatus,
         externalMessageId,
         observedAt: args.result.kind === 'confirmed' ? new Date() : undefined,
-        metadata: errorCode ? { channel: 'mock_browser', errorCode } : { channel: 'mock_browser' },
+        metadata: errorCode ? { channel: 'browser_channel', errorCode } : { channel: 'browser_channel' },
       },
     });
     return {
@@ -154,7 +157,7 @@ export async function reapStaleOutboundCommands(olderThan = new Date(Date.now() 
     where: {
       status: 'PROCESSING',
       submittedAt: { lt: olderThan },
-      account: { provider: 'MOCK_BROWSER' },
+      account: { provider: { in: allowedChannelProviders() } },
     },
     select: { id: true, orgId: true, channelAccountId: true, conversationId: true },
     take: 100,
@@ -171,7 +174,7 @@ export async function reapStaleOutboundCommands(olderThan = new Date(Date.now() 
         where: { conversationId: command.conversationId, clientEchoId: command.id },
         data: {
           channelSendState: 'UNKNOWN',
-          metadata: { channel: 'mock_browser', errorCode: 'WORKER_RESULT_TIMEOUT' },
+          metadata: { channel: 'browser_channel', errorCode: 'WORKER_RESULT_TIMEOUT' },
         },
       });
       return true;

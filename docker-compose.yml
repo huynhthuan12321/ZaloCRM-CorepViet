@@ -75,6 +75,44 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  # One-account TikTok Personal pilot. This service is inert unless operators
+  # explicitly select the profile and supply the account/epoch shown by CRM.
+  tiktok-personal-worker:
+    profiles: ["tiktok-personal"]
+    build:
+      context: workers/tiktok-personal
+      dockerfile: Dockerfile
+    container_name: zalo-crm-tiktok-personal-worker
+    restart: unless-stopped
+    environment:
+      CRM_BRIDGE_URL: http://app:3000
+      CRM_CHANNEL_ACCOUNT_ID: ${TIKTOK_PERSONAL_ACCOUNT_ID:-}
+      CRM_CHANNEL_EPOCH: ${TIKTOK_PERSONAL_SESSION_EPOCH:-}
+      TIKTOK_EXPECTED_USERNAME: ${TIKTOK_PERSONAL_USERNAME:-}
+      TIKTOK_PERSONAL_WORKER_SECRET: ${TIKTOK_PERSONAL_WORKER_SECRET:-}
+      TIKTOK_HEADLESS: ${TIKTOK_HEADLESS:-true}
+      TIKTOK_POLL_MS: ${TIKTOK_POLL_MS:-5000}
+      TIKTOK_MAX_THREADS_PER_CYCLE: ${TIKTOK_MAX_THREADS_PER_CYCLE:-30}
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - tiktok_personal_data:/data
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${TIKTOK_WORKER_MEMORY_LIMIT:-768M}
+          cpus: "${TIKTOK_WORKER_CPU_LIMIT:-1}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
   db:
     image: postgres:16-alpine
     container_name: zalo-crm-db
@@ -246,3 +284,4 @@ volumes:
   redis_data:
   minio_data:
   clamav_data:
+  tiktok_personal_data:

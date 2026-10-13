@@ -11,6 +11,7 @@ const ALL = {
   CHANNELS_ENABLED: 'true', TIKTOK_PERSONAL_ENABLED: 'true',
   TIKTOK_PERSONAL_INBOUND_ENABLED: 'true', TIKTOK_PERSONAL_OUTBOUND_ENABLED: 'true', MOCK_CHANNEL_ENABLED: 'true',
   TIKTOK_MEDIA_ENABLED: 'true', TIKTOK_AI_AUTO_SEND_ENABLED: 'true',
+  TIKTOK_PERSONAL_WORKER_SECRET: 's'.repeat(32),
 };
 describe('TikTok Personal foundation fail-closed', () => {
   it('defaults off and ignores Lead Gen credentials', () => {
@@ -37,25 +38,25 @@ describe('TikTok Personal foundation fail-closed', () => {
     expect(cfg.status).toBe('misconfigured'); expect(cfg.effective.mock).toBe(false);
     expect(browserChannelCapabilities('MOCK_BROWSER', cfg).textSend).toBe(false);
   });
-  it.each(['test', 'development'])('fixture capabilities cannot grant live capabilities in %s', NODE_ENV => {
+  it.each(['test', 'development'])('enables verified text capabilities and the local fixture in %s', NODE_ENV => {
     const cfg = resolveTikTokPersonalConfig({ ...ALL, NODE_ENV });
-    expect(cfg.status).toBe('unavailable');
-    expect(cfg.effective.mock).toBe(true); expect(cfg.effective.outbound).toBe(false);
+    expect(cfg.status).toBe('available');
+    expect(cfg.effective.mock).toBe(true); expect(cfg.effective.outbound).toBe(true);
     expect(browserChannelCapabilities('MOCK_BROWSER', cfg).textSend).toBe(true);
     expect(browserChannelCapabilities('TIKTOK_WEB_SESSION', cfg)).toMatchObject({
-      textRead: false,
-      textSend: false,
+      textRead: true,
+      textSend: true,
       imageRead: false,
       imageSend: false,
       canInitiate: false,
-      stableMessageId: false,
+      stableMessageId: true,
       reliableSendConfirmation: false,
       aiAutoSend: false,
       automation: false,
       broadcast: false,
     });
   });
-  it('TT10 flags remain fail-closed without verified live capabilities', () => {
+  it('keeps media, AI auto-send and broadcast fail-closed when live text is enabled', () => {
     const cfg = resolveTikTokPersonalConfig({ ...ALL, NODE_ENV: 'test' });
     expect(cfg.requested.media).toBe(true);
     expect(cfg.requested.aiAutoSend).toBe(true);
@@ -69,7 +70,7 @@ describe('TikTok Personal foundation fail-closed', () => {
       automation: false,
       broadcast: false,
     });
-    expect(channelExtensionPolicy(browserChannelCapabilities('MOCK_BROWSER', cfg), cfg)).toEqual({
+    expect(channelExtensionPolicy(browserChannelCapabilities('TIKTOK_WEB_SESSION', cfg), cfg)).toEqual({
       manualText: true,
       inboundImage: false,
       outboundImage: false,
@@ -83,7 +84,7 @@ describe('TikTok Personal foundation fail-closed', () => {
     const cfg = resolveTikTokPersonalConfig({ NODE_ENV: 'test', CHANNELS_ENABLED: ' TRUE ', MOCK_CHANNEL_ENABLED: 'true' });
     expect(cfg.status).toBe('mock_only'); expect(cfg.effective.mock).toBe(true);
   });
-  it.each(['disabled', 'mock_only', 'unavailable', 'misconfigured'] as const)('health %s remains informational', async status => {
+  it.each(['disabled', 'mock_only', 'read_only', 'available', 'unavailable', 'misconfigured'] as const)('health %s remains informational', async status => {
     const tiktok = { status, inbound: false, outbound: false };
     const healthy = await buildReadyHealth({ checkDb: async () => {}, checkRedis: () => true, tiktok });
     expect(healthy.statusCode).toBe(200); expect(healthy.body.tiktok).toEqual(tiktok);

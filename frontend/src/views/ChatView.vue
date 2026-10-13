@@ -34,6 +34,11 @@
         :accounts="channelAccounts"
         @changed="refreshChannelState"
       />
+      <ChannelTikTokAccountPanel
+        v-if="inboxChannel === 'tiktok'"
+        :accounts="channelAccounts"
+        @changed="refreshChannelState"
+      />
     </aside>
 
     <!-- COL 2: conversation list — FilterBar render INSIDE via named slot
@@ -44,7 +49,7 @@
           <option value="legacy">Zalo</option>
           <option value="all">Tất cả kênh</option>
           <option value="mock">Kênh thử nghiệm</option>
-          <option value="tiktok" disabled>TikTok — chưa kết nối</option>
+          <option value="tiktok">TikTok</option>
         </select>
       </label>
       <!-- FIX socket-chết v2 — báo mất kết nối realtime, KHÔNG để chết âm thầm (bỏ lỡ khách).
@@ -181,6 +186,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import ChannelReadonlyThread from '@/components/chat/channel-readonly-thread.vue';
 import ChannelMockAccountPanel from '@/components/chat/channel-mock-account-panel.vue';
+import ChannelTikTokAccountPanel from '@/components/chat/channel-tiktok-account-panel.vue';
 import { useToast } from '@/composables/use-toast';
 import ConversationList from '@/components/chat/ConversationList.vue';
 import MessageThread from '@/components/chat/MessageThread.vue';

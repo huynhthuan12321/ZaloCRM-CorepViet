@@ -6,10 +6,10 @@ import { z } from 'zod';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { logger } from '../../shared/utils/logger.js';
-import { resolveTikTokPersonalConfig } from '../../config/tiktok-personal-config.js';
 import { resolveChannelContact } from './contact-identity.service.js';
 import { emitAuthorizedChannelEvent } from './channel-socket.js';
 import { reapStaleOutboundCommands } from './outbound-command-service.js';
+import { allowedChannelProviders } from './channel-scope.js';
 
 const observationSchema = z.object({
   version: z.literal(1),
@@ -83,7 +83,7 @@ export async function processChannelEvent(eventId: string, io?: Server): Promise
       where: {
         id: event.channel_account_id,
         orgId: event.org_id,
-        provider: 'MOCK_BROWSER',
+        provider: { in: allowedChannelProviders() },
       },
       include: { session: { select: { epoch: true } } },
     });
@@ -181,7 +181,10 @@ export async function processChannelEvent(eventId: string, io?: Server): Promise
         contentType: 'text',
         sentAt,
         sentVia: 'user',
-        metadata: { channel: 'mock_browser', eventKey: data.eventKey },
+        metadata: {
+          channel: account.provider === 'TIKTOK_WEB_SESSION' ? 'tiktok_web_session' : 'mock_browser',
+          eventKey: data.eventKey,
+        },
       },
     });
     await tx.conversation.update({
@@ -236,13 +239,13 @@ let timer: NodeJS.Timeout | null = null;
 let running = false;
 
 export function startChannelEventProcessor(io: Server): void {
-  if (timer || !resolveTikTokPersonalConfig().effective.mock) return;
+  if (timer || !allowedChannelProviders().length) return;
   timer = setInterval(async () => {
     if (running) return;
     running = true;
     try {
       const pending = await runSystemQuery(() => prisma.channelEvent.findMany({
-        where: { status: 'PENDING', account: { provider: 'MOCK_BROWSER' } },
+        where: { status: 'PENDING', account: { provider: { in: allowedChannelProviders() } } },
         orderBy: { createdAt: 'asc' },
         take: 20,
         select: { id: true },

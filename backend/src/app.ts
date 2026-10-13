@@ -47,6 +47,7 @@ import { channelInboxRoutes } from './modules/channels/channel-inbox-routes.js';
 import { registerChannelSocketHandlers } from './modules/channels/channel-socket.js';
 import { channelEventIngressRoutes } from './modules/channels/event-ingress.js';
 import { mockChannelAccountRoutes } from './modules/channels/mock-channel-account-routes.js';
+import { tiktokChannelAccountRoutes } from './modules/channels/tiktok-channel-account-routes.js';
 import { channelOutboundRoutes } from './modules/channels/outbound-command-routes.js';
 import { channelPilotRoutes } from './modules/channels/pilot-routes.js';
 import { startChannelEventProcessor, stopChannelEventProcessor } from './modules/channels/channel-event-processor.js';
@@ -291,6 +292,7 @@ async function bootstrap() {
   await app.register(chatRoutes);
   await app.register(channelInboxRoutes);
   await app.register(mockChannelAccountRoutes);
+  await app.register(tiktokChannelAccountRoutes);
   await app.register(channelEventIngressRoutes);
   await app.register(channelOutboundRoutes);
   await app.register(channelPilotRoutes);

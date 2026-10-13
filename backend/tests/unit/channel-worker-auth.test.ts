@@ -3,8 +3,10 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
+  deriveChannelWorkerSecret,
   deriveMockWorkerSecret,
   mockWorkerSecret,
+  verifyChannelWorkerRequest,
   verifyMockWorkerRequest,
 } from '../../src/modules/channels/worker-auth.js';
 
@@ -45,5 +47,30 @@ describe('mock channel worker authentication', () => {
       valid: false,
       reason: 'bad_signature',
     });
+  });
+
+  it('derives and verifies a production TikTok worker secret per account', () => {
+    const env = { NODE_ENV: 'production', TIKTOK_PERSONAL_WORKER_SECRET: secret };
+    const derived = deriveChannelWorkerSecret(accountId, 'TIKTOK_WEB_SESSION', env)!;
+    const liveSignature = createHmac('sha256', derived)
+      .update(`${timestamp}.${nonce}.${body}`)
+      .digest('hex');
+    expect(derived).not.toBe(secret);
+    expect(verifyChannelWorkerRequest(
+      body,
+      { signature: liveSignature, timestamp, nonce },
+      accountId,
+      'TIKTOK_WEB_SESSION',
+      env,
+      Number(timestamp),
+    )).toEqual({ valid: true, nonce });
+    expect(verifyChannelWorkerRequest(
+      body,
+      { signature: liveSignature, timestamp, nonce },
+      otherAccountId,
+      'TIKTOK_WEB_SESSION',
+      env,
+      Number(timestamp),
+    )).toMatchObject({ valid: false, reason: 'bad_signature' });
   });
 });

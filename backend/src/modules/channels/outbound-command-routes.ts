@@ -5,12 +5,15 @@ import type { Server } from 'socket.io';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
+import { runSystemQuery } from '../../shared/tenant/tenant-context.js';
 import { resolveTikTokPersonalConfig } from '../../config/tiktok-personal-config.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
 import { hasChannelAccess } from './channel-scope.js';
 import { emitAuthorizedChannelEvent } from './channel-socket.js';
-import { verifyMockWorkerRequest } from './worker-auth.js';
+import { browserChannelCapabilities } from './channel-capabilities.js';
+import { allowedChannelProviders } from './channel-scope.js';
+import { verifyChannelWorkerRequest } from './worker-auth.js';
 import { claimOutboundCommand, resolveOutboundCommand } from './outbound-command-service.js';
 
 const WORKER_CONTENT_TYPE = 'application/vnd.zalocrm.channel-command+json';
@@ -37,7 +40,10 @@ export async function channelOutboundRoutes(app: FastifyInstance) {
   app.post('/api/v1/channel-inbox/:id/messages', {
     preHandler: [authMiddleware, requireGrant('conversation', 'access')],
   }, async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
+    const config = resolveTikTokPersonalConfig();
+    const sendProviders = allowedChannelProviders().filter(provider =>
+      browserChannelCapabilities(provider as 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION', config).textSend);
+    if (!sendProviders.length) return reply.code(404).send({ error: 'Not found' });
     const { id } = request.params as { id: string };
     const actor = { userId: request.user!.id, orgId: request.user!.orgId };
     const conversation = await prisma.conversation.findFirst({
@@ -47,7 +53,7 @@ export async function channelOutboundRoutes(app: FastifyInstance) {
         deletedAt: null,
         zaloAccountId: null,
         channelAccount: {
-          provider: 'MOCK_BROWSER',
+          provider: { in: sendProviders },
           enabled: true,
           outboundEnabled: true,
           status: 'CONNECTED',
@@ -113,7 +119,9 @@ export async function channelOutboundRoutes(app: FastifyInstance) {
           sentAt: now,
           sentVia: 'user',
           repliedByUserId: actor.userId,
-          metadata: { channel: 'mock_browser' },
+          metadata: { channel: conversation.channelAccount!.provider === 'TIKTOK_WEB_SESSION'
+            ? 'tiktok_web_session'
+            : 'mock_browser' },
         },
       });
       await tx.conversation.update({
@@ -146,24 +154,31 @@ export async function channelOutboundRoutes(app: FastifyInstance) {
   });
 
   app.addContentTypeParser(WORKER_CONTENT_TYPE, { parseAs: 'string', bodyLimit: 64 * 1024 }, (_request, body, done) => done(null, body));
-  const verifiedBody = (request: { body?: unknown; headers: Record<string, unknown> }) => {
+  const decodedBody = (request: { body?: unknown; headers: Record<string, unknown> }) => {
     const rawBody = typeof request.body === 'string' ? request.body : '';
     let decoded: unknown;
     try { decoded = JSON.parse(rawBody || 'null'); } catch { decoded = null; }
     const accountId = decoded && typeof decoded === 'object' && 'accountId' in decoded
       ? String(decoded.accountId)
       : '';
-    const verified = verifyMockWorkerRequest(rawBody, {
-      signature: request.headers['x-channel-signature'] as string | undefined,
-      timestamp: request.headers['x-channel-timestamp'] as string | undefined,
-      nonce: request.headers['x-channel-nonce'] as string | undefined,
-    }, accountId);
-    return { decoded, verified };
+    return { rawBody, decoded, accountId };
   };
 
   app.post('/internal/channel-workers/commands/claim', async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
-    const { decoded, verified } = verifiedBody(request);
+    if (!allowedChannelProviders().length) return reply.code(404).send({ error: 'Not found' });
+    const { rawBody, decoded, accountId } = decodedBody(request);
+    const account = await runSystemQuery(() => prisma.channelAccount.findFirst({
+      where: { id: accountId, provider: { in: allowedChannelProviders() } },
+      select: { provider: true },
+    }));
+    if (!account || !['MOCK_BROWSER', 'TIKTOK_WEB_SESSION'].includes(account.provider)) {
+      return reply.code(404).send({ error: 'Unknown account' });
+    }
+    const verified = verifyChannelWorkerRequest(rawBody, {
+      signature: request.headers['x-channel-signature'] as string | undefined,
+      timestamp: request.headers['x-channel-timestamp'] as string | undefined,
+      nonce: request.headers['x-channel-nonce'] as string | undefined,
+    }, accountId, account.provider as 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION');
     if (!verified.valid) return reply.code(401).send({ error: 'Unauthorized', code: verified.reason });
     const parsed = claimSchema.safeParse(decoded);
     if (!parsed.success || verified.nonce !== `claim:${parsed.data.accountId}:${parsed.data.epoch}`) {
@@ -174,8 +189,20 @@ export async function channelOutboundRoutes(app: FastifyInstance) {
   });
 
   app.post('/internal/channel-workers/commands/:id/result', async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
-    const { decoded, verified } = verifiedBody(request);
+    if (!allowedChannelProviders().length) return reply.code(404).send({ error: 'Not found' });
+    const { rawBody, decoded, accountId } = decodedBody(request);
+    const account = await runSystemQuery(() => prisma.channelAccount.findFirst({
+      where: { id: accountId, provider: { in: allowedChannelProviders() } },
+      select: { provider: true },
+    }));
+    if (!account || !['MOCK_BROWSER', 'TIKTOK_WEB_SESSION'].includes(account.provider)) {
+      return reply.code(404).send({ error: 'Unknown account' });
+    }
+    const verified = verifyChannelWorkerRequest(rawBody, {
+      signature: request.headers['x-channel-signature'] as string | undefined,
+      timestamp: request.headers['x-channel-timestamp'] as string | undefined,
+      nonce: request.headers['x-channel-nonce'] as string | undefined,
+    }, accountId, account.provider as 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION');
     if (!verified.valid) return reply.code(401).send({ error: 'Unauthorized', code: verified.reason });
     const parsed = resultSchema.safeParse(decoded);
     const { id } = request.params as { id: string };

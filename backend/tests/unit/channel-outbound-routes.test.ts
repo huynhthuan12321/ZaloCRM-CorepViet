@@ -26,7 +26,10 @@ vi.mock('../../src/modules/auth/auth-middleware.js', () => ({
   },
 }));
 vi.mock('../../src/modules/rbac/rbac-middleware.js', () => ({ requireGrant: () => async () => {} }));
-vi.mock('../../src/modules/channels/channel-scope.js', () => ({ hasChannelAccess: h.access }));
+vi.mock('../../src/modules/channels/channel-scope.js', () => ({
+  hasChannelAccess: h.access,
+  allowedChannelProviders: () => ['MOCK_BROWSER'],
+}));
 vi.mock('../../src/modules/channels/outbound-command-service.js', () => ({
   claimOutboundCommand: vi.fn(),
   resolveOutboundCommand: vi.fn(),

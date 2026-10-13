@@ -12,7 +12,11 @@ export type ReadyHealth = {
    */
   messenger?: { status: 'disabled' | 'ready' | 'misconfigured'; inbound: boolean; outbound: boolean };
   /** Informational foundation status; never gates DB/Redis readiness. */
-  tiktok?: { status: 'disabled' | 'mock_only' | 'unavailable' | 'misconfigured'; inbound: boolean; outbound: boolean };
+  tiktok?: {
+    status: 'disabled' | 'mock_only' | 'read_only' | 'available' | 'unavailable' | 'misconfigured';
+    inbound: boolean;
+    outbound: boolean;
+  };
 };
 
 export function buildLiveHealth(uptime = process.uptime()): { status: 'ok'; uptime: number } {

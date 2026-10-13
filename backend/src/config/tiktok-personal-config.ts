@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 type Env = Record<string, string | undefined>;
-export type TikTokPersonalStatus = 'disabled' | 'mock_only' | 'unavailable' | 'misconfigured';
+export type TikTokPersonalStatus =
+  | 'disabled'
+  | 'mock_only'
+  | 'read_only'
+  | 'available'
+  | 'unavailable'
+  | 'misconfigured';
 export interface TikTokPersonalConfig {
   requested: {
     channels: boolean;
@@ -12,15 +18,14 @@ export interface TikTokPersonalConfig {
     aiAutoSend: boolean;
     mock: boolean;
   };
-  /** Live transport is not implemented; env alone must never enable it. */
   effective: {
-    enabled: false;
-    inbound: false;
-    outbound: false;
-    media: false;
-    aiAutoSend: false;
-    automation: false;
-    broadcast: false;
+    enabled: boolean;
+    inbound: boolean;
+    outbound: boolean;
+    media: boolean;
+    aiAutoSend: boolean;
+    automation: boolean;
+    broadcast: boolean;
     mock: boolean;
   };
   status: TikTokPersonalStatus;
@@ -56,31 +61,40 @@ export function resolveTikTokPersonalConfig(env: Env = process.env): TikTokPerso
   const local = env.NODE_ENV === 'development' || env.NODE_ENV === 'test';
   if (requested.mock && !local) problems.push('MOCK_CHANNEL_ENABLED requires explicit NODE_ENV=development or test');
   const mock = requested.channels && requested.mock && local;
+  const workerSecret = env.TIKTOK_PERSONAL_WORKER_SECRET?.trim() ?? '';
+  if (requested.channels && requested.personal && workerSecret.length < 32) {
+    problems.push('TIKTOK_PERSONAL_WORKER_SECRET must contain at least 32 characters');
+  }
+  const enabled = requested.channels && requested.personal && workerSecret.length >= 32 && problems.length === 0;
+  const inbound = enabled && requested.inbound;
+  const outbound = enabled && requested.outbound;
   let status: TikTokPersonalStatus = 'disabled';
   if (problems.length) status = 'misconfigured';
-  else if (requested.channels && requested.personal) {
-    status = 'unavailable';
-    warnings.push('TikTok Personal live transport is not implemented; all live flags remain false');
-  } else if (mock) status = 'mock_only';
+  else if (enabled && outbound) status = 'available';
+  else if (enabled && inbound) status = 'read_only';
+  else if (enabled) status = 'unavailable';
+  else if (mock) status = 'mock_only';
   return {
     requested,
     effective: {
-      enabled: false,
-      inbound: false,
-      outbound: false,
+      enabled,
+      inbound,
+      outbound,
       media: false,
       aiAutoSend: false,
       automation: false,
       broadcast: false,
-      mock: problems.length === 0 && mock,
+      // A malformed live setup must not break the explicitly local fixture.
+      // `mock` is already false outside development/test.
+      mock,
     },
     status, problems, warnings,
   };
 }
 export function tiktokPersonalHealthSummary(cfg: TikTokPersonalConfig): {
-  status: TikTokPersonalStatus; inbound: false; outbound: false;
+  status: TikTokPersonalStatus; inbound: boolean; outbound: boolean;
 } {
-  return { status: cfg.status, inbound: false, outbound: false };
+  return { status: cfg.status, inbound: cfg.effective.inbound, outbound: cfg.effective.outbound };
 }
 /** Startup snapshot; no side effects, credentials or network calls. */
 export const tiktokPersonalConfig = resolveTikTokPersonalConfig();
