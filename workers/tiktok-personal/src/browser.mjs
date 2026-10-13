@@ -3,6 +3,7 @@
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { readThreadDocument } from './dom-reader.mjs';
+import { openQrLogin } from './qr-login.mjs';
 
 const conversationItem = '[data-e2e="dm-new-conversation-item"]';
 
@@ -72,8 +73,14 @@ export async function launchTikTokBrowser(config) {
       }
       return { state: 'authenticated', identityUsername, observedAt: new Date().toISOString() };
     }
-    const qrButton = page.getByRole('button', { name: /qr code/i }).first();
-    if (await qrButton.isVisible().catch(() => false)) await qrButton.click().catch(() => undefined);
+    if (await openQrLogin(page).catch(() => false)) {
+      await page.waitForURL(/\/login\/qrcode(?:\?|$)/, {
+        waitUntil: 'domcontentloaded',
+        timeout: 10_000,
+      }).catch(() => undefined);
+      await page.locator('canvas').first().waitFor({ state: 'visible', timeout: 10_000 })
+        .catch(() => undefined);
+    }
     const qr = await qrDataUrl(page);
     return {
       state: qr ? 'qr_required' : 'expired',
