@@ -12,6 +12,13 @@ const accountId = '11111111-1111-4111-8111-111111111111';
 afterEach(resetTikTokLoginActionsForTests);
 
 describe('TikTok one-time login control', () => {
+  it('consumes verification in the existing epoch once and drops expired codes', () => {
+    queueTikTokLoginAction(accountId, '10', { method: 'verify', code: '123456' }, 1000, 60000);
+    expect(claimTikTokLoginAction(accountId, '10', 2000)).toMatchObject({ method: 'verify', code: '123456' });
+    expect(claimTikTokLoginAction(accountId, '10', 2001)).toBeNull();
+    queueTikTokLoginAction(accountId, '10', { method: 'verify', code: '123456' }, 1000, 60000);
+    expect(claimTikTokLoginAction(accountId, '10', 61000)).toBeNull();
+  });
   it('delivers a password once and never returns it again', () => {
     queueTikTokLoginAction(accountId, '10', {
       method: 'password',

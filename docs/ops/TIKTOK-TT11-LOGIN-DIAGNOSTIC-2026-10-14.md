@@ -46,3 +46,12 @@
 - Ảnh CRM nhập `voicoffee.vn`, trong khi connector yêu cầu `setupxebanhcorep`. Chủ tài khoản đã xác nhận tiếp tục kết nối `@setupxebanhcorep`; không đổi account/profile hay mở rộng nhiều tài khoản.
 - Không tự gửi lại yêu cầu đăng nhập, không xóa profile, không thay IP hay né cơ chế bảo vệ để vượt giới hạn. Cần chủ tài khoản kiểm tra đăng nhập bình thường trên TikTok với đúng tài khoản; nếu vẫn lỗi, xử lý với hỗ trợ TikTok. Chỉ thử CRM lại khi TikTok cho phép đăng nhập và thu bằng chứng mới.
 - Không coi hai lần thử thất bại là bằng chứng connector live đã đạt nghiệm thu. App Zalo vẫn healthy trong lúc kiểm tra.
+
+## Chủ tài khoản đăng nhập web được sau xác minh 2 bước
+
+- Chủ tài khoản báo đăng nhập website thành công; ảnh cung cấp hiển thị màn hình xác minh 2 bước bằng mã email và hộp thư tại `/business-suite/messages?lang=vi-VN&from=homepage`.
+- Phiên trình duyệt của chủ tài khoản không phải profile Chromium của worker VPS. Kiểm tra log VPS sau thông báo này vẫn có lần quan sát cuối `attempt_limit` trên `/login/phone-or-email/email`; chưa quan sát được bước 2FA hoặc inbox thành công ở worker.
+- Đối chiếu code: `TikTokLoginAction` chỉ có QR/password; `openPasswordLogin` chỉ điền và submit mật khẩu. `observeSession` nhận diện một số challenge nhưng không có luồng chủ tài khoản hoàn tất mã xác minh trong cùng phiên. Không yêu cầu OTP trong chat hoặc chuyển cookie từ trình duyệt người dùng.
+- Bộ đọc hiện chỉ dùng selector `dm-new-conversation-list`, `dm-new-conversation-item`, `dm-new-message-list` và `main-content-messages`. Chưa có kiểm chứng DOM của Business Suite; không thể đổi URL là coi đồng bộ tin hoạt động.
+- Phần tiếp theo cần hoàn thiện: xác minh do chủ tài khoản thực hiện trực tiếp trong phiên worker; kiểm tra username chính chủ sau xác minh; xác định route/DOM inbox thực tế trước khi bật nhận tin. Giữ tài khoản `setupxebanhcorep`, outbound tắt. Việc ảnh có đường dẫn Business Suite không tự chứng minh loại tài khoản hoặc quyền API.
+- Không đổi code hay deploy thêm dựa trên suy đoán selector từ ảnh. Đăng nhập thật/đồng bộ trên worker vẫn chưa PASS.

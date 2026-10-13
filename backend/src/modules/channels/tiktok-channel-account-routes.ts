@@ -41,6 +41,10 @@ const connectSchema = z.discriminatedUnion('method', [
   }).strict(),
 ]);
 const controlClaimSchema = z.object({ accountId: z.string().uuid() }).strict();
+const verificationSchema = z.object({
+  epoch: z.string().regex(/^[1-9]\d{0,19}$/),
+  code: z.string().regex(/^\d{6}$/),
+}).strict();
 const sessionSchema = z.object({
   accountId: z.string().uuid(),
   epoch: z.string().regex(/^[1-9]\d{0,19}$/),
@@ -170,6 +174,30 @@ export async function tiktokChannelAccountRoutes(app: FastifyInstance) {
       payload,
     });
     return payload;
+  });
+
+  app.post('/api/v1/channel-accounts/tiktok/:id/verify', {
+    preHandler: [authMiddleware, requireGrant('conversation', 'access')],
+  }, async (request, reply) => {
+    if (!cfg().effective.enabled) return reply.code(404).send({ error: 'Not found' });
+    const parsed = verificationSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid verification request' });
+    const { id } = request.params as { id: string };
+    if (!(await hasChannelAccess(actor(request), id, 'admin'))) return reply.code(404).send({ error: 'Not found' });
+    const account = await prisma.channelAccount.findFirst({
+      where: { id, orgId: request.user!.orgId, provider: 'TIKTOK_WEB_SESSION', enabled: true },
+      include: { session: { select: { epoch: true } } },
+    });
+    if (!account) return reply.code(404).send({ error: 'Not found' });
+    const runtime = tiktokConnectionState(id);
+    if (account.session?.epoch.toString() !== parsed.data.epoch
+      || account.status !== 'CHALLENGE' || runtime?.epoch !== parsed.data.epoch
+      || runtime.errorCode !== 'VERIFICATION_CODE_REQUIRED'
+      || Date.now() - Date.parse(runtime.observedAt) > 60_000) {
+      return reply.code(409).send({ error: 'Verification is not available for this session' });
+    }
+    queueTikTokLoginAction(id, parsed.data.epoch, { method: 'verify', code: parsed.data.code }, Date.now(), 60_000);
+    return { ok: true, epoch: parsed.data.epoch };
   });
 
   app.get('/api/v1/channel-accounts/tiktok/:id/connection', {

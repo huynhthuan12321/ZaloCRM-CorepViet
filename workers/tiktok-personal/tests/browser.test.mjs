@@ -47,6 +47,11 @@ test('classifies TikTok login rejection without exposing page text', () => {
   });
 });
 
+test('reports rate limiting separately from rejected credentials', () => {
+  assert.deepEqual(classifyLoginPageText('Too many attempts. Try again later.'),
+    { state: 'error', errorCode: 'TIKTOK_LOGIN_RATE_LIMITED' });
+});
+
 test('classifies QR confirmation and expired QR states', () => {
   assert.equal(classifyLoginPageText('Log in with QR code. Confirm login or sign up'), null);
   assert.deepEqual(classifyLoginPageText('Scan successful. Confirm on your device.'), {

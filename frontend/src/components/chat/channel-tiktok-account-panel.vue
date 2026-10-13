@@ -70,6 +70,13 @@
       >
         {{ connection.account.outboundEnabled ? 'Tắt gửi tin' : 'Bật gửi tin' }}
       </button>
+      <form v-if="connection?.runtime?.errorCode === 'VERIFICATION_CODE_REQUIRED'" @submit.prevent="verifyLogin">
+        <label for="tiktok-verification-code">Mã xác minh TikTok gồm 6 chữ số</label>
+        <input id="tiktok-verification-code" v-model="verificationCode" type="password" inputmode="numeric"
+          autocomplete="off" maxlength="6" placeholder="Nhập mã từ email hoặc SMS của anh" />
+        <button type="submit" :disabled="busy || !/^\d{6}$/.test(verificationCode)">Xác nhận đăng nhập</button>
+        <small>Mã chỉ chuyển một lần đến phiên TikTok hiện tại; không lưu vào DB hoặc log.</small>
+      </form>
       <button type="button" :disabled="busy" @click="loadConnection">Làm mới trạng thái</button>
       <button v-if="connection?.account.status !== 'DISCONNECTED'" type="button" class="disconnect" :disabled="busy" @click="disconnect">
         Ngắt kết nối
@@ -113,6 +120,7 @@ const username = ref('');
 const loginMethod = ref<'qr' | 'password'>('qr');
 const loginIdentifier = ref('');
 const loginPassword = ref('');
+const verificationCode = ref('');
 const connection = ref<Connection | null>(null);
 const busy = ref(false);
 const error = ref('');
@@ -124,6 +132,8 @@ const statusLabel = (status?: string) => ({
 }[status ?? ''] ?? status ?? 'không rõ');
 
 const runtimeErrorLabel = (code: string) => ({
+  TIKTOK_LOGIN_RATE_LIMITED: 'TikTok đang giới hạn số lần đăng nhập. Tạm ngừng thử và thử lại khi TikTok cho phép.',
+  VERIFICATION_CODE_REQUIRED: 'TikTok yêu cầu xác minh 2 bước. Nhập mã vào ô xác minh phía trên.',
   TIKTOK_LOGIN_REJECTED: 'TikTok từ chối đăng nhập. Kiểm tra lại tài khoản, mật khẩu hoặc giới hạn thử đăng nhập.',
   PASSWORD_LOGIN_NOT_COMPLETED: 'TikTok chưa hoàn tất đăng nhập. Tài khoản có thể cần xác minh thêm trong TikTok.',
   IDENTITY_NOT_OBSERVED: 'Đã mở được hộp thư nhưng chưa xác nhận được đúng username của tài khoản.',
@@ -171,6 +181,20 @@ const connectWithPassword = () => connect({
   identifier: loginIdentifier.value,
   password: loginPassword.value,
 });
+
+async function verifyLogin() {
+  if (!account.value || !connection.value?.epoch) return;
+  busy.value = true; error.value = '';
+  try {
+    await api.post(`/channel-accounts/tiktok/${account.value.id}/verify`, {
+      epoch: connection.value.epoch, code: verificationCode.value,
+    });
+    await loadConnection();
+  } catch { error.value = 'Không chuyển được mã xác minh. Kiểm tra phiên hiện tại và trạng thái TikTok.'; }
+  finally { verificationCode.value = ''; busy.value = false; }
+}
+
+watch(() => connection.value?.epoch, () => { verificationCode.value = ''; });
 
 async function setOutbound(enabled: boolean) {
   if (!account.value) return;

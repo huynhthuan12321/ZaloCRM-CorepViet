@@ -5,6 +5,7 @@ export type TikTokLoginMethod = 'qr' | 'password';
 
 export type TikTokLoginAction =
   | { method: 'qr'; expiresAt: string }
+  | { method: 'verify'; code: string; expiresAt: string }
   | { method: 'password'; identifier: string; password: string; expiresAt: string };
 
 interface PendingTikTokLoginAction {
@@ -19,7 +20,7 @@ const pending = new Map<string, PendingTikTokLoginAction>();
 export function queueTikTokLoginAction(
   accountId: string,
   epoch: string,
-  input: { method: 'qr' } | { method: 'password'; identifier: string; password: string },
+  input: { method: 'qr' } | { method: 'password'; identifier: string; password: string } | { method: 'verify'; code: string },
   now = Date.now(),
   ttlMs = DEFAULT_TTL_MS,
 ): void {
@@ -28,14 +29,7 @@ export function queueTikTokLoginAction(
   pending.set(accountId, {
     epoch,
     expiresAtMs,
-    action: input.method === 'password'
-      ? {
-          method: 'password',
-          identifier: input.identifier,
-          password: input.password,
-          expiresAt,
-        }
-      : { method: 'qr', expiresAt },
+    action: { ...input, expiresAt },
   });
 }
 

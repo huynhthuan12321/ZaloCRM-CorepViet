@@ -5,14 +5,16 @@ import { chromium } from 'playwright';
 import { readThreadDocument } from './dom-reader.mjs';
 import { openPasswordLogin } from './password-login.mjs';
 import { openQrLogin } from './qr-login.mjs';
+import { verificationForm, submitVerificationCode } from './verification-login.mjs';
 
 const conversationItem = '[data-e2e="dm-new-conversation-item"]';
-const challengeText = /captcha|verify to continue|security verification|verify your identity|2-step verification|verification code|confirm on your device|drag the slider/i;
+const challengeText = /captcha|verify to continue|security verification|verify your identity|2-step verification|verification code|confirm on your device|drag the slider|xác minh 2 bước/i;
 const rejectedPasswordText = /incorrect (?:account|username|email|password)|wrong password|couldn't log in|could not log in|account doesn't exist|too many attempts|maximum (?:number of )?attempts|try again later/i;
 const expiredQrText = /qr code (?:has )?expired|code expired|refresh (?:the )?qr code/i;
 
 export function classifyLoginPageText(text) {
   if (challengeText.test(text)) return { state: 'challenge' };
+  if (loginRejectionReason(text) === 'attempt_limit') return { state: 'error', errorCode: 'TIKTOK_LOGIN_RATE_LIMITED' };
   if (rejectedPasswordText.test(text)) {
     return { state: 'error', errorCode: 'TIKTOK_LOGIN_REJECTED' };
   }
@@ -33,6 +35,7 @@ export function shouldReturnToInbox(url, hasMessagesLink) {
   return parsed.origin === 'https://www.tiktok.com'
     && !/^\/login(?:\/|$)/.test(parsed.pathname)
     && parsed.pathname !== '/messages'
+    && parsed.pathname !== '/business-suite/messages'
     && hasMessagesLink;
 }
 
@@ -79,6 +82,9 @@ export async function launchTikTokBrowser(config) {
   let loginMode = 'qr';
   let loginStartedAt = 0;
   let lastDiagnostic = '';
+  let inboxScope = page;
+  let verifiedUsername = null;
+  let identityProbeStarted = false;
 
   function recordDiagnostic(state, text = '') {
     const diagnostic = JSON.stringify({
@@ -93,8 +99,15 @@ export async function launchTikTokBrowser(config) {
   }
 
   async function beginLogin(action) {
+    if (action.method === 'verify') {
+      await submitVerificationCode(page, action.code);
+      loginStartedAt = Date.now();
+      return;
+    }
     loginMode = action.method;
     loginStartedAt = Date.now();
+    verifiedUsername = null;
+    identityProbeStarted = false;
     if (action.method === 'password') {
       await openPasswordLogin(page, action);
       return;
@@ -113,6 +126,15 @@ export async function launchTikTokBrowser(config) {
   }
 
   async function observeSession() {
+    const ownProfile = await page.locator('a[data-e2e="nav-profile"]').first()
+      .getAttribute('href').catch(() => null);
+    if (ownProfile) {
+      const username = new URL(ownProfile, 'https://www.tiktok.com').pathname.match(/^\/@([^/]+)\/?$/)?.[1];
+      if (username?.toLowerCase() !== config.expectedUsername.toLowerCase()) {
+        return { state: 'error', errorCode: 'IDENTITY_NOT_OBSERVED', observedAt: new Date().toISOString() };
+      }
+      verifiedUsername = username;
+    }
     // TikTok may redirect a successful QR/password login to the For You page.
     // The inbox selectors cannot verify that page; return through the normal UI.
     const messagesLink = await page.locator('a[href="/messages"],a[href^="/messages?"]').first()
@@ -120,20 +142,27 @@ export async function launchTikTokBrowser(config) {
     if (shouldReturnToInbox(page.url(), messagesLink)) {
       await page.goto(config.messagesUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     }
-    const authenticated = await page.locator(
+    // Business Suite embeds the same inbox at /messages?scene=business.
+    // Select only that observed same-origin frame; never read arbitrary frames.
+    inboxScope = page.frames().find(frame => {
+      try {
+        const url = new URL(frame.url());
+        return frame !== page.mainFrame() && url.origin === 'https://www.tiktok.com'
+          && url.pathname === '/messages' && url.searchParams.get('scene') === 'business';
+      } catch { return false; }
+    }) ?? page;
+    const authenticated = await inboxScope.locator(
       '[data-e2e="dm-new-conversation-list"],#main-content-messages',
     ).first().isVisible().catch(() => false);
     if (authenticated) {
       recordDiagnostic('inbox_visible');
-      const identityUsername = await page.locator('a[href^="/@"]').evaluateAll((links, expected) => {
-        const usernames = links.map(link => {
-          try {
-            return new URL(link.getAttribute('href'), location.origin).pathname.match(/^\/@([^/]+)\/?$/)?.[1];
-          } catch { return undefined; }
-        }).filter(Boolean);
-        return usernames.find(username => username.toLowerCase() === expected.toLowerCase()) ?? null;
-      }, config.expectedUsername).catch(() => null);
+      const identityUsername = verifiedUsername;
       if (!identityUsername) {
+        if (!identityProbeStarted) {
+          identityProbeStarted = true;
+          await page.goto('https://www.tiktok.com/foryou?lang=en', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+          return { state: 'login_pending', observedAt: new Date().toISOString() };
+        }
         return {
           state: 'error',
           errorCode: 'IDENTITY_NOT_OBSERVED',
@@ -153,6 +182,9 @@ export async function launchTikTokBrowser(config) {
     const bodyText = await page.locator('body').innerText({ timeout: 5_000 }).catch(() => '');
     const classified = classifyLoginPageText(bodyText);
     if (classified) {
+      if (classified.state === 'challenge' && await verificationForm(page).catch(() => null)) {
+        classified.errorCode = 'VERIFICATION_CODE_REQUIRED';
+      }
       recordDiagnostic(classified.state, bodyText);
       return { ...classified, observedAt: new Date().toISOString() };
     }
@@ -181,8 +213,8 @@ export async function launchTikTokBrowser(config) {
   }
 
   async function listThreads(limit) {
-    await page.locator('[data-e2e="dm-new-conversation-list"]').waitFor({ timeout: 20_000 });
-    return page.locator(conversationItem).evaluateAll((items, max) => items.slice(0, max).map(item => {
+    await inboxScope.locator('[data-e2e="dm-new-conversation-list"]').waitFor({ timeout: 20_000 });
+    return inboxScope.locator(conversationItem).evaluateAll((items, max) => items.slice(0, max).map(item => {
       const wrapper = item.closest('[data-conversation-id]');
       return {
         id: wrapper?.getAttribute('data-conversation-id') ?? item.getAttribute('data-conversation-id'),
@@ -191,20 +223,20 @@ export async function launchTikTokBrowser(config) {
   }
 
   async function openThread(threadId) {
-    const items = page.locator(conversationItem);
+    const items = inboxScope.locator(conversationItem);
     const index = await items.evaluateAll((nodes, wanted) => nodes.findIndex(node =>
       (node.closest('[data-conversation-id]')?.getAttribute('data-conversation-id')
         ?? node.getAttribute('data-conversation-id')) === wanted), threadId);
     if (index < 0) throw new Error('TIKTOK_THREAD_NOT_FOUND');
     await items.nth(index).click({ timeout: 15_000 });
-    await page.locator('[data-e2e="dm-new-message-list"]').waitFor({ timeout: 15_000 });
-    return page.evaluate(readThreadDocument, config.expectedUsername);
+    await inboxScope.locator('[data-e2e="dm-new-message-list"]').waitFor({ timeout: 15_000 });
+    return inboxScope.evaluate(readThreadDocument, config.expectedUsername);
   }
 
   async function send(command) {
     const snapshot = await openThread(command.threadId);
     const before = new Set(snapshot.messages.map(message => message.externalMessageId));
-    const editor = await firstVisible(page, [
+    const editor = await firstVisible(inboxScope, [
       '[data-e2e="dm-new-message-input"]',
       'textarea',
       'div[contenteditable="true"]',
@@ -215,7 +247,7 @@ export async function launchTikTokBrowser(config) {
     await editor.fill(command.text);
     await editor.press('Enter');
     try {
-      await page.waitForFunction(({ text, ids }) => {
+      await inboxScope.waitForFunction(({ text, ids }) => {
         const known = new Set(ids);
         return Array.from(document.querySelectorAll('[data-e2e="dm-new-chat-item"]')).some(row => {
           const marker = row.querySelector('[id^="more-action-icon-msg-"]');
@@ -224,7 +256,7 @@ export async function launchTikTokBrowser(config) {
           return id && !known.has(id) && value === text;
         });
       }, { text: command.text, ids: [...before] }, { timeout: 10_000 });
-      const after = await page.evaluate(readThreadDocument, config.expectedUsername);
+      const after = await inboxScope.evaluate(readThreadDocument, config.expectedUsername);
       const matches = after.messages.filter(message =>
         !before.has(message.externalMessageId)
         && message.direction === 'self'

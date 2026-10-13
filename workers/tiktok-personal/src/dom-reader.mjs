@@ -11,6 +11,12 @@ export function normalizeUsernameFromHref(href) {
 }
 
 export function readThreadDocument(document, expectedUsername) {
+  // page.evaluate passes the username as its single argument. Node fixtures
+  // pass an explicit document. Support both without serializing a closure.
+  if (typeof document === 'string') {
+    expectedUsername = document;
+    document = globalThis.document;
+  }
   // Playwright serializes this function into the page. Keep its helpers inside
   // the function so it does not depend on the Node.js module scope.
   const usernameFromHref = (href) => {

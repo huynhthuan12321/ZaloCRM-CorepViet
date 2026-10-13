@@ -85,9 +85,11 @@ try {
         try {
           await browser.beginLogin(control.action);
         } catch (error) {
-          console.warn(`login_action_failed code=${error?.message ?? 'unknown'}`);
+          const code = /^[A-Z_]{1,80}$/.test(error?.message ?? '') ? error.message : 'LOGIN_ACTION_FAILED';
+          console.warn(`login_action_failed code=${code}`);
         } finally {
           if (control.action.method === 'password') control.action.password = '';
+          if (control.action.method === 'verify') control.action.code = '';
         }
       }
     }
