@@ -33,3 +33,12 @@
 - Trước build đã dọn hai image app cũ không được container dùng (`717a50f`, `1b910e3`), giữ app hiện hành và rollback gần nhất; ổ đĩa còn 14 GB.
 - Trong build đã dọn thêm worker cũ `1b910e3`, `ce779d2`/`pre-loginfix-20261013`, giữ worker rollback `99beae1`. Không xóa volume hay container dịch vụ khác.
 - Nghiệm thu live cần chủ tài khoản thực hiện login/2FA trực tiếp trên CRM khi TikTok cho phép. Nếu vẫn rate-limit hoặc form chưa được nhận diện, không coi là PASS và không tự thử lại liên tục.
+
+## Kết quả deploy
+
+- Code tính năng: `0b413ff`; sửa kiểm tra nav-profile không chờ mặc định 30 giây trên trang login: `39cc069`.
+- App image `zalocrm-corepviet-app:0b413ff`; worker image `zalocrm-corepviet-tiktok-personal-worker:39cc069`. Worker bản cuối build bằng lớp COPY `src/browser.mjs` trên image `0b413ff` đã kiểm tra; source checkout vẫn build được bằng Dockerfile chuẩn.
+- Đã recreate app/worker. Public `/health/ready`: HTTP 200. POST verify không đăng nhập CRM: HTTP 401.
+- Restart count app/worker: 0. Log worker: `qr_required` ở `/login/qrcode`. DB: `setupxebanhcorep|QR_PENDING|false|false|24|verified_at=NULL`.
+- Image worker cuối: 19/19 đạt, smoke Chromium giả lập đạt. Đã dọn cache build 4,981 GB; VPS còn khoảng 9,7 GB trước lớp sửa worker cuối.
+- Chưa có bằng chứng OTP TikTok thật được chấp nhận trên worker, chưa nghiệm thu đồng bộ tin live. Đã yêu cầu chủ tài khoản thử một lần trực tiếp trong CRM và báo trạng thái; không yêu cầu gửi mã vào chat.
