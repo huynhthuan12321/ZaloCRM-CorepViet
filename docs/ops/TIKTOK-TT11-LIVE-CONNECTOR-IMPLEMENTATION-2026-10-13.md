@@ -68,6 +68,14 @@ khi recreate app hoặc khởi động worker.
 Chưa tạo `ChannelAccount`, chưa ghi worker secret/account/epoch, chưa mở QR và chưa
 kết nối tài khoản TikTok trong lần deploy này.
 
+### Sửa lỗi image worker khi kích hoạt
+
+Lần start đầu phát hiện Chromium được cài trong cache của `root` nhưng runtime chạy
+user `node`. Worker restart trước khi mở browser; tài khoản vẫn `QR_PENDING` và nhận/gửi
+đều tắt. Dockerfile sau đó đặt `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` và cấp quyền
+đọc/thực thi cho runtime user trước khi build lại. Không có thao tác nào được gửi tới
+TikTok trong lần start lỗi.
+
 ## Giới hạn đã biết
 
 - TikTok không cung cấp hợp đồng DOM ổn định cho luồng này; selector phải được kiểm lại
