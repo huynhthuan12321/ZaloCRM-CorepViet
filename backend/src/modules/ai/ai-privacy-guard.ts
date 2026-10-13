@@ -92,6 +92,7 @@ export async function authorizeAiData(input: {
       },
     });
     if (!conversation) throw new AiPrivacyDeniedError('Conversation not found');
+    if (!conversation.zaloAccount) throw new AiPrivacyDeniedError('AI is not enabled for this channel');
     if (conversation.zaloAccount.privacyMode === 'main' && input.actor.mode === 'background') {
       throw new AiPrivacyDeniedError('Background AI cannot access private main-nick conversation content');
     }

@@ -31,6 +31,10 @@ async function assertConversationReadAccess(request: FastifyRequest, reply: Fast
     reply.status(404).send({ error: 'Conversation not found' });
     return null;
   }
+  if (!conversation.zaloAccountId) {
+    reply.status(409).send({ error: 'AI is not enabled for this channel' });
+    return null;
+  }
   if (['owner', 'admin'].includes(user.role)) return conversation;
 
   const access = await prisma.zaloAccountAccess.findFirst({

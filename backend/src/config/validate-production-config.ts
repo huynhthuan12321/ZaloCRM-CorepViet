@@ -3,6 +3,7 @@
 import { logger } from '../shared/utils/logger.js';
 import { describeTokenKeyProblem } from '../modules/integrations/_shared/token-encryption.util.js';
 import { resolveMessengerConfig } from './messenger-config.js';
+import { resolveTikTokPersonalConfig } from './tiktok-personal-config.js';
 
 type Env = Record<string, string | undefined>;
 type LogLike = Pick<typeof logger, 'warn' | 'error'>;
@@ -61,6 +62,9 @@ function collectProductionConfigWarnings(env: Env): string[] {
   if (messenger.status === 'misconfigured') {
     warnings.push(`Messenger is DISABLED (misconfigured): ${messenger.problems.join(', ')}`);
   }
+  const tiktok = resolveTikTokPersonalConfig(env);
+  warnings.push(...tiktok.warnings);
+  if (tiktok.problems.length) warnings.push(`TikTok Personal is DISABLED: ${tiktok.problems.join(', ')}`);
   return warnings;
 }
 

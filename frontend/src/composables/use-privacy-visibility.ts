@@ -18,6 +18,7 @@ import { useAuthStore } from '@/stores/auth';
 import { usePrivacyStore } from '@/stores/privacy';
 
 interface ConvLike {
+  channelAccount?: unknown;
   zaloAccount?: {
     privacyMode?: string;
     ownerUserId?: string | null;
@@ -82,6 +83,7 @@ export function usePrivacyVisibility() {
    */
   function canSendInConv(conv: ConvLike | null | undefined): boolean {
     if (!conv) return false;
+    if (conv.channelAccount) return false;
     const acc = conv.zaloAccount;
     if (!acc) return true;
     if (acc.privacyMode !== 'main') return true;

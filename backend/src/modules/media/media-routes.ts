@@ -15,6 +15,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { Server } from 'socket.io';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { assertZaloConversation } from '../channels/zalo-conversation-guard.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
 import { userHasGrant } from '../rbac/permission-group-service.js';
@@ -144,6 +145,7 @@ async function saveOneMessageToMedia(args: {
   if (!message) return { messageId, status: 'error', reason: 'Không tìm thấy tin nhắn' };
 
   const nick = message.conversation.zaloAccount;
+  if (!nick) return { messageId, status: 'error', reason: 'Media is not enabled for this channel' };
   const isPrivateNick = nick.privacyMode === 'main';
   const vis = resolveSavedVisibility({
     nickPrivacyMode: nick.privacyMode,
@@ -588,6 +590,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         include: { zaloAccount: true },
       });
       if (!conversation) return reply.status(404).send({ error: 'Không tìm thấy hội thoại' });
+      assertZaloConversation(conversation);
 
       // T7b (YC2 2026-06-20): chặn gửi media qua nick ĐÃ XÓA (archivedAt) trước check kết nối.
       if (conversation.zaloAccount.archivedAt) {
@@ -1289,6 +1292,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         where: { id: body.conversationId, orgId: user.orgId }, include: { zaloAccount: true },
       });
       if (!conversation) return reply.status(404).send({ error: 'Không tìm thấy hội thoại' });
+      assertZaloConversation(conversation);
       // T7b (YC2): chặn gửi qua nick ĐÃ XÓA trước check kết nối.
       if (conversation.zaloAccount.archivedAt) {
         return reply.status(409).send({ error: 'Nick này đã bị xóa — chỉ xem lại lịch sử, không gửi được.', code: 'NICK_ARCHIVED' });

@@ -13,6 +13,7 @@ import path from 'node:path';
 import type { Server } from 'socket.io';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { assertZaloConversation } from '../channels/zalo-conversation-guard.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
@@ -79,6 +80,7 @@ export async function chatAttachmentRoutes(app: FastifyInstance) {
         include: { zaloAccount: true },
       });
       if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+      assertZaloConversation(conversation);
 
       // T7b (YC2 2026-06-20): chặn gửi file/ảnh qua nick ĐÃ XÓA (archivedAt).
       if (conversation.zaloAccount.archivedAt) {

@@ -145,7 +145,7 @@ async function processUpdate(u: TgMessageUpdate): Promise<void> {
       },
     },
   });
-  if (!conv || !conv.externalThreadId) return;
+  if (!conv || !conv.externalThreadId || !conv.zaloAccountId || !conv.zaloAccount) return;
   if (!conv.zaloAccount.telegramBridge?.enabled) return;
   // (Phase 3: checkZaloAccess theo Telegram-user↔CRM-user. Phase 2: thành viên group = quyền.)
 

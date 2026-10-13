@@ -1,0 +1,6 @@
+{
+  "name": "tiktok-personal-qr-poc", "version": "0.1.0", "private": true,
+  "type": "module", "license": "AGPL-3.0-or-later", "engines": { "node": ">=20" },
+  "scripts": { "mock": "node mock/server.mjs", "worker": "node src/worker.mjs", "test": "node --test tests/session.test.mjs tests/ledger.test.mjs tests/read-checkpoint.test.mjs tests/crm-bridge.test.mjs tests/crm-outbound.test.mjs tests/crm-pilot.test.mjs tests/multi-account.test.mjs", "test:browser": "node --test tests/browser.test.mjs tests/messaging.test.mjs tests/live-dom-reader.test.mjs", "benchmark:tt09": "node scripts/benchmark-local.mjs" },
+  "dependencies": { "playwright": "1.63.0" }
+}

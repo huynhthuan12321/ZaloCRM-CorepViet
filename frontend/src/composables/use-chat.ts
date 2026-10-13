@@ -107,6 +107,18 @@ export interface FriendshipInfo {
 
 export interface Conversation {
   id: string;
+  channel?: string;
+  channelAccount?: { id: string; displayName: string; provider: string; status: string } | null;
+  capabilities?: {
+    textRead: boolean;
+    textSend: boolean;
+    imageRead: boolean;
+    imageSend: boolean;
+    canInitiate: false;
+    aiAutoSend: false;
+    automation: false;
+    broadcast: false;
+  };
   threadType: 'user' | 'group';
   contact: Contact | null;
   zaloAccount: ZaloAccount | null;
@@ -173,6 +185,8 @@ export interface Message {
   /** Read receipts (Wave 1+2) — chỉ có giá trị cho tin OUTGOING (senderType='self') */
   deliveredAt?: string | null;
   seenAt?: string | null;
+  channelSendState?: 'PENDING' | 'PROCESSING' | 'CONFIRMED' | 'FAILED' | 'UNKNOWN' | null;
+  clientEchoId?: string | null;
   /** M55 2026-05-30 — sender attribution cho multi-sale cùng chăm.
    *  Tin self lưu sale nào gõ qua CRM UI. Khác user hiện viewer → render mini avatar. */
   repliedByUserId?: string | null;
@@ -306,6 +320,50 @@ export function useChat() {
   function currentUserIdForPrivacy(): string | null { return authStore.user?.id ?? null; }
   function privacyUnlockedRef(): boolean { return !!privacyStore.isUnlocked; }
   const conversations = ref<Conversation[]>([]);
+  const inboxChannel = ref<'legacy' | 'all' | 'mock' | 'tiktok'>('legacy');
+  const channelAccountFilter = ref<string | null>(null);
+  const channelUnreadOnly = ref(false);
+  const channelCounts = ref({ total: 0, unread: 0 });
+  const channelAccounts = ref<Array<{ id: string; displayName: string; provider: string; status?: string; outboundEnabled?: boolean }>>([]);
+  const channelInboxAvailable = ref(false);
+  const subscribedChannels = new Set<string>();
+
+  function conversationPath(id: string): string {
+    const conv = conversations.value.find(c => c.id === id) ?? (selectedConvDetail.value?.id === id ? selectedConvDetail.value : null);
+    return conv?.channelAccount ? `/channel-inbox/${id}` : `/conversations/${id}`;
+  }
+  const messageCacheKey = (id: string) => `${authStore.user?.id ?? 'anonymous'}:${id}`;
+  function purgeChannelAccount(accountId: string) {
+    convRequestVersion++; // discard list/page requests already in flight at revocation
+    conversationsCache.clear();
+    for (const conv of conversations.value) if (conv.channelAccount?.id === accountId) messagesCache.delete(messageCacheKey(conv.id));
+    if (selectedConv.value?.channelAccount?.id === accountId) {
+      if (selectedConvId.value) messagesCache.delete(messageCacheKey(selectedConvId.value));
+      messages.value = []; selectedConvDetail.value = null; selectedConvId.value = null;
+    }
+    conversations.value = conversations.value.filter(conv => conv.channelAccount?.id !== accountId);
+  }
+  async function refreshChannelAccounts() {
+    try {
+      const { data } = await api.get('/channel-accounts');
+      channelInboxAvailable.value = data.available === true;
+      channelAccounts.value = data.accounts ?? [];
+      const eligible = new Set<string>(channelAccounts.value.map(account => account.id));
+      for (const id of subscribedChannels) if (!eligible.has(id)) {
+        socket?.emit('channel:unsubscribe', { accountId: id, purpose: 'read' }); subscribedChannels.delete(id);
+        purgeChannelAccount(id);
+      }
+      for (const id of eligible) {
+        socket?.emit('channel:subscribe', { accountId: id, purpose: 'read' }); subscribedChannels.add(id);
+      }
+    } catch {
+      channelInboxAvailable.value = false; channelAccounts.value = [];
+      for (const id of subscribedChannels) {
+        socket?.emit('channel:unsubscribe', { accountId: id, purpose: 'read' }); purgeChannelAccount(id);
+      }
+      subscribedChannels.clear();
+    }
+  }
   const selectedConvId = ref<string | null>(null);
   const messages = ref<Message[]>([]);
   // Track conv mà messages.value đang chứa — để fetchMessages biết switch conv thì
@@ -412,8 +470,11 @@ export function useChat() {
     convPage.value = 1;
     convHasMore.value = true;
     convLoadingMore.value = false;
-    const params = buildConversationParams(1);
-    const cacheKey = JSON.stringify(params);
+    const params = inboxChannel.value === 'legacy' ? buildConversationParams(1) : {
+      channel: inboxChannel.value, channelAccountId: channelAccountFilter.value ?? undefined,
+      search: searchQuery.value, unread: channelUnreadOnly.value ? 'true' : undefined, page: 1, limit: 100,
+    };
+    const cacheKey = JSON.stringify({ userId: authStore.user?.id, mode: inboxChannel.value, ...params });
     const cached = opts?.bypassCache ? null : conversationsCache.get(cacheKey);
 
     // M-tier stale-while-revalidate: cache hit → paint NGAY (no spinner flash khi
@@ -446,8 +507,9 @@ export function useChat() {
     }
 
     try {
-      const res = await api.get('/conversations', { params });
+      const res = await api.get(inboxChannel.value === 'legacy' ? '/conversations' : '/channel-inbox', { params });
       if (requestVersion !== convRequestVersion) return;
+      if (res.data.counts) channelCounts.value = res.data.counts;
       // Apply pending optimistic mutations (tag assigns chưa được BE confirm) trước khi
       // replace state — tránh fetchConversations chạy giữa lúc BE đang sync wipe UI optimistic.
       const fresh = applyPendingTags(res.data.conversations as Conversation[]);
@@ -471,12 +533,15 @@ export function useChat() {
 
     const requestVersion = convRequestVersion;
     const nextPage = convPage.value + 1;
-    const params = buildConversationParams(nextPage);
+    const params = inboxChannel.value === 'legacy' ? buildConversationParams(nextPage) : {
+      channel: inboxChannel.value, channelAccountId: channelAccountFilter.value ?? undefined,
+      search: searchQuery.value, unread: channelUnreadOnly.value ? 'true' : undefined, page: nextPage, limit: 100,
+    };
     convLoadingMore.value = true;
 
     try {
       // Older pages intentionally bypass the page-1 stale-while-revalidate cache.
-      const res = await api.get('/conversations', { params });
+      const res = await api.get(inboxChannel.value === 'legacy' ? '/conversations' : '/channel-inbox', { params });
       if (requestVersion !== convRequestVersion) return;
 
       const pageRows = applyPendingTags(res.data.conversations as Conversation[]);
@@ -576,7 +641,7 @@ export function useChat() {
     // user thấy giao diện tin nhắn lập tức; rồi fetch fresh in background.
     // 2026-06-12: guard theo messagesConvId (vừa set ở trên) — nếu trong lúc await ngầm
     // conv đã đổi (re-entrant fast switch) thì KHÔNG paint cache của conv cũ vào thread.
-    const cached = messagesCache.get(convId);
+    const cached = messagesCache.get(messageCacheKey(convId));
     if (cached) {
       if (messagesConvId.value === convId) {
         messages.value = cached;
@@ -586,7 +651,7 @@ export function useChat() {
       loadingMsgs.value = true;
     }
     try {
-      const res = await api.get(`/conversations/${convId}/messages`, {
+      const res = await api.get(`${conversationPath(convId)}/messages`, {
         params: { limit: 100 },
       });
       const list = (res.data.messages as RawMessage[]).map(normalizeMessage);
@@ -614,7 +679,7 @@ export function useChat() {
       // (cập nhật deliveredAt/seenAt in-place trên object) vẫn phản ánh đúng vào cache.
       // KHÔNG deep-clone: sẽ cắt object chung → vỡ dấu "đã nhận/đã xem" + tốn bộ nhớ ×100×50.
       if (isConvCurrent(convId)) {
-        messagesCache.set(convId, [...messages.value]);
+        messagesCache.set(messageCacheKey(convId), [...messages.value]);
       }
     } catch (err) {
       console.error('Failed to fetch messages:', err);
@@ -721,7 +786,8 @@ export function useChat() {
     await fetchMessages(convId);
     const detailTask = (async () => {
       try {
-        const convDetail = await api.get(`/conversations/${convId}`);
+        const convDetail = await api.get(conversationPath(convId));
+        if (selectedConvId.value !== convId) return;
         let conv = conversations.value.find(c => c.id === convId);
         if (!conv) {
           // 2026-05-28: Conv stub từ Lead Pool có thể không nằm trong 100 conv top
@@ -751,6 +817,7 @@ export function useChat() {
       }
     })();
     const markReadTask = (async () => {
+      if (conversationPath(convId).startsWith('/channel-inbox/')) return;
       try {
         await api.post(`/conversations/${convId}/mark-read`);
         const conv = conversations.value.find(c => c.id === convId);
@@ -766,7 +833,7 @@ export function useChat() {
     // (legacy, đã bỏ).
     // AI summary + sentiment KHÔNG auto-fire mỗi lần đổi conv — user bấm nút refresh khi cần.
     // Trước đây 2 LLM call awaited mỗi switch = 2-10s + tốn quota.
-    void fetchAiUsage();
+    if (!conversationPath(convId).startsWith('/channel-inbox/')) void fetchAiUsage();
   }
 
   async function sendMessage(content: string, replyMessageId?: string | null, styles?: Array<{ st: string; start: number; len: number }>, mentions?: Array<{ uid: string; pos: number; len: number }>) {
@@ -795,6 +862,7 @@ export function useChat() {
   }
 
   async function sendMessageTo(conversationId: string, content: string, replyMessageId?: string | null, styles?: Array<{ st: string; start: number; len: number }>, mentions?: Array<{ uid: string; pos: number; len: number }>) {
+    if (conversationPath(conversationId).startsWith('/channel-inbox/')) return;
     if (!content.trim()) return;
     sendingMsg.value = true;
     try {
@@ -823,6 +891,26 @@ export function useChat() {
         useToast().error(e?.response?.data?.error || 'Không gửi được tin nhắn, vui lòng thử lại.');
       }
       throw err;
+    } finally {
+      sendingMsg.value = false;
+    }
+  }
+
+  async function sendChannelMessage(conversationId: string, content: string, idempotencyKey: string) {
+    const conv = conversations.value.find(row => row.id === conversationId)
+      ?? (selectedConvDetail.value?.id === conversationId ? selectedConvDetail.value : null);
+    if (!conv?.channelAccount || !conv.capabilities?.textSend || !content.trim()) {
+      throw new Error('CHANNEL_SEND_UNAVAILABLE');
+    }
+    sendingMsg.value = true;
+    try {
+      const res = await api.post(`/channel-inbox/${conversationId}/messages`, {
+        text: content.trim(),
+        idempotencyKey,
+      });
+      if (conversationId === selectedConvId.value && !messages.value.find(m => m.id === res.data.id)) {
+        insertMessageSorted(normalizeMessage(res.data));
+      }
     } finally {
       sendingMsg.value = false;
     }
@@ -862,10 +950,25 @@ export function useChat() {
       // Reconnect sau 1 khoảng chết → kéo lại tin cột 2 đã lỡ (socket không backfill).
       // bypassCache đảm bảo lấy fresh, không apply cache cũ trước lúc chết.
       onReconnect: () => {
+        void refreshChannelAccounts();
         void fetchConversations({ bypassCache: true });
       },
     });
     // FIX 2 — wake reconnect khi quay lại tab / có mạng lại.
+    socket.on('connect', () => { void refreshChannelAccounts(); });
+    socket.on('channel:message', (data: { accountId?: string; conversationId?: string }) => {
+      if (!data.accountId || !subscribedChannels.has(data.accountId)) return;
+      conversationsCache.clear();
+      if (data.conversationId === selectedConvId.value) void fetchMessages(data.conversationId);
+      if (inboxChannel.value !== 'legacy') void fetchConversations({ bypassCache: true });
+    });
+    socket.on('channel:access-revoked', (data: { accountId?: string }) => {
+      if (!data.accountId) return;
+      subscribedChannels.delete(data.accountId);
+      purgeChannelAccount(data.accountId);
+      void refreshChannelAccounts();
+      if (inboxChannel.value !== 'legacy') void fetchConversations({ bypassCache: true });
+    });
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', onOnline);
 
@@ -1176,7 +1279,7 @@ export function useChat() {
         }
       }
       // Patch persistent cache (lần sau quay lại conv vẫn thấy status đúng)
-      const cached = messagesCache.get(data.conversationId);
+      const cached = messagesCache.get(messageCacheKey(data.conversationId));
       if (cached) {
         const msg = cached.find(
           m => m.id === data.messageId || (data.zaloMsgId && m.zaloMsgId === data.zaloMsgId),
@@ -1231,6 +1334,7 @@ export function useChat() {
   }
 
   function destroySocket() {
+    subscribedChannels.clear();
     window.removeEventListener('friend-crm-tags-changed', onFriendCrmTagsChanged);
     document.removeEventListener('visibilitychange', onVisible);
     window.removeEventListener('online', onOnline);
@@ -1239,6 +1343,7 @@ export function useChat() {
   }
 
   return {
+    inboxChannel, channelAccountFilter, channelUnreadOnly, channelCounts, channelAccounts, channelInboxAvailable, refreshChannelAccounts,
     conversations,
     selectedConvId,
     selectedConv,
@@ -1273,6 +1378,7 @@ export function useChat() {
     patchContactProfile,
     sendMessage,
     sendMessageTo,
+    sendChannelMessage,
     generateAiSuggestion,
     generateAiSummary,
     generateAiSentiment,

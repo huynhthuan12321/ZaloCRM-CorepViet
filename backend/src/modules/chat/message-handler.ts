@@ -639,7 +639,7 @@ export async function handleIncomingMessage(
         orgId: account.orgId,
         org,
         contact,
-        conversation: conversationDetails
+        conversation: conversationDetails?.zaloAccountId
           ? {
               id: conversationDetails.id,
               unreadCount: conversationDetails.unreadCount,

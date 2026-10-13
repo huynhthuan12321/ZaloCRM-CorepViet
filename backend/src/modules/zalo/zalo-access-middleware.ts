@@ -65,8 +65,10 @@ export function requireZaloAccess(minPermission: Permission) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
 
-    // Owner/admin bypass — full access to all accounts in their org
-    if (['owner', 'admin'].includes(user.role)) return;
+    // Preserve the old org-admin fast path on known account routes. Conversation
+    // routes must resolve transport before an admin bypass (nullable channel rows).
+    const isAccountRoute = request.routeOptions.url?.startsWith('/api/v1/zalo-accounts/');
+    if (isAccountRoute && ['owner', 'admin'].includes(user.role)) return;
 
     const params = request.params as Record<string, string>;
     let zaloAccountId = params.zaloAccountId || params.id;
@@ -78,7 +80,10 @@ export function requireZaloAccess(minPermission: Permission) {
           where: { id: params.id, orgId: user.orgId },
           select: { zaloAccountId: true },
         });
-        if (conv) zaloAccountId = conv.zaloAccountId;
+        if (conv && !conv.zaloAccountId) {
+          return reply.status(409).send({ error: 'Operation only supported for Zalo conversations', code: 'ZALO_ONLY_OPERATION' });
+        }
+        if (conv?.zaloAccountId) zaloAccountId = conv.zaloAccountId;
       } catch {
         return reply.status(500).send({ error: 'Internal error checking access' });
       }

@@ -14,6 +14,7 @@
  *    that did not hit the dedup path).
  */
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
+import { assertZaloConversation } from '../channels/zalo-conversation-guard.js';
 import { logger } from '../../shared/utils/logger.js';
 import { randomUUID } from 'node:crypto';
 import { counterDelta, deriveRelationshipKind } from '../zalo/friend-event-handler.js';
@@ -71,7 +72,7 @@ export async function applyContactAggregateFromMessage(
       where: { id: args.conversationId },
       select: { contactId: true, zaloAccountId: true, threadType: true },
     });
-    if (!conv?.contactId) return;
+    if (!conv?.contactId || !conv.zaloAccountId) return;
     if (conv.threadType === 'group') return;
 
     const { message } = args;
@@ -184,9 +185,9 @@ export async function applyContactInteraction(args: InteractionInput): Promise<v
   try {
     const conv = await prisma.conversation.findUnique({
       where: { id: args.conversationId },
-      select: { contactId: true, threadType: true },
+      select: { contactId: true, threadType: true, zaloAccountId: true },
     });
-    if (!conv?.contactId) return;
+    if (!conv?.contactId || !conv.zaloAccountId) return;
     if (conv.threadType === 'group') return;
 
     await prisma.contact.updateMany({
@@ -232,7 +233,8 @@ export async function applyFriendAggregate(args: AggregateMessageInput): Promise
     });
     if (!conv?.contactId) return;
     if (conv.threadType === 'group') return;
-    if (!conv.externalThreadId) return;
+    if (!conv.externalThreadId || !conv.zaloAccountId) return;
+    assertZaloConversation(conv);
 
     const { message } = args;
     const sentAt = message.sentAt;
@@ -489,6 +491,7 @@ export async function backfillFriendsFromHistory(orgId: string): Promise<{
     JOIN contacts c ON c.id = conv.contact_id
     LEFT JOIN messages m ON m.conversation_id = conv.id AND m.is_deleted = false
     WHERE conv.org_id = ${orgId}
+      AND conv.zalo_account_id IS NOT NULL
       AND conv.contact_id IS NOT NULL
       AND conv."threadType" = 'user'
     GROUP BY conv.org_id, conv.contact_id, conv.zalo_account_id, c.zalo_uid
@@ -568,6 +571,7 @@ export async function backfillContactAggregates(orgId: string): Promise<{
       FROM messages m
       JOIN conversations conv ON conv.id = m.conversation_id
       WHERE conv.org_id = ${orgId}
+        AND conv.zalo_account_id IS NOT NULL
         AND conv.contact_id IS NOT NULL
         AND conv."threadType" = 'user'
         AND m.is_deleted = false

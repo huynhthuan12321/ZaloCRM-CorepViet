@@ -185,7 +185,7 @@ export function tenantTransaction<T>(
 // Extract overload dạng-callback rồi lấy param đầu (tx). Ở ngoài createPrismaClient nên
 // không gây vòng lặp type.
 type InteractiveTxFn = Extract<Parameters<typeof prisma.$transaction>[0], (...a: never[]) => unknown>;
-type TxClient = Parameters<InteractiveTxFn>[0];
+export type TxClient = Parameters<InteractiveTxFn>[0];
 
 export const prisma = globalForPrisma.prisma || createPrismaClient();
 

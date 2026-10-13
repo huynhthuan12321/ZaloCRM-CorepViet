@@ -130,12 +130,14 @@ async function processOrg(orgId: string, followupConfig: FollowupConfig, io: Ser
   let attempted = 0;
   let sent = 0;
   for (const conversation of conversations) {
+    if (!conversation.zaloAccountId || !conversation.zaloAccount) continue;
     if (attempted >= MAX_CONVERSATIONS_PER_ORG) break;
-    const anchor = await findEligibleAnchor(conversation, followupConfig, now);
+    const zaloConversation = { ...conversation, zaloAccountId: conversation.zaloAccountId, zaloAccount: conversation.zaloAccount };
+    const anchor = await findEligibleAnchor(zaloConversation, followupConfig, now);
     if (!anchor) continue;
     attempted += 1;
 
-    const didSend = await processCandidate(conversation, anchor, io).catch((err) => {
+    const didSend = await processCandidate(zaloConversation, anchor, io).catch((err) => {
       logger.error(`[ai-followup-cron] conv=${conversation.id} error`, err);
       return false;
     });

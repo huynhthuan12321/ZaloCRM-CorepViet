@@ -5,6 +5,7 @@
   <div v-else class="smax-chat-grid">
     <!-- COL 1: NEW Filter Sidebar (Phase 6+ Inbox Triage) -->
     <ConversationFilterSidebar
+      v-if="inboxChannel === 'legacy'"
       :filters="inboxFilters"
       :workspace-name="workspaceName"
       :current-user-name="currentUserName"
@@ -18,9 +19,34 @@
       @clear-account-filter="onFilterAccount(null)"
     />
 
+    <aside v-if="inboxChannel !== 'legacy'" style="padding:16px;grid-column:1;grid-row:1">
+      <strong>Hộp thư chung</strong>
+      <p>{{ channelCounts.total }} hội thoại · {{ channelCounts.unread }} chưa đọc</p>
+      <label>Tài khoản
+        <select v-model="channelAccountFilter" aria-label="Lọc tài khoản kênh">
+          <option :value="null">Tất cả tài khoản</option>
+          <option v-for="account in channelAccounts" :key="account.id" :value="account.id">{{ account.displayName }}</option>
+        </select>
+      </label>
+      <p><label><input v-model="channelUnreadOnly" type="checkbox" /> Chỉ chưa đọc</label></p>
+      <ChannelMockAccountPanel
+        v-if="inboxChannel === 'mock'"
+        :accounts="channelAccounts"
+        @changed="refreshChannelState"
+      />
+    </aside>
+
     <!-- COL 2: conversation list — FilterBar render INSIDE via named slot
          giữa CRM tag bar và conv list (đúng order user yêu cầu) -->
     <div class="smax-conv-col">
+      <label v-if="channelInboxAvailable" style="padding:10px">Kênh
+        <select v-model="inboxChannel" aria-label="Chọn hộp thư">
+          <option value="legacy">Zalo</option>
+          <option value="all">Tất cả kênh</option>
+          <option value="mock">Kênh thử nghiệm</option>
+          <option value="tiktok" disabled>TikTok — chưa kết nối</option>
+        </select>
+      </label>
       <!-- FIX socket-chết v2 — báo mất kết nối realtime, KHÔNG để chết âm thầm (bỏ lỡ khách).
            Text generic, không lộ orgId/user. Ẩn khi đã kết nối. -->
       <div v-if="realtimeOffline" class="realtime-offline-banner">
@@ -47,6 +73,7 @@
         :loading-more="convLoadingMore"
         :accounts="accountList"
         :selected-account-ids="selectedAccountIds"
+        :unified-mode="inboxChannel !== 'legacy'"
         :active-tab-key="inboxFilters.state.activeTab"
         :auto-compose-phone="autoComposePhone"
         :following-pairs="followingPairs"
@@ -62,6 +89,7 @@
       >
         <template #filters>
           <ConversationFilterBar
+            v-if="inboxChannel === 'legacy'"
             :filters="inboxFilters"
             :total-count="conversations.length"
             :counts="conversationCounts"
@@ -73,7 +101,10 @@
     </div>
 
     <!-- COL 3: message thread (giữ nguyên — handles header/messages/input bên trong) -->
-    <MessageThread
+    <ChannelReadonlyThread v-if="selectedConv?.channelAccount" :conversation="selectedConv" :messages="messages" :loading="loadingMsgs"
+      :sending="sendingMsg" :send="sendChannelMessage"
+      class="smax-msg-col" @refresh="selectedConvId && fetchMessages(selectedConvId)" />
+    <MessageThread v-else
       :conversation="selectedConv"
       :messages="messages"
       :loading="loadingMsgs"
@@ -121,7 +152,7 @@
 
     <!-- COL 4: contact info panel (chỉ hiện khi có contact) -->
     <ChatContactPanel
-      v-if="showContactPanel && selectedConv?.contact"
+      v-if="showContactPanel && selectedConv?.contact && !selectedConv.channelAccount"
       ref="contactPanelRef"
       :contact-id="selectedConv.contact.id"
       :contact="selectedConv.contact"
@@ -148,6 +179,8 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/api/index';
+import ChannelReadonlyThread from '@/components/chat/channel-readonly-thread.vue';
+import ChannelMockAccountPanel from '@/components/chat/channel-mock-account-panel.vue';
 import { useToast } from '@/composables/use-toast';
 import ConversationList from '@/components/chat/ConversationList.vue';
 import MessageThread from '@/components/chat/MessageThread.vue';
@@ -173,16 +206,29 @@ const router = useRouter();
 
 const {
   conversations, selectedConvId, selectedConv, messages,
+  inboxChannel, channelAccountFilter, channelUnreadOnly, channelCounts, channelAccounts, channelInboxAvailable,
   loadingConvs, convHasMore, convLoadingMore, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
   aiSuggestion, aiSuggestionLoading, aiSuggestionError, aiSuggestionSources, aiNeedsReviewReason,
   aiSummary, aiSummaryLoading, aiSentiment, aiSentimentLoading,
-  fetchConversations, loadMoreConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
+  fetchConversations, loadMoreConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage, sendChannelMessage,
   generateAiSuggestion, generateAiSummary, generateAiSentiment,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
   outOfScopeCounts, clearOutOfScopeBadge,
-  patchContactProfile,
+  patchContactProfile, refreshChannelAccounts,
 } = useChat();
+
+async function refreshChannelState() {
+  await refreshChannelAccounts();
+  await fetchConversations({ bypassCache: true });
+}
+
+watch([inboxChannel, channelAccountFilter, channelUnreadOnly], () => {
+  selectedConvId.value = null;
+  messages.value = [];
+  conversations.value = [];
+  void fetchConversations({ bypassCache: true });
+});
 
 const {
   typingUsers, replyingTo, editingMessage,

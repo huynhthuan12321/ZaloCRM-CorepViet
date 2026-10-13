@@ -30,6 +30,7 @@ import { Prisma } from '@prisma/client';
 import { config } from './config/index.js';
 import { validateProductionConfig } from './config/validate-production-config.js';
 import { messengerConfig, messengerHealthSummary } from './config/messenger-config.js';
+import { tiktokPersonalConfig, tiktokPersonalHealthSummary } from './config/tiktok-personal-config.js';
 import { prisma } from './shared/database/prisma-client.js';
 import { decryptSessionData } from './shared/crypto/session-crypto.js';
 import { logger } from './shared/utils/logger.js';
@@ -42,6 +43,13 @@ import { zaloRoutes } from './modules/zalo/zalo-routes.js';
 import { customerListRoutes } from './modules/lists/list-routes.js';
 import { customerListEntryRoutes } from './modules/lists/list-entry-routes.js';
 import { chatRoutes } from './modules/chat/chat-routes.js';
+import { channelInboxRoutes } from './modules/channels/channel-inbox-routes.js';
+import { registerChannelSocketHandlers } from './modules/channels/channel-socket.js';
+import { channelEventIngressRoutes } from './modules/channels/event-ingress.js';
+import { mockChannelAccountRoutes } from './modules/channels/mock-channel-account-routes.js';
+import { channelOutboundRoutes } from './modules/channels/outbound-command-routes.js';
+import { channelPilotRoutes } from './modules/channels/pilot-routes.js';
+import { startChannelEventProcessor, stopChannelEventProcessor } from './modules/channels/channel-event-processor.js';
 import { folderRoutes } from './modules/chat/folder-routes.js';
 import { presetRoutes } from './modules/chat/preset-routes.js';
 import { chatAttachmentRoutes } from './modules/chat/chat-attachment-routes.js';
@@ -264,6 +272,7 @@ async function bootstrap() {
 
   // Register chat Socket.IO event handlers
   registerChatSocketHandlers(io);
+  registerChannelSocketHandlers(io);
 
   // PRIVACY 2026-06-11 (Đợt 3.1) — guard giám sát rò rỉ: onSend toàn cục, quét
   // response route content/mixed, CẢNH BÁO (không tự sửa) nếu nick main chưa redact.
@@ -280,6 +289,11 @@ async function bootstrap() {
   await app.register(orgBrandingRoutes); // public org branding cho trang /login (pre-auth)
   await app.register(zaloRoutes);
   await app.register(chatRoutes);
+  await app.register(channelInboxRoutes);
+  await app.register(mockChannelAccountRoutes);
+  await app.register(channelEventIngressRoutes);
+  await app.register(channelOutboundRoutes);
+  await app.register(channelPilotRoutes);
   await app.register(folderRoutes);
   await app.register(presetRoutes);
   await app.register(chatAttachmentRoutes);
@@ -391,6 +405,7 @@ async function bootstrap() {
       checkDb: async () => { await prisma.$queryRaw`SELECT 1`; },
       checkRedis: isBullMQRedisHealthy,
       messenger: messengerHealthSummary(messengerConfig),
+      tiktok: tiktokPersonalHealthSummary(tiktokPersonalConfig),
     });
     return reply.status(ready.statusCode).send(ready.body);
   });
@@ -546,6 +561,7 @@ async function bootstrap() {
     // sweepers, list enrichment, nick workers) → started by the extension bundle.
     // Open-core: extension cron/worker startups (no-op in Community edition).
     await ee?.startExtensionJobs?.(app, io);
+    if (config.nodeEnv !== 'test') startChannelEventProcessor(io);
     await initOpikExporter().catch((e) => logger.warn('[opik] init failed:', e));
 
     // 2026-06-19 — Cầu Telegram (Phase 1): subscribe bridge-bus, mirror tin Zalo→Telegram.
@@ -573,6 +589,7 @@ async function bootstrap() {
       force.unref();
       await flushOpik().catch((e) => logger.warn('[shutdown] opik flush loi:', e));
       try {
+        stopChannelEventProcessor();
         await stopGroupScanWorker().catch((e) => logger.warn('[shutdown] stopGroupScanWorker lỗi:', e));
         await app.close().catch((e) => logger.warn('[shutdown] app.close lỗi:', e));
         logger.info('[shutdown] đóng gọn xong.');

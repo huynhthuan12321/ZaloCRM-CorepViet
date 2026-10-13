@@ -70,6 +70,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         WHERE c.org_id = ${orgId}
+          AND c.zalo_account_id IS NOT NULL
           AND m.sent_at >= ${from}::date
           AND m.sent_at < (${to}::date + interval '1 day')
         GROUP BY DATE(m.sent_at)

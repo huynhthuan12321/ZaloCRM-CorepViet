@@ -7,6 +7,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
+import { assertZaloConversation } from '../channels/zalo-conversation-guard.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
 import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
@@ -877,8 +878,8 @@ export async function chatRoutes(app: FastifyInstance) {
     // (account, uid) khi seed legacy. OR-clause với pair trùng → planner duplicate
     // index scan (M-tier optimization 2026-05-21).
     const userPairsRaw = conversations
-      .filter(c => c.threadType === 'user' && c.contactId && c.externalThreadId)
-      .map(c => ({ zaloAccountId: c.zaloAccountId, zaloUidInNick: c.externalThreadId! }));
+      .flatMap(c => c.zaloAccountId && c.threadType === 'user' && c.contactId && c.externalThreadId
+        ? [{ zaloAccountId: c.zaloAccountId, zaloUidInNick: c.externalThreadId }] : []);
     const pairKeys = new Set<string>();
     const userPairs: typeof userPairsRaw = [];
     for (const p of userPairsRaw) {
@@ -1101,6 +1102,7 @@ export async function chatRoutes(app: FastifyInstance) {
       },
     });
     if (!conversation) return reply.status(404).send({ error: 'Not found' });
+    assertZaloConversation(conversation);
 
     // PRIVACY 2026-06-11 — SCOPE GUARD: endpoint này trước đây thiếu cả scope lẫn redact
     // (audit C4). Chặn user ngoài quyền đọc chi tiết hội thoại của nick người khác.
@@ -1195,6 +1197,7 @@ export async function chatRoutes(app: FastifyInstance) {
       select: { id: true, contactId: true, zaloAccountId: true, externalThreadId: true, threadType: true },
     });
     if (!conv) return reply.status(404).send({ error: 'Conversation not found' });
+    assertZaloConversation(conv);
     if (conv.threadType !== 'user' || !conv.contactId || !conv.externalThreadId) {
       return { ok: true, skipped: true, reason: 'group_or_no_contact' };
     }
@@ -1354,11 +1357,13 @@ export async function chatRoutes(app: FastifyInstance) {
       select: {
         id: true,
         // 2026-06-20: displayName+avatar của NICK để hiển thị reaction do sale thả qua CRM
+        zaloAccountId: true,
         // theo DANH TÍNH NICK ZALO (anh chốt: không hiện email tài khoản sale CRM).
         zaloAccount: { select: { privacyMode: true, ownerUserId: true, displayName: true, avatarUrl: true } },
       },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+    assertZaloConversation(conversation);
 
     // Phase Riêng Tư 2026-05-22: redact content nếu conv main-nick + viewer không own + chưa unlock
     const { buildPrivacyContext, redactMessage } = await import('../privacy/redact.js');
@@ -1600,6 +1605,7 @@ export async function chatRoutes(app: FastifyInstance) {
       include: { zaloAccount: true },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+    assertZaloConversation(conversation);
 
     // T7 (YC2 2026-06-20): CHẶN GỬI qua nick ĐÃ XÓA (archivedAt) — kể cả hội thoại ảo. Đặt
     // TRƯỚC isVirtual + TRƯỚC mọi nhánh tạo Message. Sau T5/T6 hội thoại nick xóa hiện lại
@@ -1959,6 +1965,7 @@ export async function chatRoutes(app: FastifyInstance) {
       include: { zaloAccount: true },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+    assertZaloConversation(conversation);
 
     // ── Gate 2: virtual conv = KH no-Zalo → không dispatch SDK được ────────
     if (conversation.isVirtual) {
@@ -2274,6 +2281,7 @@ export async function chatRoutes(app: FastifyInstance) {
       include: { zaloAccount: true },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+    assertZaloConversation(conversation);
     if (!conversation.externalThreadId) return reply.status(400).send({ error: 'No external thread ID' });
 
     const instance = zaloPool.getInstance(conversation.zaloAccountId);
@@ -2407,7 +2415,7 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // ── Mark conversation as read ────────────────────────────────────────────
-  app.post('/api/v1/conversations/:id/mark-read', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/api/v1/conversations/:id/mark-read', { preHandler: requireZaloAccess('read') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
 

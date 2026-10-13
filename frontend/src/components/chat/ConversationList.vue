@@ -31,6 +31,7 @@
         </div>
         <button
           class="cl-new-msg"
+          v-if="!unifiedMode"
           ref="newMsgBtnEl"
           data-nick-picker-trigger
           title="Bắt đầu cuộc trò chuyện mới"
@@ -54,7 +55,7 @@
 
       <!-- Label chip bar (filter theo tag CRM) — SINGLE-SELECT.
            Khi 1 tag active → ẩn tag khác. Click lại để clear (show all). -->
-      <div v-if="visibleTags.length" class="cl-label-bar">
+      <div v-if="visibleTags.length && !unifiedMode" class="cl-label-bar">
         <span
           v-for="tag in visibleTags"
           :key="tag"
@@ -141,6 +142,7 @@
               <span v-if="conv.threadType === 'group'" class="group-icon">👥</span>
               <span v-if="conv.isVirtual" class="virtual-chip" title="Chat nội bộ — KH chưa có Zalo, tin nhắn KHÔNG gửi đi">🔒</span>
               {{ displayName(conv) }}
+              <span v-if="conv.channelAccount" class="virtual-chip">{{ conv.channelAccount.provider === 'TIKTOK_WEB_SESSION' ? 'TikTok' : 'Thử nghiệm' }}</span>
               <!-- Theo dõi (anh chốt 2026-06-15): khách đang trong "theo dõi" → chuông ngay sau tên.
                    Icon hệ thống mdi (đồng bộ), không emoji. -->
               <v-icon
@@ -349,6 +351,7 @@ const props = defineProps<{
     zaloUid?: string | null;
   }>;
   selectedAccountIds?: string[];
+  unifiedMode?: boolean;
   /** Phase A perf (2026-05-21) — tab key (personal/group/main/other). Dùng làm
    *  :key cho TransitionGroup → tab switch tạo instance MỚI → bỏ qua FLIP
    *  animation cross-tab. Reorder trong cùng tab (tin mới đến) vẫn animate.
@@ -695,6 +698,7 @@ function friendshipPillClass(_conv: Conversation): string {
 
 // ── Context menu ───────────────────────────────────────────────────────────
 function openContextMenu(event: MouseEvent, conv: Conversation) {
+  if (conv.channelAccount) return;
   contextMenu.x = event.clientX;
   contextMenu.y = event.clientY;
   contextMenu.convId = conv.id;

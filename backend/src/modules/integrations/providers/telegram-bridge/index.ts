@@ -103,7 +103,7 @@ async function forwardMessage(ev: MessagePersistedEvent): Promise<void> {
     if (message.sentVia === 'bridge' || wasSentByBridge(message.zaloMsgId)) return;
     const conv = message.conversation;
 
-    if (conv.threadType !== 'user') return; // chỉ chat 1-1 (bỏ nhóm Zalo)
+    if (conv.threadType !== 'user' || !conv.zaloAccount) return; // Zalo chat 1-1 only
     const cfg = conv.zaloAccount.telegramBridge;
     if (!cfg?.enabled || !cfg.telegramChatId) return;
 
@@ -111,7 +111,7 @@ async function forwardMessage(ev: MessagePersistedEvent): Promise<void> {
     const customerName =
       conv.contact?.crmName || conv.contact?.fullName || message.senderName || 'Khách';
     const topicId = await getOrCreateTopic(conv.id, chatId, customerName);
-    const label = buildLabel(message, conv, customerName);
+    const label = buildLabel(message, { ...conv, zaloAccount: conv.zaloAccount }, customerName);
     await sendToTelegram(chatId, message, label, topicId ?? undefined);
   } catch (err) {
     logger.warn(`[telegram-bridge] forward lỗi msg=${ev.messageId}: ${String(err)}`);

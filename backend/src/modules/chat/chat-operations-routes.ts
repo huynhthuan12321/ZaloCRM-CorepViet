@@ -8,6 +8,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { assertZaloConversation, isZaloConversation } from '../channels/zalo-conversation-guard.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
 import { zaloOps, ZaloOpError } from '../../shared/zalo-operations.js';
@@ -177,6 +178,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     const refs = await resolveMessageRefs(id, msgId, user.orgId);
     if (!refs) return reply.status(404).send({ error: 'Message not found' });
@@ -263,6 +265,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
     const refs = await resolveMessageRefs(id, msgId, user.orgId);
     if (!refs) return reply.status(404).send({ error: 'Message not found' });
 
@@ -291,6 +294,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     try {
       const threadType = conv.threadType === 'group' ? 1 : 0;
@@ -308,6 +312,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     const refs = await resolveMessageRefs(id, msgId, user.orgId);
     if (!refs) return reply.status(404).send({ error: 'Message not found' });
@@ -333,6 +338,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     const refs = await resolveMessageRefs(id, msgId, user.orgId);
     if (!refs) return reply.status(404).send({ error: 'Message not found' });
@@ -374,6 +380,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     const refs = await resolveMessageRefs(id, msgId, user.orgId);
     if (!refs) return reply.status(404).send({ error: 'Message not found' });
@@ -434,6 +441,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     const refs = await resolveMessageRefs(id, msgId, user.orgId);
     if (!refs) return reply.status(404).send({ error: 'Message not found' });
@@ -444,7 +452,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
         include: { zaloAccount: true },
       });
 
-      const validTargets = targets.filter((t) => Boolean(t.externalThreadId));
+      const validTargets = targets.filter(isZaloConversation).filter((t) => Boolean(t.externalThreadId));
       if (validTargets.length === 0) {
         return reply.status(400).send({ error: 'Không có hội thoại đích hợp lệ để chuyển tiếp' });
       }
@@ -598,6 +606,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     try {
       const threadType = conv.threadType === 'group' ? 1 : 0;
@@ -620,6 +629,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     try {
       const threadType = conv.threadType === 'group' ? 1 : 0;
@@ -646,6 +656,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     try {
       const threadType = conv.threadType === 'group' ? 1 : 0;
@@ -715,6 +726,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     try {
       const threadType = conv.threadType === 'group' ? 1 : 0;
@@ -765,6 +777,7 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
 
     const conv = await getConversation(id, user.orgId, reply);
     if (!conv) return;
+    assertZaloConversation(conv);
 
     try {
       const threadType = conv.threadType === 'group' ? 1 : 0;

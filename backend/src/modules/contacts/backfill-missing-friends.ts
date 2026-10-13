@@ -21,7 +21,7 @@ export interface MissingFriendBackfillResult {
 export async function backfillMissingFriends(): Promise<MissingFriendBackfillResult> {
   // Chỉ xét user thread (group conversations không có per-pair Friend semantic).
   const conversations = await prisma.conversation.findMany({
-    where: { threadType: 'user', contactId: { not: null }, externalThreadId: { not: null } },
+    where: { threadType: 'user', zaloAccountId: { not: null }, contactId: { not: null }, externalThreadId: { not: null } },
     select: {
       id: true, orgId: true, zaloAccountId: true, contactId: true, externalThreadId: true,
       lastMessageAt: true,
@@ -31,6 +31,7 @@ export async function backfillMissingFriends(): Promise<MissingFriendBackfillRes
   const result: MissingFriendBackfillResult = { conversationsScanned: conversations.length, friendsCreated: 0 };
 
   for (const conv of conversations) {
+    if (!conv.zaloAccountId) continue;
     const exists = await prisma.friend.findFirst({
       where: { zaloAccountId: conv.zaloAccountId, zaloUidInNick: conv.externalThreadId! },
       select: { id: true },

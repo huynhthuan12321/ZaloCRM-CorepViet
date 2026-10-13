@@ -195,12 +195,13 @@ async function tryEnrollContact(args: {
   const conversation = await prisma.conversation.findFirst({
     where: {
       orgId, contactId, threadType: 'user', isVirtual: false, deletedAt: null,
+      zaloAccountId: { not: null },
       lastMessageAt: { not: null },
     },
     orderBy: { lastMessageAt: 'desc' },
     select: { id: true, zaloAccountId: true, externalThreadId: true },
   });
-  if (!conversation) return false;
+  if (!conversation || !conversation.zaloAccountId) return false;
 
   // 4. Im lặng đủ lâu: tin cuối CỦA KHÁCH trong khoảng [30 ngày trước, silenceHours trước].
   const lastInbound = await prisma.message.findFirst({

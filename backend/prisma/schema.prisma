@@ -37,6 +37,12 @@ model Organization {
   teams                       Team[]
   users                       User[]
   zaloAccounts                ZaloAccount[]
+  channelAccounts             ChannelAccount[]
+  channelAccountAccess        ChannelAccountAccess[]
+  browserSessionRefs          BrowserSessionRef[]
+  contactIdentities           ContactIdentity[]
+  channelEvents               ChannelEvent[]
+  outboundCommands            OutboundCommand[]
   contacts                    Contact[]
   contactAccess               ContactAccess[]
   conversations               Conversation[]
@@ -313,6 +319,11 @@ model User {
   ownedMediaAlbums          MediaAlbum[]                 @relation("MediaAlbumOwner")
   createdMediaAlbums        MediaAlbum[]                 @relation("MediaAlbumCreatedBy")
 
+  ownedChannelAccounts ChannelAccount[]
+  channelAccountAccess ChannelAccountAccess[]
+  channelCommands OutboundCommand[]
+
+  @@unique([orgId, id])
   @@map("users")
 }
 
@@ -732,6 +743,9 @@ model Contact {
   @@index([orgId, leadScore(sort: Desc)])
   @@index([orgId, stuckSinceAggregate])
   @@index([orgId, aggregateScoreUpdatedAt(sort: Desc)])
+  channelIdentities ContactIdentity[]
+
+  @@unique([orgId, id])
   @@map("contacts")
 }
 
@@ -764,7 +778,10 @@ model Status {
 model Conversation {
   id                String    @id @default(uuid())
   orgId             String    @map("org_id")
-  zaloAccountId     String    @map("zalo_account_id")
+  zaloAccountId     String?   @map("zalo_account_id")
+  // TT04-D: SQL CHECK requires exactly one account, including virtual Zalo threads.
+  channelAccountId  String?   @map("channel_account_id")
+  threadKind        String    @default("dm") @map("thread_kind")
   contactId         String?   @map("contact_id")
   threadType        String    @default("user") // user, group
   externalThreadId  String?   @map("external_thread_id")
@@ -791,14 +808,19 @@ model Conversation {
   createdAt         DateTime  @default(now()) @map("created_at")
 
   org           Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  zaloAccount   ZaloAccount          @relation(fields: [zaloAccountId], references: [id], onDelete: Cascade)
+  zaloAccount   ZaloAccount?         @relation(fields: [zaloAccountId], references: [id], onDelete: Cascade)
   contact       Contact?             @relation(fields: [contactId], references: [id])
   messages      Message[]
   aiSuggestions AiSuggestion[]
   pins          PinnedConversation[]
   // 2026-06-18 — Cầu Telegram: 1 hội thoại = 1 forum topic (định tuyến reply).
   telegramTopic TelegramTopicMap?
+  channelAccount ChannelAccount? @relation(fields: [orgId, channelAccountId], references: [orgId, id], onDelete: Restrict)
+  outboundCommands OutboundCommand[]
 
+  @@unique([orgId, id])
+  @@unique([channelAccountId, externalThreadId])
+  @@unique([orgId, channelAccountId, id])
   @@unique([zaloAccountId, externalThreadId])
   @@index([orgId, zaloAccountId, isReplied, lastMessageAt])
   @@index([orgId, zaloAccountId, lastMessageAt])
@@ -813,10 +835,133 @@ model Conversation {
   @@map("conversations")
 }
 
+// TT04-B: dormant channel persistence. No credentials, browser profile or QR stored here.
+model ChannelAccount {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  ownerUserId String @map("owner_user_id")
+  provider String
+  externalAccountId String? @map("external_account_id")
+  displayName String @map("display_name")
+  status String @default("DISCONNECTED")
+  enabled Boolean @default(false)
+  inboundEnabled Boolean @default(false) @map("inbound_enabled")
+  outboundEnabled Boolean @default(false) @map("outbound_enabled")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  owner User @relation(fields: [orgId, ownerUserId], references: [orgId, id], onDelete: Restrict)
+  grants ChannelAccountAccess[]
+  session BrowserSessionRef?
+  identities ContactIdentity[]
+  events ChannelEvent[]
+  commands OutboundCommand[]
+  conversations Conversation[]
+  @@unique([orgId, id])
+  @@unique([orgId, provider, externalAccountId])
+  @@index([orgId, ownerUserId])
+  @@map("channel_accounts")
+}
+
+model ChannelAccountAccess {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  channelAccountId String @map("channel_account_id")
+  userId String @map("user_id")
+  permission String @default("read")
+  createdAt DateTime @default(now()) @map("created_at")
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  account ChannelAccount @relation(fields: [orgId, channelAccountId], references: [orgId, id], onDelete: Cascade)
+  user User @relation(fields: [orgId, userId], references: [orgId, id], onDelete: Cascade)
+  @@unique([channelAccountId, userId])
+  @@index([orgId, userId])
+  @@map("channel_account_access")
+}
+
+model BrowserSessionRef {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  channelAccountId String @unique @map("channel_account_id")
+  // Opaque reference only; not a path, cookie, token or serialized storageState.
+  profileRef String @map("profile_ref")
+  epoch BigInt @default(0)
+  verifiedAt DateTime? @map("verified_at")
+  expiresAt DateTime? @map("expires_at")
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  account ChannelAccount @relation(fields: [orgId, channelAccountId], references: [orgId, id], onDelete: Cascade)
+  @@unique([orgId, channelAccountId])
+  @@map("browser_session_refs")
+}
+
+model ContactIdentity {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  channelAccountId String @map("channel_account_id")
+  contactId String @map("contact_id")
+  externalUserId String @map("external_user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  account ChannelAccount @relation(fields: [orgId, channelAccountId], references: [orgId, id], onDelete: Cascade)
+  contact Contact @relation(fields: [orgId, contactId], references: [orgId, id], onDelete: Restrict)
+  @@unique([channelAccountId, externalUserId])
+  @@index([orgId, contactId])
+  @@map("contact_identities")
+}
+
+model ChannelEvent {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  channelAccountId String @map("channel_account_id")
+  eventKey String @map("event_key")
+  kind String
+  epoch BigInt
+  // Normalized event, never session credentials. Ingress/retention added in TT05.
+  payload Json
+  status String @default("PENDING")
+  attempts Int @default(0)
+  observedAt DateTime @map("observed_at")
+  processedAt DateTime? @map("processed_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  account ChannelAccount @relation(fields: [orgId, channelAccountId], references: [orgId, id], onDelete: Cascade)
+  @@unique([channelAccountId, eventKey])
+  @@index([orgId, status, createdAt])
+  @@map("channel_events")
+}
+
+model OutboundCommand {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  channelAccountId String @map("channel_account_id")
+  conversationId String @map("conversation_id")
+  requestedByUserId String @map("requested_by_user_id")
+  idempotencyKey String @map("idempotency_key")
+  text String @db.Text
+  status String @default("PENDING")
+  epoch BigInt?
+  externalMessageId String? @map("external_message_id")
+  submittedAt DateTime? @map("submitted_at")
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  account ChannelAccount @relation(fields: [orgId, channelAccountId], references: [orgId, id], onDelete: Restrict)
+  conversation Conversation @relation(fields: [orgId, channelAccountId, conversationId], references: [orgId, channelAccountId, id], onDelete: Restrict)
+  requestedBy User @relation(fields: [orgId, requestedByUserId], references: [orgId, id], onDelete: Restrict)
+  @@unique([channelAccountId, idempotencyKey])
+  @@index([orgId, status, createdAt])
+  @@map("outbound_commands")
+}
+
 // Individual message within a conversation
 model Message {
   id                  String    @id @default(uuid())
   conversationId      String    @map("conversation_id")
+  // TT04-D: BEFORE trigger derives org for legacy writers; staged SQL validates NOT NULL.
+  orgId               String    @default(dbgenerated()) @map("org_id")
+  externalMessageId   String?   @map("external_message_id")
+  observedAt          DateTime? @map("observed_at")
+  channelSendState    String?   @map("channel_send_state")
   zaloMsgId           String?   @map("zalo_msg_id")
   // Numeric Snowflake từ Zalo server — primary sort key (match 100% Zalo Web).
   // sentAt giữ làm display + fallback cho CRM-sent chưa echo. KHÔNG dùng sentAt làm
@@ -880,11 +1025,12 @@ model Message {
   clientEchoId        String?   @map("client_echo_id")
   createdAt           DateTime  @default(now()) @map("created_at")
 
-  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation      @relation(fields: [orgId, conversationId], references: [orgId, id], onDelete: Cascade)
   repliedBy    User?             @relation("RepliedMessages", fields: [repliedByUserId], references: [id])
   reactions    MessageReaction[]
 
   @@unique([conversationId, zaloMsgId])
+  @@unique([conversationId, externalMessageId])
   // BE-3 idempotency — 1 echoId duy nhất / conversation. Multiple NULL cho phép (tin cũ).
   @@unique([conversationId, clientEchoId])
   @@index([conversationId, albumKey])

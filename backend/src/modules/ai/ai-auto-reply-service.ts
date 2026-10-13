@@ -105,7 +105,7 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
         zaloAccount: { select: { privacyMode: true, ownerUserId: true, zaloUid: true, archivedAt: true } },
       },
     });
-    if (!conv || conv.deletedAt) return;
+    if (!conv || conv.deletedAt || !conv.zaloAccountId || !conv.zaloAccount) return;
     if (conv.isVirtual) return;                     // virtual chat có luồng riêng
     if (conv.threadType === 'group') return;        // chỉ tự trả lời hội thoại 1-1, KHÔNG trả lời nhóm
     if (conv.zaloAccount?.archivedAt) return;

@@ -30,11 +30,12 @@ export async function consolidateContactConversations(contactId: string): Promis
 
   // Đếm message mỗi conversation → chọn canonical. Gom theo nick (zaloAccountId).
   const convs = await prisma.conversation.findMany({
-    where: { contactId },
+    where: { contactId, zaloAccountId: { not: null } },
     select: { id: true, zaloAccountId: true, createdAt: true, _count: { select: { messages: true } } },
   });
   const byNick = new Map<string, typeof convs>();
   for (const c of convs) {
+    if (!c.zaloAccountId) continue;
     const arr = byNick.get(c.zaloAccountId) ?? [];
     arr.push(c);
     byNick.set(c.zaloAccountId, arr);
