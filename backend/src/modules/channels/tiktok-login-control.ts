@@ -40,8 +40,14 @@ export function claimTikTokLoginAction(
 ): TikTokLoginAction | null {
   const current = pending.get(accountId);
   if (!current) return null;
+  if (current.expiresAtMs <= now || BigInt(current.epoch) < BigInt(epoch)) {
+    pending.delete(accountId);
+    return null;
+  }
+  // A claim can read the DB epoch just before connect queues a newer action.
+  // Never consume that newer action on behalf of the older in-flight claim.
+  if (current.epoch !== epoch) return null;
   pending.delete(accountId);
-  if (current.epoch !== epoch || current.expiresAtMs <= now) return null;
   return current.action;
 }
 

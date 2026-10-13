@@ -12,6 +12,12 @@ const accountId = '11111111-1111-4111-8111-111111111111';
 afterEach(resetTikTokLoginActionsForTests);
 
 describe('TikTok one-time login control', () => {
+  it('preserves a new QR action when an in-flight claim uses the preceding epoch', () => {
+    queueTikTokLoginAction(accountId, '26', { method: 'qr' }, 1000, 5000);
+    expect(claimTikTokLoginAction(accountId, '25', 1001)).toBeNull();
+    expect(claimTikTokLoginAction(accountId, '26', 1002)).toMatchObject({ method: 'qr' });
+    expect(claimTikTokLoginAction(accountId, '26', 1003)).toBeNull();
+  });
   it('consumes verification in the existing epoch once and drops expired codes', () => {
     queueTikTokLoginAction(accountId, '10', { method: 'verify', code: '123456' }, 1000, 60000);
     expect(claimTikTokLoginAction(accountId, '10', 2000)).toMatchObject({ method: 'verify', code: '123456' });

@@ -82,8 +82,10 @@ try {
         lastSessionAt = 0;
       }
       if (control.action) {
+        console.log(`login_action method=${control.action.method} epoch=${config.epoch}`);
         try {
           await browser.beginLogin(control.action);
+          console.log(`login_action_opened method=${control.action.method} epoch=${config.epoch}`);
         } catch (error) {
           const code = /^[A-Z_]{1,80}$/.test(error?.message ?? '') ? error.message : 'LOGIN_ACTION_FAILED';
           console.warn(`login_action_failed code=${code}`);

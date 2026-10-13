@@ -23,10 +23,10 @@ export function classifyLoginPageText(text) {
 }
 
 export function loginRejectionReason(text) {
-  if (/too many attempts|maximum (?:number of )?attempts|try again later/i.test(text)) return 'attempt_limit';
+  if (/too many attempts|maximum (?:number of )?attempts/i.test(text)) return 'attempt_limit';
   if (/incorrect (?:account|username|email|password)|wrong password/i.test(text)) return 'credentials_rejected';
   if (/account doesn't exist/i.test(text)) return 'account_not_found';
-  if (/couldn't log in|could not log in/i.test(text)) return 'login_unavailable';
+  if (/couldn't log in|could not log in|try again later/i.test(text)) return 'login_unavailable';
   return undefined;
 }
 
@@ -91,6 +91,7 @@ export async function launchTikTokBrowser(config) {
       state,
       path: new URL(page.url()).pathname,
       reason: loginRejectionReason(text),
+      marker: text.match(/too many attempts|maximum (?:number of )?attempts|try again later|incorrect (?:account|username|email|password)|wrong password/i)?.[0].toLowerCase(),
     });
     if (diagnostic !== lastDiagnostic) {
       console.log(`login_observation ${diagnostic}`);

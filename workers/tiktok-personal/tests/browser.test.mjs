@@ -52,6 +52,12 @@ test('reports rate limiting separately from rejected credentials', () => {
     { state: 'error', errorCode: 'TIKTOK_LOGIN_RATE_LIMITED' });
 });
 
+test('does not infer a rate limit from a generic try-again message', () => {
+  assert.equal(loginRejectionReason('Something went wrong. Try again later.'), 'login_unavailable');
+  assert.deepEqual(classifyLoginPageText('Something went wrong. Try again later.'),
+    { state: 'error', errorCode: 'TIKTOK_LOGIN_REJECTED' });
+});
+
 test('classifies QR confirmation and expired QR states', () => {
   assert.equal(classifyLoginPageText('Log in with QR code. Confirm login or sign up'), null);
   assert.deepEqual(classifyLoginPageText('Scan successful. Confirm on your device.'), {
