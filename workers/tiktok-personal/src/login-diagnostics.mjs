@@ -26,11 +26,11 @@ export function isFailedQrCheck(diagnostic, payload) {
   if (diagnostic.httpStatus < 200 || diagnostic.httpStatus >= 300) return true;
   if (['new', 'pending', 'scanned', 'confirmed', 'success'].includes(payload?.data?.status)) return false;
   // Do not assign a meaning to an undocumented numeric code. Require an
-  // explicit failure description as well as a nonzero numeric error code.
+  // explicit failure envelope/description as well as a nonzero error code.
   const code = diagnostic.codes['data.error_code'] ?? diagnostic.codes.error_code;
   const description = payload?.data?.description ?? payload?.description;
-  return Number.isSafeInteger(code) && code !== 0 && typeof description === 'string'
-    && /error|failed|unavailable|rejected|denied/i.test(description);
+  return Number.isSafeInteger(code) && code !== 0 && (payload?.message === 'error'
+    || (typeof description === 'string' && /error|failed|unavailable|rejected|denied/i.test(description)));
 }
 
 export function attachLoginDiagnostics(page) {
