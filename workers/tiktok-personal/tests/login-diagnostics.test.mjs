@@ -28,6 +28,7 @@ test('requires explicit failure evidence and never infers login or rate limiting
   const diagnostic = safeLoginHttpDiagnostic('https://web-sg.tiktok.com/passport/web/check_qrconnect/', 200, {data:{error_code:7}});
   assert.equal(isFailedQrCheck(diagnostic, {data:{error_code:7}}), false);
   assert.equal(isFailedQrCheck(diagnostic, {data:{error_code:7,description:'System error'}}), true);
+  assert.equal(isFailedQrCheck(diagnostic, {data:{error_code:7,description:'SystemError'}}), true);
   assert.equal(isFailedQrCheck(diagnostic, {data:{error_code:7,status:'pending',description:'System error'}}), false);
   assert.equal(isFailedQrCheck({...diagnostic,path:'/passport/web/get_qrcode/'}, {data:{description:'System error'}}), false);
 });

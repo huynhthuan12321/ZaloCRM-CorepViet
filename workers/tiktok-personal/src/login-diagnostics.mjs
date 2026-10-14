@@ -30,7 +30,7 @@ export function isFailedQrCheck(diagnostic, payload) {
   const code = diagnostic.codes['data.error_code'] ?? diagnostic.codes.error_code;
   const description = payload?.data?.description ?? payload?.description;
   return Number.isSafeInteger(code) && code !== 0 && typeof description === 'string'
-    && /\berror\b|\bfailed\b|\bunavailable\b|\brejected\b|\bdenied\b/i.test(description);
+    && /error|failed|unavailable|rejected|denied/i.test(description);
 }
 
 export function attachLoginDiagnostics(page) {
