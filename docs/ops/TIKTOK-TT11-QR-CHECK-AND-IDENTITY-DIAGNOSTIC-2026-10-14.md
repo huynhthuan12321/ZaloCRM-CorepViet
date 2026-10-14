@@ -32,4 +32,14 @@ One authorized account: `@bepbanhcorep`, account ID `485757de-7b67-486f-bf49-40a
 
 Keep the deployed previous worker image `zalocrm-corepviet-tiktok-personal-worker:bf3bdb4` and the same profile volume. Override only the worker image and recreate only that service. Do not restore old DB epochs, delete profiles, change account binding, or restart unrelated services.
 
-Deployment verification is recorded below after the image has been tested and started.
+## Deployment verification
+
+- Final worker image: `zalocrm-corepviet-tiktok-personal-worker:084c294`; code commits `1a68bb1`, `e04f562`, `084c294` on the VPS. No GitHub push was performed in this change.
+- The image passed all 27 tests with the repository test directory mounted read-only against the actual image source, without network or credentials. The image itself contains the two updated test files; the full test mount supplies the remaining existing tests.
+- Live final log: `login_observation {"state":"qr_check_failed","path":"/login/qrcode"}`.
+- DB: `bepbanhcorep | ERROR | inbound=false | outbound=false | epoch=54 | verified_at=NULL`.
+- CRM was reloaded and its TikTok channel selected through the normal UI. It displayed `@bepbanhcorep · lỗi`, epoch 54, and `Mã lỗi TikTok: TIKTOK_QR_CHECK_FAILED`; the stale QR was no longer displayed.
+- Public readiness returned OK, DB and Redis connected. App remained healthy, restart count 0, and image `sha256:82d7204d28c5fd85edfc609cef470b0345956f755a9090db795d6cce098c75d6` unchanged. Worker restart count 0. Global TikTok outbound stayed disabled.
+- The pending remote frontend backup changes were preserved. No migration or profile deletion.
+- **Login acceptance: NOT PASSED.** The fix makes the actual QR failure visible; it does not make TikTok accept the session. The specific meaning of error 7 remains undocumented here. The owner's identity verification screenshot alone is not proof that the VPS browser reached that stage.
+- Next required evidence: identify which device/browser displayed the identity picker, then complete any owner verification within the same login flow. A login in a separate local browser cannot be treated as a verified VPS-worker session. Do not request cookies, passwords, or OTPs in chat, and do not repeatedly retry QR/password without a new diagnostic reason.
