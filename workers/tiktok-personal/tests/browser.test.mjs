@@ -13,6 +13,16 @@ function candidate(visible) {
   };
 }
 
+test('does not reopen, click, or refresh a QR page while waiting for the owner', async () => {
+  const page = {
+    url: () => 'https://www.tiktok.com/login/qrcode?lang=en',
+    getByRole() { throw Error('must not inspect click candidates on an active QR'); },
+    getByText() { throw Error('must not click an active QR'); },
+    locator() { throw Error('must not click an active QR'); },
+  };
+  assert.equal(await openQrLogin(page), false);
+});
+
 test('opens TikTok QR login when the visible choice has no button role', async () => {
   const roleButton = candidate(false);
   const textChoice = candidate(true);

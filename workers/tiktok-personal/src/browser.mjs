@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyen Tien Loc
 import { mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 import { readThreadDocument } from './dom-reader.mjs';
 import { openPasswordLogin } from './password-login.mjs';
 import { openQrLogin } from './qr-login.mjs';
 import { verificationForm, submitVerificationCode } from './verification-login.mjs';
+import { attachLoginDiagnostics } from './login-diagnostics.mjs';
 
 const conversationItem = '[data-e2e="dm-new-conversation-item"]';
 const challengeText = /captcha|verify to continue|security verification|verify your identity|2-step verification|verification code|confirm on your device|drag the slider|xác minh 2 bước/i;
@@ -78,6 +80,7 @@ export async function launchTikTokBrowser(config) {
     viewport: { width: 1440, height: 1000 },
   });
   const page = context.pages()[0] ?? await context.newPage();
+  attachLoginDiagnostics(page);
   await page.goto(config.messagesUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   let loginMode = 'qr';
   let loginStartedAt = 0;
@@ -85,6 +88,7 @@ export async function launchTikTokBrowser(config) {
   let inboxScope = page;
   let verifiedUsername = null;
   let identityProbeStarted = false;
+  let lastQrFingerprint = '';
 
   function recordDiagnostic(state, text = '') {
     const diagnostic = JSON.stringify({
@@ -208,6 +212,11 @@ export async function launchTikTokBrowser(config) {
       };
     }
     recordDiagnostic('qr_required');
+    const fingerprint = createHash('sha256').update(qr).digest('hex').slice(0, 16);
+    if (fingerprint !== lastQrFingerprint) {
+      console.log(`qr_image_observed fingerprint=${fingerprint}`);
+      lastQrFingerprint = fingerprint;
+    }
     return {
       state: 'qr_required',
       qrDataUrl: qr,

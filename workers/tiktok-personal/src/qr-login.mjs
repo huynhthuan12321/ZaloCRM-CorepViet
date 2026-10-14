@@ -10,12 +10,15 @@ async function pause(page, milliseconds) {
 }
 
 export async function openQrLogin(page, options = {}) {
+  // Observing an existing QR must not click its wrapper/refresh controls.
+  if (typeof page.url === 'function'
+    && new URL(page.url()).pathname.replace(/\/$/, '') === '/login/qrcode') return false;
   const timeoutMs = options.timeoutMs ?? 15_000;
   const pollMs = options.pollMs ?? 250;
   const candidates = [
-    page.getByRole('button', { name: /qr code/i }).first(),
+    page.getByRole('button', { name: /^use qr code$/i }).first(),
     page.getByText(/^use qr code$/i).first(),
-    page.locator('a[href*="/login/qrcode"], [data-e2e*="qr" i]').first(),
+    page.locator('a[href*="/login/qrcode"]').first(),
   ];
   const deadline = Date.now() + timeoutMs;
   do {
