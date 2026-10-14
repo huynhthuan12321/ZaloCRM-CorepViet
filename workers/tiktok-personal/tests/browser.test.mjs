@@ -62,6 +62,15 @@ test('reports rate limiting separately from rejected credentials', () => {
     { state: 'error', errorCode: 'TIKTOK_LOGIN_RATE_LIMITED' });
 });
 
+test('recognizes the identity method picker before treating login as incomplete', () => {
+  for (const heading of ['Xác minh đó là bạn', 'Xác minh danh tính', "Verify it's you", 'Verify your identity']) {
+    assert.deepEqual(classifyLoginPageText(heading + '\nPassword\nPhone\nEmail'), {
+      state: 'challenge', errorCode: 'IDENTITY_VERIFICATION_REQUIRED',
+    });
+  }
+  assert.equal(classifyLoginPageText('Choose phone / email / username'), null);
+});
+
 test('does not infer a rate limit from a generic try-again message', () => {
   assert.equal(loginRejectionReason('Something went wrong. Try again later.'), 'login_unavailable');
   assert.deepEqual(classifyLoginPageText('Something went wrong. Try again later.'),

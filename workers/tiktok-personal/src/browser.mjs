@@ -10,11 +10,13 @@ import { verificationForm, submitVerificationCode } from './verification-login.m
 import { attachLoginDiagnostics } from './login-diagnostics.mjs';
 
 const conversationItem = '[data-e2e="dm-new-conversation-item"]';
-const challengeText = /captcha|verify to continue|security verification|verify your identity|2-step verification|verification code|confirm on your device|drag the slider|xác minh 2 bước/i;
+const identityVerificationText = /verify (?:your identity|it[’']?s you)|xác minh (?:đó là bạn|danh tính)/i;
+const challengeText = /captcha|verify to continue|security verification|2-step verification|verification code|confirm on your device|drag the slider|xác minh 2 bước/i;
 const rejectedPasswordText = /incorrect (?:account|username|email|password)|wrong password|couldn't log in|could not log in|account doesn't exist|too many attempts|maximum (?:number of )?attempts|try again later/i;
 const expiredQrText = /qr code (?:has )?expired|code expired|refresh (?:the )?qr code/i;
 
 export function classifyLoginPageText(text) {
+  if (identityVerificationText.test(text)) return { state: 'challenge', errorCode: 'IDENTITY_VERIFICATION_REQUIRED' };
   if (challengeText.test(text)) return { state: 'challenge' };
   if (loginRejectionReason(text) === 'attempt_limit') return { state: 'error', errorCode: 'TIKTOK_LOGIN_RATE_LIMITED' };
   if (rejectedPasswordText.test(text)) {
@@ -80,7 +82,7 @@ export async function launchTikTokBrowser(config) {
     viewport: { width: 1440, height: 1000 },
   });
   const page = context.pages()[0] ?? await context.newPage();
-  attachLoginDiagnostics(page);
+  const loginDiagnostics = attachLoginDiagnostics(page);
   await page.goto(config.messagesUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   let loginMode = 'qr';
   let loginStartedAt = 0;
@@ -110,6 +112,7 @@ export async function launchTikTokBrowser(config) {
       return;
     }
     loginMode = action.method;
+    loginDiagnostics.reset();
     loginStartedAt = Date.now();
     verifiedUsername = null;
     identityProbeStarted = false;
@@ -194,6 +197,14 @@ export async function launchTikTokBrowser(config) {
       }
       recordDiagnostic(classified.state, bodyText);
       return { ...classified, observedAt: new Date().toISOString() };
+    }
+    if (loginMode === 'qr' && new URL(page.url()).pathname === '/login/qrcode'
+      && loginDiagnostics.qrCheckFailed()) {
+      recordDiagnostic('qr_check_failed');
+      return {
+        state: 'error', errorCode: 'TIKTOK_QR_CHECK_FAILED',
+        observedAt: new Date().toISOString(),
+      };
     }
     const qr = await qrDataUrl(page);
     if (!qr) {
