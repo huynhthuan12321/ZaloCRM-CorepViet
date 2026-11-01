@@ -2,52 +2,49 @@
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 /**
  * report-analytics-routes.ts — Analytics report endpoints for the Reports module.
- * 8 GET endpoints: overview, nick-fleet, sales-performance, pipeline, lead-pool,
- * automation, engagement, audit. All JWT-auth + gated by gateReportAccess, scoped
- * to request.user!.orgId, accept ?from=&to= (defaultDateRange fallback).
+ * 9 GET endpoints: overview, nick-fleet, sales-performance, pipeline, lead-pool,
+ * automation, engagement, audit, crm-usage. All JWT-auth + gated by gateReportAccess, scoped
+ * to request.user!.orgId, accept ?from=&to= (Vietnam report-period defaults).
  * Follows _API_CONTRACT.md response shapes. Numbers always JS numbers (bigint→Number).
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
-import { getContactScope } from '../contacts/contact-scope.js';
+
+import { gateReportAccess, reportScope, reportModelWhere, messageAccountSql } from './report-scope.js';
+import { isInvalidReportPeriodError, listReportDates, resolveReportPeriod } from './report-period.js';
+import { getResponseTimeAnalysis } from '../analytics/reports/response-time.js';
 
 type QueryParams = Record<string, string>;
 
-/**
- * Phase Marketing+Analytics Scope 2026-05-27 — gate report routes:
- * - admin/owner → full org
- * - leader/deputy → dept-subtree (qua getContactScope cascade)
- * - member thường → 403 (sale không cần xem report team-wide)
- */
-async function gateReportAccess(request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
-  const user = request.user!;
-  if (user.role === 'owner' || user.role === 'admin') return true;
-  const cScope = await getContactScope(user.id, user.orgId, user.role);
-  if (cScope.isOrgAdmin) return true;
-  // Leader/deputy: visibleUserIds.size > 1 (có người dưới dept)
-  if (cScope.visibleUserIds.size > 1) return true;
-  reply.status(403).send({
-    error: 'Sale member không có quyền xem báo cáo team. Liên hệ trưởng phòng.',
-    code: 'reports_member_forbidden',
-  });
-  return false;
-}
-
-function defaultDateRange() {
-  const to = new Date().toISOString().split('T')[0];
-  const from = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-  return { from, to };
-}
+// Main KPI scope is separate from shared customer/account access.
 
 const N = (v: unknown): number => Number(v ?? 0);
+const unavailable = (reason: string) => ({ status: 'unavailable' as const, reason });
 
-function dateBounds(from: string, to: string) {
-  const start = new Date(from + 'T00:00:00.000Z');
-  const end = new Date(to + 'T00:00:00.000Z');
-  end.setUTCDate(end.getUTCDate() + 1); // inclusive end-of-day
-  return { start, end };
+async function humanSentByUser(scope: ReturnType<typeof reportScope>, start: Date, end: Date) {
+  return prisma.$queryRaw<Array<{ userId: string | null; sent: bigint }>>`
+    SELECT m.replied_by_user_id AS "userId", COUNT(*) AS sent
+    FROM messages m
+    JOIN conversations c ON c.id = m.conversation_id
+    WHERE ${messageAccountSql(scope)}
+      AND c.zalo_account_id IS NOT NULL AND c.is_virtual = false AND c.thread_type = 'user'
+      AND m.sender_type = 'self' AND m.sent_via IN ('user', 'user_native')
+      AND m.is_local = false AND m.is_deleted = false
+      AND COALESCE(m.metadata->>'dryRun', 'false') <> 'true'
+      AND COALESCE(m.metadata->>'test', 'false') <> 'true'
+      AND m.sent_at >= ${start} AND m.sent_at < ${end}
+    GROUP BY m.replied_by_user_id`;
+}
+
+function invalidPeriod(reply: FastifyReply, err: unknown) {
+  if (!isInvalidReportPeriodError(err)) return null;
+  return reply.status(400).send({
+    error: 'Invalid report date range',
+    code: 'invalid_report_date_range',
+    message: err.message,
+  });
 }
 
 export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void> {
@@ -59,95 +56,84 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/v1/reports/overview', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const { start, end } = dateBounds(from, to);
+      const period = resolveReportPeriod(query);
+      const { from, to, start, end, dateStart, dateEnd } = period;
 
       const now = new Date();
-      const todayStart = new Date(now.toISOString().split('T')[0] + 'T00:00:00.000Z');
-
-      // Terminal statuses (closed-stage); "Chốt" = won
-      const terminalStatuses = await prisma.status.findMany({
-        where: { orgId, isTerminal: true },
-        select: { id: true, name: true },
-      });
-      const wonStatusIds = terminalStatuses
-        .filter((s) => (s.name || '').includes('Chốt'))
-        .map((s) => s.id);
-      const closedStatusIds = (wonStatusIds.length > 0 ? wonStatusIds : terminalStatuses.map((s) => s.id));
+      const today = resolveReportPeriod({}, { defaultDays: 1, now });
 
       const [
         totalContacts,
         newContacts,
-        closedInRange,
         nicks,
         apptToday,
         apptDone,
         leadPoolWaiting,
         statuses,
       ] = await Promise.all([
-        prisma.contact.count({ where: { orgId, mergedInto: null } }),
-        prisma.contact.count({ where: { orgId, mergedInto: null, createdAt: { gte: start, lt: end } } }),
-        prisma.contact.count({
-          where: { orgId, mergedInto: null, statusId: { in: closedStatusIds.length ? closedStatusIds : ['__none__'] }, createdAt: { gte: start, lt: end } },
-        }),
+        prisma.contact.count({ where: { AND: [{ orgId, mergedInto: null }, reportModelWhere(scope, 'contact')] } }),
+        prisma.contact.count({ where: { AND: [{ orgId, mergedInto: null, createdAt: { gte: start, lt: end } }, reportModelWhere(scope, 'contact')] } }),
         prisma.zaloAccount.findMany({
-          where: { orgId, archivedAt: null },
+          where: { AND: [{ orgId, archivedAt: null }, reportModelWhere(scope, 'zaloAccount')] },
           select: { status: true },
         }),
-        prisma.appointment.count({ where: { orgId, appointmentDate: { gte: todayStart } } }),
-        prisma.appointment.count({ where: { orgId, status: 'completed', appointmentDate: { gte: start, lt: end } } }),
-        prisma.leadRequest.count({ where: { orgId, releaseReason: null } }),
-        prisma.status.findMany({ where: { orgId }, orderBy: { order: 'asc' }, select: { id: true, name: true } }),
+        prisma.appointment.count({ where: { AND: [{ orgId, appointmentDate: { gte: today.dateStart, lt: today.dateEnd } }, reportModelWhere(scope, 'appointment')] } }),
+        prisma.appointment.count({ where: { AND: [{ orgId, status: 'completed', appointmentDate: { gte: dateStart, lt: dateEnd } }, reportModelWhere(scope, 'appointment')] } }),
+        prisma.leadRequest.count({ where: { AND: [{ orgId, releaseReason: null }, reportModelWhere(scope, 'leadRequest')] } }),
+        prisma.status.findMany({ where: { AND: [{ orgId }, reportModelWhere(scope, 'status')] }, orderBy: { order: 'asc' }, select: { id: true, name: true } }),
       ]);
 
       const nicksTotal = nicks.length;
       const nicksOnline = nicks.filter((n) => n.status === 'connected').length;
       const nicksNeedRelogin = nicks.filter((n) => n.status !== 'connected').length;
 
-      const totalInRange = await prisma.contact.count({
-        where: { orgId, mergedInto: null, createdAt: { gte: start, lt: end } },
+      const previousStart = new Date(start.getTime() - (end.getTime() - start.getTime()));
+      const previousNewContacts = await prisma.contact.count({
+        where: { AND: [{ orgId, mergedInto: null, createdAt: { gte: previousStart, lt: start } }, reportModelWhere(scope, 'contact')] },
       });
-      const closeRate = totalInRange > 0 ? Math.round((closedInRange / totalInRange) * 1000) / 10 : 0;
 
       // funnel by status.order
       const funnelCounts = await prisma.contact.groupBy({
         by: ['statusId'],
-        where: { orgId, mergedInto: null, statusId: { not: null } },
+        where: { AND: [{ orgId, mergedInto: null, statusId: { not: null } }, reportModelWhere(scope, 'contact')] },
         _count: true,
       });
       const countByStatus = new Map(funnelCounts.map((f) => [f.statusId, f._count]));
       const funnel = statuses.map((s) => ({ status: s.name, count: N(countByStatus.get(s.id)) }));
 
-      // topSales — top 5 by closed
+      // Top sales by new contacts; won-status mapping is not defined by the data contract.
       const salesUsers = await prisma.user.findMany({
-        where: { orgId, isActive: true },
+        where: { AND: [{ orgId, isActive: true }, reportModelWhere(scope, 'user')] },
         select: { id: true, fullName: true, departmentMember: { select: { department: { select: { name: true } } } } },
       });
-      const topSalesRaw = await Promise.all(
-        salesUsers.map(async (u) => {
-          const [newC, closed] = await Promise.all([
-            prisma.contact.count({ where: { orgId, mergedInto: null, assignedUserId: u.id, createdAt: { gte: start, lt: end } } }),
-            prisma.contact.count({ where: { orgId, mergedInto: null, assignedUserId: u.id, statusId: { in: closedStatusIds.length ? closedStatusIds : ['__none__'] } } }),
-          ]);
-          return {
-            userId: u.id,
-            name: u.fullName,
-            deptName: u.departmentMember?.department?.name || 'Chưa phân phòng',
-            newContacts: newC,
-            sent: 0, // TODO: deepen — heavy message aggregation
-            closed,
-          };
-        })
-      );
-      const topSales = topSalesRaw.sort((a, b) => b.closed - a.closed || b.newContacts - a.newContacts).slice(0, 5);
+      const [newContactGroups, sentGroups] = await Promise.all([
+        prisma.contact.groupBy({
+          by: ['assignedUserId'],
+          where: { AND: [{ orgId, mergedInto: null, createdAt: { gte: start, lt: end } }, reportModelWhere(scope, 'contact')] },
+          _count: true,
+        }),
+        humanSentByUser(scope, start, end),
+      ]);
+      const newByUser = new Map(newContactGroups.filter((g) => g.assignedUserId).map((g) => [g.assignedUserId!, N(g._count)]));
+      const sentByUser = new Map(sentGroups.filter((g) => g.userId).map((g) => [g.userId!, N(g.sent)]));
+      const topSalesRaw = salesUsers.map((u) => ({
+        userId: u.id,
+        name: u.fullName,
+        deptName: u.departmentMember?.department?.name || 'Chưa phân phòng',
+        newContacts: newByUser.get(u.id) ?? 0,
+        sent: sentByUser.get(u.id) ?? 0,
+        closed: null,
+      }));
+      const topSales = topSalesRaw
+        .sort((a, b) => b.newContacts - a.newContacts || a.name.localeCompare(b.name, 'vi'))
+        .slice(0, 5);
 
       // riskNicks — top 5
       const nickRows = await prisma.zaloAccount.findMany({
-        where: { orgId, archivedAt: null },
+        where: { AND: [{ orgId, archivedAt: null }, reportModelWhere(scope, 'zaloAccount')] },
         select: { id: true, displayName: true, status: true, owner: { select: { fullName: true } } },
         take: 50,
       });
@@ -157,41 +143,75 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
           name: n.displayName,
           ownerName: n.owner?.fullName || '',
           status: n.status,
-          quotaPct: 0, // TODO: deepen — quota from nick-metrics-service
-          uptime7d: 0, // TODO: deepen
+          quotaPct: null,
+          uptime7d: null,
           risk: (n.status !== 'connected' ? 'disconnect' : 'ok') as 'disconnect' | 'quota' | 'stranger' | 'ok',
         }))
         .sort((a, b) => (a.risk === 'disconnect' ? -1 : 1) - (b.risk === 'disconnect' ? -1 : 1))
         .slice(0, 5);
 
-      // msgSeries last 14d — TODO heavy message aggregation, return shape with zeros
-      const msgSeries: Array<{ date: string; sent: number; received: number }> = [];
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * 86400000).toISOString().split('T')[0];
-        msgSeries.push({ date: d, sent: 0, received: 0 }); // TODO: deepen — real msg series
-      }
+      const messageRows = await prisma.$queryRaw<Array<{ date: string; sent: bigint; received: bigint; automation: bigint }>>`
+        SELECT (m.sent_at + INTERVAL '7 hours')::date::text AS date,
+          COUNT(*) FILTER (WHERE m.sender_type = 'self') AS sent,
+          COUNT(*) FILTER (WHERE m.sender_type = 'contact') AS received,
+          COUNT(*) FILTER (WHERE m.sender_type = 'self' AND m.sent_via = 'automation') AS automation
+        FROM messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        WHERE ${messageAccountSql(scope)} AND c.zalo_account_id IS NOT NULL
+          AND c.is_virtual = false AND c.thread_type = 'user'
+          AND m.is_local = false AND m.is_deleted = false
+          AND COALESCE(m.metadata->>'dryRun', 'false') <> 'true'
+          AND COALESCE(m.metadata->>'test', 'false') <> 'true'
+          AND m.sent_at >= ${start < today.start ? start : today.start}
+          AND m.sent_at < ${end > today.end ? end : today.end}
+        GROUP BY (m.sent_at + INTERVAL '7 hours')::date
+        ORDER BY date ASC`;
+      const messagesByDate = new Map(messageRows.map((row) => [row.date, row]));
+      const msgSeries = listReportDates(from, to).map((date) => {
+        const row = messagesByDate.get(date);
+        return { date, sent: Number(row?.sent ?? 0), received: Number(row?.received ?? 0) };
+      });
+      const todayMessages = messagesByDate.get(today.from);
 
       return {
         from,
         to,
+        asOf: now.toISOString(),
+        timeWindows: {
+          period: { from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+          messageSeries: { from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+          snapshotsAsOf: now.toISOString(),
+        },
         kpis: {
           totalContacts,
           newContacts,
-          newContactsDelta: 0, // TODO: deepen — vs previous period
+          newContactsDelta: newContacts - previousNewContacts,
           nicksOnline,
           nicksTotal,
           nicksNeedRelogin,
-          msgToday: 0, // TODO: deepen
-          msgByBot: 0, // TODO: deepen
+          msgToday: todayMessages ? N(todayMessages.sent) + N(todayMessages.received) : 0,
+          msgByBot: todayMessages ? N(todayMessages.automation) : 0,
           apptToday,
           apptDone,
           leadPoolWaiting,
-          leadPoolAutoReturnSoon: 0, // TODO: deepen — expiresAt within window
-          closeRate,
-          closeRateDelta: 0, // TODO: deepen
-          friendAcceptRate: 0, // TODO: deepen
-          friendInviteSent: 0, // TODO: deepen
-          friendInviteAccepted: 0, // TODO: deepen
+          leadPoolAutoReturnSoon: null,
+          closeRate: null,
+          closeRateDelta: null,
+          friendAcceptRate: null,
+          friendInviteSent: null,
+          friendInviteAccepted: null,
+        },
+        availability: {
+          closeRate: unavailable('won_status_mapping_unavailable'),
+          closeRateDelta: unavailable('won_status_mapping_unavailable'),
+          wonStatus: unavailable('won_status_mapping_unavailable'),
+          topSalesClosed: unavailable('won_status_mapping_unavailable'),
+          leadPoolAutoReturnSoon: unavailable('lead_expiry_coverage_unavailable'),
+          friendAcceptRate: unavailable('friend_acceptance_source_unavailable'),
+          friendInviteSent: unavailable('friend_invite_source_unavailable'),
+          friendInviteAccepted: unavailable('friend_acceptance_source_unavailable'),
+          quotaPct: unavailable('sdk_quota_source_unavailable'),
+          uptime7d: unavailable('uptime_coverage_unavailable'),
         },
         msgSeries,
         funnel,
@@ -199,6 +219,8 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         riskNicks,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Overview error:', err);
       return reply.status(500).send({ error: 'Failed to fetch overview report' });
     }
@@ -210,14 +232,13 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/v1/reports/nick-fleet', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
+      const { from, to } = resolveReportPeriod(query);
 
       const nickRows = await prisma.zaloAccount.findMany({
-        where: { orgId, archivedAt: null },
+        where: { AND: [{ orgId, archivedAt: null }, reportModelWhere(scope, 'zaloAccount')] },
         select: { id: true, displayName: true, status: true, owner: { select: { fullName: true } } },
       });
 
@@ -230,14 +251,14 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         name: n.displayName,
         ownerName: n.owner?.fullName || '',
         status: n.status,
-        uptime7d: 0, // TODO: deepen — uptimeWindowBatch service
-        msgUser: 0, // TODO: deepen — nick-metrics-service
-        msgBot: 0, // TODO: deepen
-        friendSent: 0, // TODO: deepen
-        friendAcceptPct: 0, // TODO: deepen
-        sdkUsed: 0, // TODO: deepen — zaloRateLimiter
-        sdkCap: 0, // TODO: deepen
-        phoneFoundPct: 0, // TODO: deepen
+        uptime7d: null,
+        msgUser: null,
+        msgBot: null,
+        friendSent: null,
+        friendAcceptPct: null,
+        sdkUsed: null,
+        sdkCap: null,
+        phoneFoundPct: null,
       }));
 
       // alerts derived from disconnected count
@@ -249,28 +270,38 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       const uptimeHeat = nickRows.map((n) => ({
         nickId: n.id,
         name: n.displayName,
-        days: [false, false, false, false, false, false, false], // TODO: deepen — last 7d activity
+        days: [null, null, null, null, null, null, null],
       }));
 
       return {
         from,
         to,
+        asOf: new Date().toISOString(),
         kpis: {
           total,
           online,
           needRelogin,
-          msgByBotToday: 0, // TODO: deepen
-          uptimeTeamAvg: 0, // TODO: deepen
-          friendAcceptAvg: 0, // TODO: deepen
-          sdkUsedAvgPct: 0, // TODO: deepen
-          phoneFoundPct: 0, // TODO: deepen
+          msgByBotToday: null,
+          uptimeTeamAvg: null,
+          friendAcceptAvg: null,
+          sdkUsedAvgPct: null,
+          phoneFoundPct: null,
+        },
+        availability: {
+          msgByBotToday: unavailable('nick_message_attribution_unavailable'),
+          uptime: unavailable('uptime_coverage_unavailable'),
+          friendAcceptance: unavailable('friend_acceptance_source_unavailable'),
+          sdkQuota: unavailable('sdk_quota_source_unavailable'),
+          phoneLookup: unavailable('phone_lookup_source_unavailable'),
         },
         alerts,
         nicks,
         uptimeHeat,
-        sdkByCategory: [], // TODO: deepen — sdk category breakdown
+        sdkByCategory: null,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Nick-fleet error:', err);
       return reply.status(500).send({ error: 'Failed to fetch nick-fleet report' });
     }
@@ -282,23 +313,14 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/v1/reports/sales-performance', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const { start, end } = dateBounds(from, to);
-
-      const terminalStatuses = await prisma.status.findMany({
-        where: { orgId, isTerminal: true },
-        select: { id: true, name: true },
-      });
-      const wonIds = terminalStatuses.filter((s) => (s.name || '').includes('Chốt')).map((s) => s.id);
-      const closedStatusIds = wonIds.length > 0 ? wonIds : terminalStatuses.map((s) => s.id);
-      const closedFilter = closedStatusIds.length ? closedStatusIds : ['__none__'];
+      const period = resolveReportPeriod(query);
+      const { from, to, start, end, dateStart, dateEnd } = period;
 
       const users = await prisma.user.findMany({
-        where: { orgId, isActive: true },
+        where: { AND: [{ orgId, isActive: true }, reportModelWhere(scope, 'user')] },
         select: {
           id: true,
           fullName: true,
@@ -306,84 +328,127 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         },
       });
 
-      const sales = await Promise.all(
-        users.map(async (u) => {
-          const [contacts, apptGroups, closed, leadPoolUsed] = await Promise.all([
-            prisma.contact.count({ where: { orgId, mergedInto: null, assignedUserId: u.id } }),
-            prisma.appointment.groupBy({
-              by: ['status'],
-              where: { orgId, assignedUserId: u.id, appointmentDate: { gte: start, lt: end } },
-              _count: true,
-            }),
-            prisma.contact.count({ where: { orgId, mergedInto: null, assignedUserId: u.id, statusId: { in: closedFilter } } }),
-            prisma.leadRequest.count({ where: { orgId, requestedByUserId: u.id, requestedAt: { gte: start, lt: end } } }),
-          ]);
-          const apptDone = N(apptGroups.find((g) => g.status === 'completed')?._count);
-          const apptNoShow = N(apptGroups.find((g) => g.status === 'no_show')?._count);
-          const score = closed * 10 + apptDone * 2;
-          return {
-            userId: u.id,
-            name: u.fullName,
-            deptName: u.departmentMember?.department?.name || 'Chưa phân phòng',
-            contacts,
-            sent: 0, // TODO: deepen — heavy message aggregation
-            avgResponseMin: 0, // TODO: deepen — response-time service
-            apptDone,
-            apptNoShow,
-            closed,
-            leadPoolUsed,
-            score,
-          };
-        })
-      );
-      sales.sort((a, b) => b.score - a.score);
+      const [contactGroups, appointmentGroups, leadPoolGroups, sentGroups, responseTime] = await Promise.all([
+        prisma.contact.groupBy({
+          by: ['assignedUserId'],
+          where: { AND: [{ orgId, mergedInto: null }, reportModelWhere(scope, 'contact')] },
+          _count: true,
+        }),
+        prisma.appointment.groupBy({
+          by: ['assignedUserId', 'status'],
+          where: { AND: [{ orgId, appointmentDate: { gte: dateStart, lt: dateEnd } }, reportModelWhere(scope, 'appointment')] },
+          _count: true,
+        }),
+        prisma.leadRequest.groupBy({
+          by: ['requestedByUserId'],
+          where: { AND: [{ orgId, requestedAt: { gte: start, lt: end } }, reportModelWhere(scope, 'leadRequest')] },
+          _count: true,
+        }),
+        humanSentByUser(scope, start, end),
+        getResponseTimeAnalysis(orgId, from, to, scope),
+      ]);
+      const contactsByUser = new Map(contactGroups.filter((g) => g.assignedUserId).map((g) => [g.assignedUserId!, N(g._count)]));
+      const apptsByUser = new Map<string, { done: number; noShow: number }>();
+      for (const group of appointmentGroups) {
+        if (!group.assignedUserId) continue;
+        const values = apptsByUser.get(group.assignedUserId) ?? { done: 0, noShow: 0 };
+        if (group.status === 'completed') values.done = N(group._count);
+        if (group.status === 'no_show') values.noShow = N(group._count);
+        apptsByUser.set(group.assignedUserId, values);
+      }
+      const leadPoolByUser = new Map(leadPoolGroups.filter((g) => g.requestedByUserId).map((g) => [g.requestedByUserId!, N(g._count)]));
+      const sentByUser = new Map(sentGroups.filter((g) => g.userId).map((g) => [g.userId!, N(g.sent)]));
+      const permittedUserIds = new Set(users.map((u) => u.id));
+      const unattributedSent = sentGroups
+        .filter((g) => !g.userId || !permittedUserIds.has(g.userId))
+        .reduce((sum, group) => sum + N(group.sent), 0);
+      const responseByUser = new Map((responseTime.byUser ?? []).map((r) => [r.userId, r.avgSeconds]));
+
+      const sales = users.map((u) => {
+        const contacts = contactsByUser.get(u.id) ?? 0;
+        const appts = apptsByUser.get(u.id) ?? { done: 0, noShow: 0 };
+        return {
+          userId: u.id,
+          name: u.fullName,
+          deptName: u.departmentMember?.department?.name || 'Chưa phân phòng',
+          contacts,
+          sent: sentByUser.get(u.id) ?? 0,
+          avgResponseMin: responseByUser.has(u.id) ? Math.round((responseByUser.get(u.id)! / 60) * 10) / 10 : null,
+          apptDone: appts.done,
+          apptNoShow: appts.noShow,
+          closed: null,
+          leadPoolUsed: leadPoolByUser.get(u.id) ?? 0,
+          score: null,
+        };
+      });
+      sales.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 
       const activeSales = sales.filter((s) => s.contacts > 0).length;
       const totalSales = sales.length;
-      const avgCloseRateNum = sales.length
-        ? sales.reduce((acc, s) => acc + (s.contacts > 0 ? s.closed / s.contacts : 0), 0) / sales.length
-        : 0;
+      const attributedSentTotal = sales.reduce((sum, s) => sum + s.sent, 0);
+      const avgResponseMin = responseTime.availability === 'unavailable' || responseTime.overall === null
+        ? null
+        : Math.round((responseTime.overall / 60) * 10) / 10;
 
       // byDept
-      const deptMap = new Map<string, { contacts: number; sent: number; closed: number }>();
+      const deptMap = new Map<string, { contacts: number; sent: number }>();
       for (const s of sales) {
-        const cur = deptMap.get(s.deptName) || { contacts: 0, sent: 0, closed: 0 };
+        const cur = deptMap.get(s.deptName) || { contacts: 0, sent: 0 };
         cur.contacts += s.contacts;
-        cur.closed += s.closed;
+        cur.sent += s.sent;
         deptMap.set(s.deptName, cur);
       }
       const byDept = Array.from(deptMap.entries()).map(([deptName, v]) => ({
         deptName,
         contacts: v.contacts,
         sent: v.sent,
-        closed: v.closed,
-        closeRate: v.contacts > 0 ? Math.round((v.closed / v.contacts) * 1000) / 10 : 0,
+        closed: null,
+        closeRate: null,
       }));
-
-      // responseBuckets — 5 labels, TODO real distribution
-      const responseBuckets = [
-        { label: '<5p', count: 0 },
-        { label: '5-15p', count: 0 },
-        { label: '15-30p', count: 0 },
-        { label: '30-60p', count: 0 },
-        { label: '>1h', count: 0 },
-      ]; // TODO: deepen — real response-time buckets
+      const responseBuckets = responseTime.availability === 'unavailable' || !responseTime.responseBuckets
+        ? null
+        : [
+            { label: '<5p', count: responseTime.responseBuckets.under5Min },
+            { label: '5-15p', count: responseTime.responseBuckets.from5To15Min },
+            { label: '15-30p', count: responseTime.responseBuckets.from15To30Min },
+            { label: '30-60p', count: responseTime.responseBuckets.from30To60Min },
+            { label: '>1h', count: responseTime.responseBuckets.over60Min },
+          ];
 
       return {
         from,
         to,
+        asOf: new Date().toISOString(),
+        timeWindows: {
+          contactsSnapshot: { basis: 'snapshot', asOf: new Date().toISOString() },
+          sentMessages: { basis: 'period', from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+          appointments: { basis: 'period', from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+        },
+        sentUnattributed: unattributedSent,
         kpis: {
           activeSales,
           totalSales,
-          avgSentPerSale: 0, // TODO: deepen
-          avgResponseMin: 0, // TODO: deepen
-          avgCloseRate: Math.round(avgCloseRateNum * 1000) / 10,
+          avgSentPerSale: totalSales ? Math.round((attributedSentTotal / totalSales) * 10) / 10 : null,
+          avgResponseMin,
+          avgCloseRate: null,
         },
         sales,
         byDept,
         responseBuckets,
+        availability: {
+          avgSentPerSale: totalSales ? { status: 'available' } : unavailable('no_sales_in_scope'),
+          avgResponseMin: avgResponseMin === null
+            ? unavailable(responseTime.reason ?? 'no_response_pairs_in_period')
+            : { status: 'available' },
+          responseBuckets: responseBuckets ? { status: 'available' } : unavailable(responseTime.reason ?? 'no_response_pairs_in_period'),
+          closed: unavailable('won_status_mapping_unavailable'),
+          score: unavailable('performance_score_formula_unvalidated'),
+          avgCloseRate: unavailable('won_status_mapping_unavailable'),
+        },
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Sales-performance error:', err);
       return reply.status(500).send({ error: 'Failed to fetch sales-performance report' });
     }
@@ -395,87 +460,74 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/v1/reports/pipeline', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const { start, end } = dateBounds(from, to);
+      const { from, to, start, end } = resolveReportPeriod(query);
 
       const statuses = await prisma.status.findMany({
-        where: { orgId },
+        where: { AND: [{ orgId }, reportModelWhere(scope, 'status')] },
         orderBy: { order: 'asc' },
-        select: { id: true, name: true, isTerminal: true },
+        select: { id: true, name: true },
       });
-      const terminalIds = statuses.filter((s) => s.isTerminal && (s.name || '').includes('Chốt')).map((s) => s.id);
-      const closedStatusIds = terminalIds.length > 0 ? terminalIds : statuses.filter((s) => s.isTerminal).map((s) => s.id);
 
       const funnelCounts = await prisma.contact.groupBy({
         by: ['statusId'],
-        where: { orgId, mergedInto: null, statusId: { not: null } },
+        where: { AND: [{ orgId, mergedInto: null, statusId: { not: null } }, reportModelWhere(scope, 'contact')] },
         _count: true,
       });
       const countByStatus = new Map(funnelCounts.map((f) => [f.statusId, f._count]));
 
-      let prev = 0;
-      const funnel = statuses.map((s, idx) => {
+      const funnel = statuses.map((s) => {
         const count = N(countByStatus.get(s.id));
-        const dropPct = idx === 0 || prev === 0 ? 0 : Math.round(((prev - count) / prev) * 1000) / 10;
-        prev = count;
-        return { status: s.name, count, dropPct };
+        return { status: s.name, count, dropPct: null };
       });
 
-      const timeInStage = statuses.map((s) => ({ status: s.name, avgDays: 0 })); // TODO: deepen — avg time in stage
+      const timeInStage = statuses.map((s) => ({ status: s.name, avgDays: null }));
 
-      const totalInRange = await prisma.contact.count({
-        where: { orgId, mergedInto: null, createdAt: { gte: start, lt: end } },
+      const leadPoolWaiting = await prisma.leadRequest.count({
+        where: { AND: [{ orgId, releaseReason: null }, reportModelWhere(scope, 'leadRequest')] },
       });
-      const closedInRange = await prisma.contact.count({
-        where: { orgId, mergedInto: null, statusId: { in: closedStatusIds.length ? closedStatusIds : ['__none__'] }, createdAt: { gte: start, lt: end } },
-      });
-      const closeRate = totalInRange > 0 ? Math.round((closedInRange / totalInRange) * 1000) / 10 : 0;
 
-      const leadPoolWaiting = await prisma.leadRequest.count({ where: { orgId, releaseReason: null } });
-      const totalLead = await prisma.leadRequest.count({ where: { orgId } });
-      const autoReturned = await prisma.leadRequest.count({ where: { orgId, autoReturnedAt: { not: null } } });
-      const returnRate = totalLead > 0 ? Math.round((autoReturned / totalLead) * 1000) / 10 : 0;
-
-      // bySource — Contact groupBy source with leads + closed
+      // Won status is not mapped by the report contract, so only report cohort sizes.
       const bySourceGroups = await prisma.contact.groupBy({
         by: ['source'],
-        where: { orgId, mergedInto: null },
+        where: { AND: [{ orgId, mergedInto: null, createdAt: { gte: start, lt: end } }, reportModelWhere(scope, 'contact')] },
         _count: true,
       });
-      const bySource = await Promise.all(
-        bySourceGroups.map(async (g) => {
-          const closed = await prisma.contact.count({
-            where: { orgId, mergedInto: null, source: g.source, statusId: { in: closedStatusIds.length ? closedStatusIds : ['__none__'] } },
-          });
-          const leads = g._count;
-          return {
-            source: g.source || 'Không rõ',
-            leads,
-            contactedPct: 0, // TODO: deepen — contacted ratio
-            closed,
-            closeRate: leads > 0 ? Math.round((closed / leads) * 1000) / 10 : 0,
-          };
-        })
-      );
+      const bySource = bySourceGroups.map((g) => ({
+        source: g.source || 'Không rõ',
+        leads: g._count,
+        contactedPct: null,
+        closed: null,
+        closeRate: null,
+      }));
 
       return {
         from,
         to,
+        asOf: new Date().toISOString(),
         kpis: {
-          closeRate,
-          avgTimeInStageDays: 0, // TODO: deepen
+          closeRate: null,
+          avgTimeInStageDays: null,
           leadPoolWaiting,
-          returnRate,
+          returnRate: null,
+        },
+        availability: {
+          closeRate: unavailable('won_status_mapping_unavailable'),
+          closedBySource: unavailable('won_status_mapping_unavailable'),
+          dropPct: unavailable('status_change_history_unavailable'),
+          avgTimeInStageDays: unavailable('status_history_unavailable'),
+          contactedPct: unavailable('contact_event_history_unavailable'),
+          returnRate: unavailable('lead_return_denominator_unavailable'),
         },
         funnel,
         timeInStage,
         bySource,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Pipeline error:', err);
       return reply.status(500).send({ error: 'Failed to fetch pipeline report' });
     }
@@ -487,65 +539,65 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/v1/reports/lead-pool', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const { start, end } = dateBounds(from, to);
+      const { from, to, start, end } = resolveReportPeriod(query);
       const now = new Date();
 
-      const [waiting, totalLead, autoReturned, distributedThisPeriod] = await Promise.all([
-        prisma.leadRequest.count({ where: { orgId, releaseReason: null } }),
-        prisma.leadRequest.count({ where: { orgId } }),
-        prisma.leadRequest.count({ where: { orgId, autoReturnedAt: { not: null } } }),
-        prisma.leadPoolDistribution.count({ where: { orgId, distributedAt: { gte: start, lt: end } } }),
+      const [waiting, distributedThisPeriod] = await Promise.all([
+        prisma.leadRequest.count({ where: { AND: [{ orgId, releaseReason: null }, reportModelWhere(scope, 'leadRequest')] } }),
+        prisma.leadPoolDistribution.count({ where: { AND: [{ orgId, distributedAt: { gte: start, lt: end } }, reportModelWhere(scope, 'leadPoolDistribution')] } }),
       ]);
-      const returnRate = totalLead > 0 ? Math.round((autoReturned / totalLead) * 1000) / 10 : 0;
 
       // byUser: distribution received + requests state
-      const [distGroups, users] = await Promise.all([
+      const [distGroups, requestStateGroups, overdueGroups, users] = await Promise.all([
         prisma.leadPoolDistribution.groupBy({
           by: ['assignedToUserId'],
-          where: { orgId },
+          where: { AND: [{ orgId }, reportModelWhere(scope, 'leadPoolDistribution')] },
           _count: true,
         }),
-        prisma.user.findMany({ where: { orgId }, select: { id: true, fullName: true } }),
+        prisma.leadRequest.groupBy({
+          by: ['requestedByUserId', 'releaseReason'],
+          where: { AND: [{ orgId }, reportModelWhere(scope, 'leadRequest')] },
+          _count: true,
+        }),
+        prisma.leadRequest.groupBy({
+          by: ['requestedByUserId'],
+          where: { AND: [{ orgId, releaseReason: null, expiresAt: { lt: now } }, reportModelWhere(scope, 'leadRequest')] },
+          _count: true,
+        }),
+        prisma.user.findMany({ where: { AND: [{ orgId }, reportModelWhere(scope, 'user')] }, select: { id: true, fullName: true } }),
       ]);
       const userName = new Map(users.map((u) => [u.id, u.fullName]));
       const receivedByUser = new Map(distGroups.map((g) => [g.assignedToUserId, g._count]));
 
-      // build set of users that appear in either distributions or requests
-      const reqGroups = await prisma.leadRequest.groupBy({
-        by: ['requestedByUserId'],
-        where: { orgId },
-        _count: true,
-      });
+      const requestsByUser = new Map<string, { holding: number; returned: number }>();
+      for (const group of requestStateGroups) {
+        if (!group.requestedByUserId) continue;
+        const values = requestsByUser.get(group.requestedByUserId) ?? { holding: 0, returned: 0 };
+        if (group.releaseReason === null) values.holding += N(group._count);
+        if (group.releaseReason === 'auto_return' || group.releaseReason === 'manual_return') values.returned += N(group._count);
+        requestsByUser.set(group.requestedByUserId, values);
+      }
+      const overdueByUser = new Map(overdueGroups.filter((g) => g.requestedByUserId).map((g) => [g.requestedByUserId!, N(g._count)]));
+
+      // Build the user set from grouped distribution and request records.
       const userIds = new Set<string>();
       for (const g of distGroups) if (g.assignedToUserId) userIds.add(g.assignedToUserId);
-      for (const g of reqGroups) if (g.requestedByUserId) userIds.add(g.requestedByUserId);
-
-      const byUser = await Promise.all(
-        Array.from(userIds).map(async (uid) => {
-          const [holding, returned, overdue] = await Promise.all([
-            prisma.leadRequest.count({ where: { orgId, requestedByUserId: uid, releaseReason: null } }),
-            prisma.leadRequest.count({ where: { orgId, requestedByUserId: uid, releaseReason: { in: ['auto_return', 'manual_return'] } } }),
-            prisma.leadRequest.count({ where: { orgId, requestedByUserId: uid, releaseReason: null, expiresAt: { lt: now } } }),
-          ]);
-          return {
-            userId: uid,
-            name: userName.get(uid) || '',
-            received: N(receivedByUser.get(uid)),
-            holding,
-            returned,
-            overdue,
-          };
-        })
-      );
+      for (const g of requestStateGroups) if (g.requestedByUserId) userIds.add(g.requestedByUserId);
+      const byUser = Array.from(userIds).map((uid) => ({
+        userId: uid,
+        name: userName.get(uid) || '',
+        received: N(receivedByUser.get(uid)),
+        holding: requestsByUser.get(uid)?.holding ?? 0,
+        returned: requestsByUser.get(uid)?.returned ?? 0,
+        overdue: overdueByUser.get(uid) ?? 0,
+      }));
 
       // stuck: Contact with stuckSinceAggregate not null, top 10
       const stuckContacts = await prisma.contact.findMany({
-        where: { orgId, mergedInto: null, stuckSinceAggregate: { not: null } },
+        where: { AND: [{ orgId, mergedInto: null, stuckSinceAggregate: { not: null } }, reportModelWhere(scope, 'contact')] },
         orderBy: { stuckSinceAggregate: 'asc' },
         take: 10,
         select: {
@@ -569,16 +621,23 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       return {
         from,
         to,
+        asOf: new Date().toISOString(),
         kpis: {
           waiting,
-          avgHoldHours: 0, // TODO: deepen — avg hold duration
-          returnRate,
+          avgHoldHours: null,
+          returnRate: null,
           distributedThisPeriod,
+        },
+        availability: {
+          avgHoldHours: unavailable('lead_release_history_unavailable'),
+          returnRate: unavailable('lead_return_denominator_unavailable'),
         },
         byUser,
         stuck,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Lead-pool error:', err);
       return reply.status(500).send({ error: 'Failed to fetch lead-pool report' });
     }
@@ -589,16 +648,16 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   // ─────────────────────────────────────────────────────────────────────────
   app.get('/api/v1/reports/automation', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      if (!(await gateReportAccess(request, reply))) return;
+      if (!(await gateReportAccess(request, reply, true))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const last24h = new Date(Date.now() - 24 * 3600000);
+      const { from, to } = resolveReportPeriod(query);
+      const now = new Date();
+      const last24h = new Date(now.getTime() - 24 * 3600000);
 
       const sequences = await prisma.automationSequence.findMany({
-        where: { orgId },
+        where: { AND: [{ orgId }, reportModelWhere(scope, 'automationSequence')] },
         select: {
           id: true,
           name: true,
@@ -614,14 +673,14 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       const enrolled = sequences.reduce((a, s) => a + N(s.enrolledCountCached), 0);
       const replied = sequences.reduce((a, s) => a + N(s.replyCountCached), 0);
       const activeSequences = sequences.filter((s) => s.enabled).length;
-      const replyRate = enrolled > 0 ? Math.round((replied / enrolled) * 1000) / 10 : 0;
+      const replyRate = enrolled > 0 ? Math.round((replied / enrolled) * 1000) / 10 : null;
 
       // failedRate24h from AutomationEventLog
       const [totalEvents24h, failedEvents24h] = await Promise.all([
-        prisma.automationEventLog.count({ where: { orgId, createdAt: { gte: last24h } } }),
-        prisma.automationEventLog.count({ where: { orgId, createdAt: { gte: last24h }, eventType: { contains: 'failed', mode: 'insensitive' } } }),
+        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h } }, reportModelWhere(scope, 'automationEventLog')] } }),
+        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h }, eventType: { contains: 'failed', mode: 'insensitive' } }, reportModelWhere(scope, 'automationEventLog')] } }),
       ]);
-      const failedRate24h = totalEvents24h > 0 ? Math.round((failedEvents24h / totalEvents24h) * 1000) / 10 : 0;
+      const failedRate24h = totalEvents24h > 0 ? Math.round((failedEvents24h / totalEvents24h) * 1000) / 10 : null;
 
       const sequencesOut = sequences.map((s) => {
         const enr = N(s.enrolledCountCached);
@@ -630,36 +689,36 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
           id: s.id,
           name: s.name,
           enrolled: enr,
-          sent: 0, // TODO: deepen — sent count not cached on sequence
+          sent: null,
           replied: rep,
           completed: N(s.completedCountCached),
-          replyRatePct: enr > 0 ? Math.round((rep / enr) * 1000) / 10 : 0,
+          replyRatePct: enr > 0 ? Math.round((rep / enr) * 1000) / 10 : null,
         };
       });
 
       // skipReasons — AutomationEventLog where eventType contains 'skip'
       const skipGroups = await prisma.automationEventLog.groupBy({
         by: ['eventType'],
-        where: { orgId, eventType: { contains: 'skip', mode: 'insensitive' } },
+        where: { AND: [{ orgId, eventType: { contains: 'skip', mode: 'insensitive' } }, reportModelWhere(scope, 'automationEventLog')] },
         _count: true,
       });
       const skipReasons = skipGroups.map((g) => ({
         reason: g.eventType,
         count: g._count,
-        category: 'benign' as 'throttle' | 'capacity' | 'config_error' | 'benign', // TODO: deepen — categorize
+        category: null,
       }));
 
       // careOutcomes — CareSession groupBy closedReason where state closed
       const careGroups = await prisma.careSession.groupBy({
         by: ['closedReason'],
-        where: { orgId, state: 'closed' },
+        where: { AND: [{ orgId, state: 'closed' }, reportModelWhere(scope, 'careSession')] },
         _count: true,
       });
       const careOutcomes = careGroups.map((g) => ({ reason: g.closedReason || 'Không rõ', count: g._count }));
 
       // broadcasts — recent 5
       const broadcastRows = await prisma.automationBroadcast.findMany({
-        where: { orgId },
+        where: { AND: [{ orgId }, reportModelWhere(scope, 'automationBroadcast')] },
         orderBy: { id: 'desc' },
         take: 5,
         select: { id: true, name: true, totalRecipients: true, sentCount: true, deliveredCount: true, failedCount: true, state: true },
@@ -672,8 +731,8 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
           id: b.id,
           name: b.name,
           totalRecipients: tot,
-          sentPct: tot > 0 ? Math.round((sent / tot) * 1000) / 10 : 0,
-          successPct: sent > 0 ? Math.round((delivered / sent) * 1000) / 10 : 0,
+          sentPct: tot > 0 ? Math.round((sent / tot) * 1000) / 10 : null,
+          successPct: sent > 0 ? Math.round((delivered / sent) * 1000) / 10 : null,
           state: b.state,
         };
       });
@@ -681,16 +740,31 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       return {
         from,
         to,
+        timeWindows: {
+          period: { from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+          sequenceCounters: 'current cached snapshot',
+          rolling24h: { start: last24h.toISOString(), end: now.toISOString() },
+        },
+        asOf: now.toISOString(),
         kpis: {
           activeSequences,
           enrolled,
           replyRate,
-          friendAcceptRate: 0, // TODO: deepen
+          friendAcceptRate: null,
         },
         health: {
-          workerLagSec: 0, // TODO: deepen — worker queue lag
-          stuckTasks: 0, // TODO: deepen
+          workerLagSec: null,
+          stuckTasks: null,
           failedRate24h,
+        },
+        availability: {
+          replyRate: replyRate === null ? unavailable('sequence_denominator_zero') : { status: 'available' },
+          friendAcceptRate: unavailable('friend_acceptance_source_unavailable'),
+          sent: unavailable('sequence_sent_count_unavailable'),
+          workerLagSec: unavailable('worker_queue_metrics_unavailable'),
+          stuckTasks: unavailable('stuck_task_registry_unavailable'),
+          failedRate24h: failedRate24h === null ? unavailable('no_automation_events_in_window') : { status: 'available' },
+          skipReasonCategory: unavailable('skip_reason_classifier_unavailable'),
         },
         sequences: sequencesOut,
         skipReasons,
@@ -698,6 +772,8 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         broadcasts,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Automation error:', err);
       return reply.status(500).send({ error: 'Failed to fetch automation report' });
     }
@@ -709,21 +785,23 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/v1/reports/engagement', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const { start, end } = dateBounds(from, to);
+      const period = resolveReportPeriod(query);
+      const { from, to, start, end, dateStart, dateEnd } = period;
 
       const now = new Date();
       const days28Start = new Date(now.getTime() - 27 * 86400000);
       days28Start.setUTCHours(0, 0, 0, 0);
+      const days28DateStart = new Date(`${days28Start.toISOString().slice(0, 10)}T00:00:00.000Z`);
+      const days28DateEnd = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+      days28DateEnd.setUTCDate(days28DateEnd.getUTCDate() + 1);
 
       // pattern distribution
       const patternGroups = await prisma.contact.groupBy({
         by: ['engagementPattern'],
-        where: { orgId, mergedInto: null, engagementPattern: { not: null } },
+        where: { AND: [{ orgId, mergedInto: null, engagementPattern: { not: null } }, reportModelWhere(scope, 'contact')] },
         _count: true,
       });
       const patternDist = patternGroups.map((g) => ({ pattern: g.engagementPattern || 'unknown', count: g._count }));
@@ -733,29 +811,29 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       const hotCount = patternCount(['hot', 'champion']);
       const coolingCount = patternCount(['cooling', 'cold']);
 
-      // customerInitiatedPct = % ngày KH nhắn trước (Boolean → count true / total).
+      // Zero rows mean no denominator; these event-driven rows cannot prove period coverage.
       const [ciTrue, ciTotal] = await Promise.all([
-        prisma.contactEngagementDaily.count({ where: { orgId, date: { gte: start, lt: end }, customerInitiated: true } }),
-        prisma.contactEngagementDaily.count({ where: { orgId, date: { gte: start, lt: end } } }),
+        prisma.contactEngagementDaily.count({ where: { AND: [{ orgId, date: { gte: dateStart, lt: dateEnd }, customerInitiated: true }, reportModelWhere(scope, 'contactEngagementDaily')] } }),
+        prisma.contactEngagementDaily.count({ where: { AND: [{ orgId, date: { gte: dateStart, lt: dateEnd } }, reportModelWhere(scope, 'contactEngagementDaily')] } }),
       ]);
-      const customerInitiatedPct = ciTotal ? Math.round((ciTrue / ciTotal) * 1000) / 10 : 0;
+      const customerInitiatedPct = ciTotal > 0 ? Math.round((ciTrue / ciTotal) * 1000) / 10 : null;
 
       // heatmap: top 15 contacts by recent sum(dailyIntensity)
       const intensityGroups = await prisma.contactEngagementDaily.groupBy({
         by: ['contactId'],
-        where: { orgId, date: { gte: days28Start } },
+        where: { AND: [{ orgId, date: { gte: days28DateStart, lt: days28DateEnd } }, reportModelWhere(scope, 'contactEngagementDaily')] },
         _sum: { dailyIntensity: true },
         orderBy: { _sum: { dailyIntensity: 'desc' } },
         take: 15,
       });
       const topContactIds = intensityGroups.map((g) => g.contactId);
       const heatContacts = await prisma.contact.findMany({
-        where: { id: { in: topContactIds.length ? topContactIds : ['__none__'] } },
+        where: { AND: [{ id: { in: topContactIds.length ? topContactIds : ['__none__'] } }, reportModelWhere(scope, 'contact')] },
         select: { id: true, fullName: true },
       });
       const heatNameMap = new Map(heatContacts.map((c) => [c.id, c.fullName]));
       const dailyRows = await prisma.contactEngagementDaily.findMany({
-        where: { orgId, contactId: { in: topContactIds.length ? topContactIds : ['__none__'] }, date: { gte: days28Start } },
+        where: { AND: [{ orgId, contactId: { in: topContactIds.length ? topContactIds : ['__none__'] }, date: { gte: days28DateStart, lt: days28DateEnd } }, reportModelWhere(scope, 'contactEngagementDaily')] },
         select: { contactId: true, date: true, dailyIntensity: true },
       });
       const bucket = (v: number) => {
@@ -789,7 +867,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
 
       // interactionTypes — sum over range
       const interAgg = await prisma.contactEngagementDaily.aggregate({
-        where: { orgId, date: { gte: start, lt: end } },
+        where: { AND: [{ orgId, date: { gte: dateStart, lt: dateEnd } }, reportModelWhere(scope, 'contactEngagementDaily')] },
         _sum: {
           inboundMsgCount: true,
           outboundMsgCount: true,
@@ -805,14 +883,12 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         voiceCall: N(interAgg._sum.voiceMsgCount) + N(interAgg._sum.callCount),
       };
 
-      // avgInteractionsPerDay
-      const totalInter = interactionTypes.inbound + interactionTypes.outbound;
-      const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
-      const avgInteractionsPerDay = Math.round((totalInter / dayCount) * 10) / 10;
+      // The event-driven aggregate has no complete-coverage signal for this period.
+      const avgInteractionsPerDay = null;
 
       // cooling: top 5 contacts pattern cooling/cold
       const coolingContacts = await prisma.contact.findMany({
-        where: { orgId, mergedInto: null, engagementPattern: { in: ['cooling', 'cold'] } },
+        where: { AND: [{ orgId, mergedInto: null, engagementPattern: { in: ['cooling', 'cold'] } }, reportModelWhere(scope, 'contact')] },
         orderBy: { lastInboundAt: { sort: 'asc', nulls: 'last' } },
         take: 5,
         select: { id: true, fullName: true, leadScore: true, lastInboundAt: true, lastActivity: true, assignedUser: { select: { fullName: true } } },
@@ -832,7 +908,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
 
       // hot: top 5 contacts pattern hot/champion
       const hotContacts = await prisma.contact.findMany({
-        where: { orgId, mergedInto: null, engagementPattern: { in: ['hot', 'champion'] } },
+        where: { AND: [{ orgId, mergedInto: null, engagementPattern: { in: ['hot', 'champion'] } }, reportModelWhere(scope, 'contact')] },
         orderBy: { leadScore: 'desc' },
         take: 5,
         select: { id: true, fullName: true, leadScore: true, engagementPattern: true, assignedUser: { select: { fullName: true } } },
@@ -848,11 +924,25 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       return {
         from,
         to,
+        timeWindows: {
+          period: { from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+          dailyAggregates: { from, to, timeZone: 'UTC', source: 'ContactEngagementDaily date buckets' },
+          heatmap28d: {
+            from: days28DateStart.toISOString().slice(0, 10),
+            to: new Date(days28DateEnd.getTime() - 86400000).toISOString().slice(0, 10),
+            timeZone: 'UTC',
+          },
+        },
+        asOf: now.toISOString(),
         kpis: {
           hotCount,
           coolingCount,
           customerInitiatedPct,
           avgInteractionsPerDay,
+        },
+        availability: {
+          customerInitiatedPct: ciTotal > 0 ? { status: 'available' } : unavailable('engagement_daily_denominator_zero'),
+          avgInteractionsPerDay: unavailable('engagement_daily_coverage_unverified'),
         },
         heatmap,
         patternDist,
@@ -861,6 +951,8 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         interactionTypes,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Engagement error:', err);
       return reply.status(500).send({ error: 'Failed to fetch engagement report' });
     }
@@ -871,38 +963,30 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   // ─────────────────────────────────────────────────────────────────────────
   app.get('/api/v1/reports/audit', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      if (!(await gateReportAccess(request, reply))) return;
+      if (!(await gateReportAccess(request, reply, true))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
+      const { from, to } = resolveReportPeriod(query);
 
       const now = new Date();
-      const todayStart = new Date(now.toISOString().split('T')[0] + 'T00:00:00.000Z');
+      const today = resolveReportPeriod({}, { defaultDays: 1, now });
+      const todayStart = today.start;
       const last24h = new Date(now.getTime() - 24 * 3600000);
 
       const [changesToday, nickDisconnect24h, totalEvents24h, failedEvents24h] = await Promise.all([
-        prisma.activityLog.count({ where: { orgId, createdAt: { gte: todayStart } } }),
-        prisma.zaloAccountStatusLog.count({ where: { orgId, status: 'disconnected', startedAt: { gte: last24h } } }),
-        prisma.automationEventLog.count({ where: { orgId, createdAt: { gte: last24h } } }),
-        prisma.automationEventLog.count({ where: { orgId, createdAt: { gte: last24h }, eventType: { contains: 'failed', mode: 'insensitive' } } }),
+        prisma.activityLog.count({ where: { AND: [{ orgId, createdAt: { gte: todayStart } }, reportModelWhere(scope, 'activityLog')] } }),
+        prisma.zaloAccountStatusLog.count({ where: { AND: [{ orgId, status: 'disconnected', startedAt: { gte: last24h } }, reportModelWhere(scope, 'zaloAccountStatusLog')] } }),
+        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h } }, reportModelWhere(scope, 'automationEventLog')] } }),
+        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h }, eventType: { contains: 'failed', mode: 'insensitive' } }, reportModelWhere(scope, 'automationEventLog')] } }),
       ]);
-      const errorRate24h = totalEvents24h > 0 ? Math.round((failedEvents24h / totalEvents24h) * 1000) / 10 : 0;
+      const errorRate24h = totalEvents24h > 0 ? Math.round((failedEvents24h / totalEvents24h) * 1000) / 10 : null;
 
-      // systemHealth.cronJobs — 6 known job names (TODO real registry)
-      const cronJobs = [
-        { name: 'lead-pool-auto-return', ok: true, lastRunMinAgo: null as number | null },
-        { name: 'engagement-daily-rollup', ok: true, lastRunMinAgo: null },
-        { name: 'contact-aggregate-refresh', ok: true, lastRunMinAgo: null },
-        { name: 'nick-uptime-monitor', ok: true, lastRunMinAgo: null },
-        { name: 'automation-scheduler', ok: true, lastRunMinAgo: null },
-        { name: 'stuck-contact-detector', ok: true, lastRunMinAgo: null },
-      ]; // TODO: deepen — read real cron registry for lastRunMinAgo + ok
+      const cronJobs: Array<{ name: string; ok: boolean; lastRunMinAgo: number | null }> = [];
 
       // activity feed — latest 20
       const activityRows = await prisma.activityLog.findMany({
-        where: { orgId },
+        where: { AND: [{ orgId }, reportModelWhere(scope, 'activityLog')] },
         orderBy: { createdAt: 'desc' },
         take: 20,
         select: {
@@ -932,7 +1016,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
 
       // disconnects — ZaloAccountStatusLog disconnect events 24h
       const disconnectRows = await prisma.zaloAccountStatusLog.findMany({
-        where: { orgId, status: 'disconnected', startedAt: { gte: last24h } },
+        where: { AND: [{ orgId, status: 'disconnected', startedAt: { gte: last24h } }, reportModelWhere(scope, 'zaloAccountStatusLog')] },
         orderBy: { startedAt: 'desc' },
         take: 50,
         select: {
@@ -954,23 +1038,36 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       return {
         from,
         to,
+        timeWindows: {
+          period: { from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+          changesToday: { start: today.start.toISOString(), end: today.end.toISOString() },
+          rolling24h: { start: last24h.toISOString(), end: now.toISOString() },
+        },
         kpis: {
           changesToday,
-          cronOk: cronJobs.filter((c) => c.ok).length, // khớp với systemHealth.cronJobs
-          cronTotal: cronJobs.length,
-          queueWaiting: 0, // TODO: deepen — real queue depth
+          cronOk: null,
+          cronTotal: null,
+          queueWaiting: null,
           nickDisconnect24h,
         },
         systemHealth: {
           cronJobs,
-          queues: [], // TODO: deepen — real queue registry
+          queues: null,
           errorRate24h,
-          errorBreakdown: [], // TODO: deepen — error category breakdown
+          errorBreakdown: null,
+        },
+        availability: {
+          cronHealth: unavailable('cron_registry_unavailable'),
+          queueDepth: unavailable('queue_registry_unavailable'),
+          errorRate24h: errorRate24h === null ? unavailable('no_automation_events_in_window') : { status: 'available' },
+          errorBreakdown: unavailable('error_category_source_unavailable'),
         },
         activity,
         disconnects,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Audit error:', err);
       return reply.status(500).send({ error: 'Failed to fetch audit report' });
     }
@@ -982,13 +1079,14 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/v1/reports/crm-usage', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const query = request.query as QueryParams;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const { start, end } = dateBounds(from, to);
-      const todayStart = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z');
+      const period = resolveReportPeriod(query);
+      const { from, to, start, end, dateStart, dateEnd, previousStart } = period;
+      const now = new Date();
+      const today = resolveReportPeriod({}, { defaultDays: 1, now });
+      const todayStart = today.start;
 
       // category → tên module hiển thị. security/system/admin = phụ trợ (vẫn tính giờ, không là "module chính").
       const MODULE_MAP: Record<string, string> = {
@@ -1000,7 +1098,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
 
       // Sale list + phòng ban.
       const users = await prisma.user.findMany({
-        where: { orgId, isActive: true },
+        where: { AND: [{ orgId, isActive: true }, reportModelWhere(scope, 'user')] },
         select: { id: true, fullName: true, departmentMember: { select: { department: { select: { name: true } } } } },
       });
       const userMap = new Map(users.map((u) => [u.id, {
@@ -1009,48 +1107,38 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       const saleIds = users.map((u) => u.id);
 
       // Sự kiện hoạt động (timeline + module count). Bao gồm cả security (login) để neo phiên.
-      const events = saleIds.length === 0 ? [] : await prisma.activityLog.findMany({
-        where: { orgId, actorType: 'user', userId: { in: saleIds }, createdAt: { gte: start, lt: end } },
+      const ACTIVITY_LIMIT = 100000;
+      const eventRows = saleIds.length === 0 ? [] : await prisma.activityLog.findMany({
+        where: { AND: [{ orgId, actorType: 'user', userId: { in: saleIds }, createdAt: { gte: start, lt: end } }, reportModelWhere(scope, 'activityLog')] },
         select: { userId: true, category: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
-        take: 100000,
+        take: ACTIVITY_LIMIT + 1,
       });
+      const activityEventsTruncated = eventRows.length > ACTIVITY_LIMIT;
+      const events = eventRows.slice(0, ACTIVITY_LIMIT);
 
-      // Kết quả (chốt + lịch hẹn hoàn thành) để tính hiệu quả.
-      const terminal = await prisma.status.findMany({ where: { orgId, isTerminal: true }, select: { id: true, name: true } });
-      const wonIds = terminal.filter((s) => (s.name || '').includes('Chốt')).map((s) => s.id);
-      const closedFilter = wonIds.length > 0 ? wonIds : terminal.map((s) => s.id);
-      const outcomes = await Promise.all(saleIds.map(async (uid) => {
-        const [closed, apptDone] = await Promise.all([
-          prisma.contact.count({ where: { orgId, mergedInto: null, assignedUserId: uid, statusId: { in: closedFilter } } }),
-          prisma.appointment.count({ where: { orgId, assignedUserId: uid, status: 'completed', appointmentDate: { gte: start, lt: end } } }),
-        ]);
-        return { uid, closed, apptDone };
-      }));
-      const outcomeMap = new Map(outcomes.map((o) => [o.uid, o]));
+      const apptDoneGroups = await prisma.appointment.groupBy({
+        by: ['assignedUserId'],
+        where: { AND: [{ orgId, status: 'completed', appointmentDate: { gte: dateStart, lt: dateEnd } }, reportModelWhere(scope, 'appointment')] },
+        _count: true,
+      });
+      const apptDoneBySale = new Map(apptDoneGroups.filter((g) => g.assignedUserId).map((g) => [g.assignedUserId!, N(g._count)]));
 
       // Thêm dữ liệu cho phễu (C: tin gửi → KH phản hồi → lịch hẹn → chốt) + so sánh kỳ (D).
-      const periodMs = end.getTime() - start.getTime();
-      const prevStart = new Date(start.getTime() - periodMs);
-      const [prevEvents, sentRows, apptGroups, repliedGroups] = await Promise.all([
+      const [previousEventRows, sentRows, apptGroups, repliedGroups] = await Promise.all([
         saleIds.length === 0
           ? Promise.resolve([] as Array<{ userId: string | null; createdAt: Date }>)
           : prisma.activityLog.findMany({
-            where: { orgId, actorType: 'user', userId: { in: saleIds }, createdAt: { gte: prevStart, lt: start } },
-            select: { userId: true, createdAt: true }, orderBy: { createdAt: 'asc' }, take: 100000,
+            where: { AND: [{ orgId, actorType: 'user', userId: { in: saleIds }, createdAt: { gte: previousStart, lt: start } }, reportModelWhere(scope, 'activityLog')] },
+            select: { userId: true, createdAt: true }, orderBy: { createdAt: 'asc' }, take: ACTIVITY_LIMIT + 1,
           }),
-        prisma.$queryRaw<Array<{ uid: string; sent: bigint }>>`
-          SELECT za.owner_user_id AS uid, COUNT(*) AS sent
-          FROM messages m
-          JOIN conversations c ON c.id = m.conversation_id
-          JOIN zalo_accounts za ON za.id = c.zalo_account_id
-          WHERE c.org_id = ${orgId} AND m.sender_type = 'self' AND za.owner_user_id IS NOT NULL
-            AND m.sent_at >= ${start} AND m.sent_at < ${end}
-          GROUP BY za.owner_user_id`,
-        prisma.appointment.groupBy({ by: ['assignedUserId'], where: { orgId, appointmentDate: { gte: start, lt: end } }, _count: true }),
-        prisma.contact.groupBy({ by: ['assignedUserId'], where: { orgId, mergedInto: null, lastInboundAt: { gte: start, lt: end } }, _count: true }),
+        humanSentByUser(scope, start, end),
+        prisma.appointment.groupBy({ by: ['assignedUserId'], where: { AND: [{ orgId, appointmentDate: { gte: dateStart, lt: dateEnd } }, reportModelWhere(scope, 'appointment')] }, _count: true }),
+        prisma.contact.groupBy({ by: ['assignedUserId'], where: { AND: [{ orgId, mergedInto: null, lastInboundAt: { gte: start, lt: end } }, reportModelWhere(scope, 'contact')] }, _count: true }),
       ]);
-      const sentBySale = new Map(sentRows.map((r) => [r.uid, Number(r.sent)]));
+      const previousActivityTruncated = previousEventRows.length > ACTIVITY_LIMIT;
+      const prevEvents = previousEventRows.slice(0, ACTIVITY_LIMIT);
+      const sentBySale = new Map(sentRows.filter((r) => r.userId).map((r) => [r.userId!, Number(r.sent)]));
       const apptBySale = new Map(apptGroups.map((g) => [g.assignedUserId, g._count]));
       const repliedBySale = new Map(repliedGroups.map((g) => [g.assignedUserId, g._count]));
 
@@ -1105,28 +1193,24 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         totalActions += actions;
         const activeDays = dayMs.size;
         const activeHours = Math.round((activeMs / 3600_000) * 10) / 10;
-        const avgActiveMinPerDay = activeDays > 0 ? Math.round(activeMs / 60_000 / activeDays) : 0;
+        const avgActiveMinPerDay = activeDays > 0 ? Math.round(activeMs / 60_000 / activeDays) : null;
         let topModule = '—', topN = 0;
         for (const [cat, n] of (u?.cats ?? new Map<string, number>())) {
           if (AUX.has(cat)) continue;
           if (n > topN) { topN = n; topModule = MODULE_MAP[cat] || cat; }
         }
-        const oc = outcomeMap.get(uid) || { closed: 0, apptDone: 0 };
-        const results = oc.closed + oc.apptDone * 0.5;
-        const effRaw = activeHours > 0 ? results / Math.max(activeHours, 0.5) : 0;
-        const closesPerHour = activeHours > 0 ? Math.round((results / activeHours) * 100) / 100 : 0;
+        const apptDone = apptDoneBySale.get(uid) ?? 0;
         return {
           userId: uid, name: info.name, deptName: info.deptName,
-          activeDays, avgActiveMinPerDay, activeHours, actions, topModule,
-          results, closed: oc.closed, apptDone: oc.apptDone, closesPerHour, effRaw, dayMs,
+          activeDays, avgActiveMinPerDay: activeDays > 0 ? avgActiveMinPerDay : null, activeHours, actions, topModule,
+          results: null, closed: null, apptDone, closesPerHour: null, effRaw: null, dayMs,
         };
       }).filter((s) => s.actions > 0);
 
       // effScore + bySale (bỏ field nội bộ).
-      const maxEff = Math.max(0.0001, ...bySaleRaw.map((s) => s.effRaw));
       const bySale = bySaleRaw
-        .map(({ effRaw, dayMs, ...s }) => ({ ...s, effScore: Math.round((effRaw / maxEff) * 100) }))
-        .sort((a, b) => b.effScore - a.effScore || b.results - a.results);
+        .map(({ effRaw, dayMs, ...s }) => ({ ...s, effScore: null }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 
       // (#1) Line chart: giờ dùng/ngày, mỗi sale 1 đường. Top 8 sale (nhiều giờ nhất) cho dễ đọc.
       const PALETTE = ['#1786be', '#7a4fb0', '#b0734f', '#4fb09a', '#b04f6e', '#5b8def', '#d39237', '#157f3c'];
@@ -1165,11 +1249,12 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         for (const [, ts] of (prevPerUser.get(s.userId) ?? new Map<string, number[]>())) {
           pAct += ts.length; pMs += dayActiveMs(ts.sort((a, b) => a - b)); pDays++;
         }
-        const prevAvgMin = pDays > 0 ? Math.round(pMs / 60_000 / pDays) : 0;
+          const prevAvgMin = pDays > 0 ? Math.round(pMs / 60_000 / pDays) : null;
         return {
           userId: s.userId, name: s.name,
           actions: s.actions, prevActions: pAct, dActions: s.actions - pAct,
-          avgMin: s.avgActiveMinPerDay, prevAvgMin, dAvgMin: s.avgActiveMinPerDay - prevAvgMin,
+            avgMin: s.avgActiveMinPerDay, prevAvgMin,
+            dAvgMin: prevAvgMin === null || s.avgActiveMinPerDay === null ? null : s.avgActiveMinPerDay - prevAvgMin,
         };
       }).sort((a, b) => b.actions - a.actions).slice(0, 10);
 
@@ -1183,16 +1268,34 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       const activeSalesToday = new Set(events.filter((e) => e.createdAt >= todayStart).map((e) => e.userId)).size;
       const withTime = bySale.filter((s) => s.activeDays > 0);
       const avgActiveMinPerDay = withTime.length > 0
-        ? Math.round(withTime.reduce((a, s) => a + s.avgActiveMinPerDay, 0) / withTime.length) : 0;
+        ? Math.round(withTime.reduce((a, s) => a + (s.avgActiveMinPerDay ?? 0), 0) / withTime.length) : null;
       const topModule = moduleUsage[0]?.label || '—';
 
       return {
         from, to,
-        kpis: { activeSalesToday, avgActiveMinPerDay, totalActions, topModule },
-        bySale, moduleUsage, dailySeries, days: dayList, hourHeat, funnel, compare,
+        kpis: {
+          activeSalesToday: activityEventsTruncated ? null : activeSalesToday,
+          avgActiveMinPerDay: activityEventsTruncated ? null : avgActiveMinPerDay,
+          totalActions: activityEventsTruncated ? null : totalActions,
+          topModule: activityEventsTruncated ? null : topModule,
+        },
+        bySale: activityEventsTruncated ? [] : bySale,
+        moduleUsage: activityEventsTruncated ? [] : moduleUsage,
+        dailySeries: activityEventsTruncated ? [] : dailySeries,
+        days: activityEventsTruncated ? [] : dayList,
+        hourHeat: activityEventsTruncated ? null : hourHeat,
+        funnel: activityEventsTruncated ? [] : funnel,
+        compare: activityEventsTruncated || previousActivityTruncated ? [] : compare,
+        availability: {
+          activity: activityEventsTruncated ? unavailable('activity_event_limit') : { status: 'available' },
+          previousActivity: previousActivityTruncated ? unavailable('previous_activity_event_limit') : { status: 'available' },
+          outcomes: unavailable('won_status_mapping_unavailable'),
+        },
         note: 'Thời gian dùng là ƯỚC TÍNH từ nhịp thao tác trên CRM (chưa có tracking phiên chính xác).',
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] CRM-usage error:', err);
       return reply.status(500).send({ error: 'Failed to fetch CRM usage report' });
     }

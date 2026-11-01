@@ -1,9 +1,11 @@
+import { reportModelWhere, type ReportScope } from '../../dashboard/report-scope.js';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 /**
  * conversion-funnel.ts — Pipeline conversion rates: count per stage + conversion %.
  */
 import { prisma } from '../../../shared/database/prisma-client.js';
+import { resolveReportPeriod } from '../../dashboard/report-period.js';
 
 export interface FunnelStage {
   status: string;
@@ -12,9 +14,15 @@ export interface FunnelStage {
 }
 
 export interface ConversionFunnelResult {
+  from: string;
+  to: string;
+  asOf: string;
+  stagesMeaning: 'created_in_period_current_status';
   stages: FunnelStage[];
   totalContacts: number;
-  avgConversionDays: number | null; // avg days from creation to "converted"
+  avgConversionDays: null;
+  avgConversionDaysAvailability: 'unavailable';
+  avgConversionDaysReason: 'conversion_event_history_unavailable';
 }
 
 const STAGE_ORDER = ['new', 'contacted', 'interested', 'converted', 'lost'];
@@ -23,14 +31,15 @@ export async function getConversionFunnel(
   orgId: string,
   from: string,
   to: string,
+  scope: ReportScope,
 ): Promise<ConversionFunnelResult> {
-  const gte = new Date(from);
-  const lt = new Date(to);
-  lt.setDate(lt.getDate() + 1);
+  const period = resolveReportPeriod({ from, to }, { defaultDays: 1 });
+  const { start: gte, end: lt } = period;
+  const asOf = new Date().toISOString();
 
   const groups = await prisma.contact.groupBy({
     by: ['status'],
-    where: { orgId, createdAt: { gte, lt }, status: { not: null } },
+    where: { AND: [{ orgId, createdAt: { gte, lt }, status: { not: null } }, reportModelWhere(scope, 'contact')] },
     _count: true,
   });
 
@@ -48,21 +57,15 @@ export async function getConversionFunnel(
     rate: total > 0 ? Math.round(((countMap[status] ?? 0) / total) * 1000) / 10 : 0,
   }));
 
-  // Avg days from createdAt to updatedAt for converted contacts
-  const avgResult = await prisma.$queryRaw<[{ avg_days: number | null }]>`
-    SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400)::float AS avg_days
-    FROM contacts
-    WHERE org_id = ${orgId}
-      AND status = 'converted'
-      AND created_at >= ${gte}
-      AND created_at < ${lt}
-  `;
-
-  const avgDays = avgResult[0]?.avg_days;
-
   return {
+    from: period.from,
+    to: period.to,
+    asOf,
+    stagesMeaning: 'created_in_period_current_status',
     stages,
     totalContacts: total,
-    avgConversionDays: avgDays ? Math.round(avgDays * 10) / 10 : null,
+    avgConversionDays: null,
+    avgConversionDaysAvailability: 'unavailable',
+    avgConversionDaysReason: 'conversion_event_history_unavailable',
   };
 }

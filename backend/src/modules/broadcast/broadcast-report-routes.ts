@@ -14,18 +14,15 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
+import { isInvalidReportPeriodError, resolveReportPeriod } from '../dashboard/report-period.js';
 
-function defaultDateRange() {
-  const to = new Date().toISOString().split('T')[0];
-  const from = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-  return { from, to };
-}
-
-function dateBounds(from: string, to: string) {
-  const start = new Date(from + 'T00:00:00.000Z');
-  const end = new Date(to + 'T00:00:00.000Z');
-  end.setUTCDate(end.getUTCDate() + 1); // inclusive end-of-day
-  return { start, end };
+function invalidPeriod(reply: FastifyReply, err: unknown) {
+  if (!isInvalidReportPeriodError(err)) return null;
+  return reply.status(400).send({
+    error: 'Invalid report date range',
+    code: 'invalid_report_date_range',
+    message: err.message,
+  });
 }
 
 function pct(numerator: number, denominator: number): number {
@@ -42,10 +39,7 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
     }
     try {
       const query = request.query as Record<string, string>;
-      const { from: dF, to: dT } = defaultDateRange();
-      const from = query.from || dF;
-      const to = query.to || dT;
-      const { start, end } = dateBounds(from, to);
+      const { from, to, start, end } = resolveReportPeriod(query);
 
       const jobs = await prisma.broadcastJob.findMany({
         where: { orgId: user.orgId },
@@ -128,6 +122,11 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
 
       return {
         from, to,
+        timeWindows: {
+          period: { from, to, timeZone: 'Asia/Ho_Chi_Minh' },
+          runs: 'startedAt events',
+          jobsSnapshotAsOf: new Date().toISOString(),
+        },
         kpis: {
           totalJobs: jobs.length,
           activeJobs: jobs.filter((j) => j.status === 'active').length,
@@ -138,6 +137,8 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
         byNick, byList, recentRuns,
       };
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[reports] Broadcast error:', err);
       return reply.status(500).send({ error: 'Failed to fetch broadcast report' });
     }

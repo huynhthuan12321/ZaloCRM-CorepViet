@@ -3,12 +3,15 @@
 <script setup lang="ts">
 import { api } from '@/api'
 import { ref, onMounted, computed, watch } from 'vue'
+import { vietnamDateRange } from '@/utils/report-period'
 
 type Range = 'today' | '24h' | '7d' | '30d'
 
 const data = ref<any>(null)
 const loading = ref(true)
 const range = ref<Range>('30d')
+const loadError = ref('')
+let loadSequence = 0
 
 const rangeBtns: { key: Range; label: string }[] = [
   { key: 'today', label: 'Hôm nay' },
@@ -17,35 +20,28 @@ const rangeBtns: { key: Range; label: string }[] = [
   { key: '30d', label: '30 ngày' },
 ]
 
-function ymd(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 function rangeDates(r: Range): { from: string; to: string } {
-  const to = new Date()
-  const from = new Date()
-  if (r === 'today' || r === '24h') {
-    // from = today
-  } else if (r === '7d') {
-    from.setDate(from.getDate() - 6)
-  } else {
-    from.setDate(from.getDate() - 29)
-  }
-  return { from: ymd(from), to: ymd(to) }
+  return vietnamDateRange(r === 'today' || r === '24h' ? 1 : r === '7d' ? 7 : 30)
 }
 
 async function load() {
+  const sequence = ++loadSequence
+  const { from, to } = rangeDates(range.value)
   loading.value = true
+  data.value = null
+  loadError.value = ''
   try {
-    const { from, to } = rangeDates(range.value)
-    data.value = (await api.get('/reports/audit', { params: { from, to } })).data
-  } catch {
-    // keep last data / null on failure
+    const response = await api.get('/reports/audit', { params: { from, to } })
+    if (sequence !== loadSequence) return
+    if (response.data.from !== from || response.data.to !== to) throw new Error('Audit response period mismatch')
+    data.value = response.data
+  } catch (error) {
+    if (sequence === loadSequence) {
+      loadError.value = 'Không tải được báo cáo Audit. Hãy thử lại.'
+      console.error('[AuditReport] load failed', error)
+    }
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
@@ -54,13 +50,15 @@ watch(range, load)
 
 // ---- helpers --------------------------------------------------------------
 function n(v: any): string {
+  if (v == null) return 'Chưa có dữ liệu'
   const num = Number(v)
-  return Number.isFinite(num) ? num.toLocaleString('vi-VN') : '0'
+  return Number.isFinite(num) ? num.toLocaleString('vi-VN') : 'Chưa có dữ liệu'
 }
 
 function pct(v: any): string {
+  if (v == null) return 'Chưa có dữ liệu'
   const num = Number(v)
-  if (!Number.isFinite(num)) return '0'
+  if (!Number.isFinite(num)) return 'Chưa có dữ liệu'
   return num.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
 }
 
@@ -110,6 +108,7 @@ const cronJobs = computed<any[]>(() => health.value?.cronJobs ?? [])
 const cronOkCount = computed<number>(() => cronJobs.value.filter((c: any) => c?.ok).length)
 
 const queues = computed<any[]>(() => health.value?.queues ?? [])
+const queuesUnavailable = computed(() => health.value?.queues == null)
 const queueMax = computed<number>(() => {
   let m = 0
   for (const q of queues.value) m = Math.max(m, Number(q?.depth) || 0)
@@ -127,7 +126,7 @@ function queueBarClass(depth: any): string {
   return 'bar'
 }
 
-const errorBreakdown = computed<any[]>(() => health.value?.errorBreakdown ?? [])
+const errorBreakdown = computed<any[] | null>(() => health.value?.errorBreakdown ?? null)
 function errBarClass(category?: string): string {
   const c = String(category || '').toLowerCase()
   if (c === 'throttle') return 'bar danger'
@@ -171,7 +170,7 @@ function disconnectDot(reason?: string): string {
         <div>
           <div class="rpt-h1">Audit &amp; Sức khỏe hệ thống</div>
           <div class="rpt-sub">
-            Ai đổi gì (nhật ký thay đổi) và hệ thống có sự cố không: cron, hàng đợi, nick mất kết nối, lỗi automation.
+            Nhật ký thay đổi, lỗi automation và nick mất kết nối theo nguồn đang ghi nhận; cron/hàng đợi chưa có registry đo.
           </div>
         </div>
       </div>
@@ -202,7 +201,7 @@ function disconnectDot(reason?: string): string {
       <v-icon icon="mdi-loading" size="20" /> Đang tải dữ liệu…
     </div>
 
-    <template v-else>
+    <template v-else-if="data">
       <!-- KPI ROW -->
       <div class="grid g-4" style="margin-bottom:18px">
         <div class="kpi">
@@ -215,7 +214,10 @@ function disconnectDot(reason?: string): string {
           <div class="val">{{ n(kpis.cronOk) }}<span class="u">/ {{ n(kpis.cronTotal) }}</span></div>
           <div class="delta flat">
             <v-icon icon="mdi-circle-medium" size="13" />
-            {{ Math.max(0, (Number(kpis.cronTotal) || 0) - (Number(kpis.cronOk) || 0)) }} job trễ lịch
+            <template v-if="kpis.cronTotal != null && kpis.cronOk != null">
+              {{ Math.max(0, kpis.cronTotal - kpis.cronOk) }} job trễ lịch
+            </template>
+            <template v-else>Chưa có dữ liệu cron</template>
           </div>
         </div>
         <div class="kpi accent-warn">
@@ -243,7 +245,7 @@ function disconnectDot(reason?: string): string {
             <div class="card" style="box-shadow:none">
               <div class="card-h" style="padding:11px 14px">
                 <div class="t" style="font-size:13px"><v-icon icon="mdi-clock-outline" size="16" /> Cron jobs</div>
-                <div class="meta">{{ cronOkCount }}/{{ cronJobs.length }} OK</div>
+                <div class="meta">{{ cronJobs.length ? `${cronOkCount}/${cronJobs.length} OK` : 'Chưa có dữ liệu' }}</div>
               </div>
               <div class="card-b" style="padding:6px 14px 12px">
                 <template v-if="cronJobs.length">
@@ -274,7 +276,10 @@ function disconnectDot(reason?: string): string {
                 <div class="meta">{{ n(kpis.queueWaiting) }} chờ</div>
               </div>
               <div class="card-b" style="padding:10px 14px 12px">
-                <template v-if="queues.length">
+                <template v-if="queuesUnavailable">
+                  <div class="rk-empty">Chưa có dữ liệu hàng đợi.</div>
+                </template>
+                <template v-else-if="queues.length">
                   <div
                     v-for="(q, i) in queues"
                     :key="i"
@@ -300,10 +305,10 @@ function disconnectDot(reason?: string): string {
               <div class="card-b" style="padding:14px">
                 <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px">
                   <div style="font-size:38px;font-weight:800;color:#b42318;line-height:1;font-variant-numeric:tabular-nums">
-                    {{ pct(health.errorRate24h) }}<span style="font-size:18px;color:var(--rk-muted)">%</span>
+                    {{ pct(health.errorRate24h) }}<span v-if="health.errorRate24h != null" style="font-size:18px;color:var(--rk-muted)">%</span>
                   </div>
                 </div>
-                <template v-if="errorBreakdown.length">
+                <template v-if="errorBreakdown?.length">
                   <div
                     v-for="(e, i) in errorBreakdown"
                     :key="i"
@@ -317,7 +322,8 @@ function disconnectDot(reason?: string): string {
                     <div :class="errBarClass(e?.category)"><i :style="{ width: errW(e?.pct) }"></i></div>
                   </div>
                 </template>
-                <div v-else class="rk-empty">Không có lỗi automation</div>
+                <div v-else-if="errorBreakdown == null" class="rk-empty">Chưa có dữ liệu phân loại lỗi.</div>
+                <div v-else class="rk-empty">Không có lỗi automation được ghi nhận.</div>
               </div>
             </div>
 
@@ -392,5 +398,9 @@ function disconnectDot(reason?: string): string {
         </div>
       </div>
     </template>
+    <div v-else class="rk-empty" role="alert">
+      {{ loadError || 'Không tải được dữ liệu báo cáo.' }}
+      <button class="rk-btn ghost" :disabled="loading" @click="load">Thử lại</button>
+    </div>
   </div>
 </template>

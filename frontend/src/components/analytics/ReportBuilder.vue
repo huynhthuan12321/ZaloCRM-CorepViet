@@ -51,7 +51,15 @@
 
       <!-- Results chart -->
       <div v-if="result" class="mt-4 chart-wrap">
-        <Bar :data="resultChartData!" :options="chartOptions" />
+        <Bar v-if="resultChartData" :data="resultChartData" :options="chartOptions" />
+        <div
+          v-for="dataset in unavailableDatasets"
+          :key="dataset.metric"
+          class="text-body-2 text-medium-emphasis mt-2"
+        >
+          {{ metricLabels[dataset.metric] ?? dataset.metric }}: Chưa có dữ liệu đo được
+          <span v-if="dataset.reason">({{ unavailableReason(dataset.reason) }})</span>
+        </div>
       </div>
 
       <!-- Saved reports -->
@@ -172,15 +180,24 @@ const metricLabels: Record<string, string> = {
 
 const resultChartData = computed(() => {
   if (!props.result) return null;
+  const datasets = props.result.datasets.filter((ds) => ds.availability !== 'unavailable');
+  if (!datasets.length) return null;
   return {
     labels: props.result.labels,
-    datasets: props.result.datasets.map((ds, i) => ({
+    datasets: datasets.map((ds, i) => ({
       label: metricLabels[ds.metric] ?? ds.metric,
       data: ds.data,
       backgroundColor: datasetColors[i % datasetColors.length],
     })),
   };
 });
+const unavailableDatasets = computed(() => props.result?.datasets.filter(
+  (dataset) => dataset.availability === 'unavailable',
+) ?? []);
+function unavailableReason(reason: string): string {
+  if (reason === 'conversion_event_history_unavailable') return 'thiếu lịch sử sự kiện chuyển đổi';
+  return reason;
+}
 
 const chartOptions = {
   responsive: true,

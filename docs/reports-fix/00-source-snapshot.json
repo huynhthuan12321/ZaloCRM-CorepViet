@@ -1,0 +1,193 @@
+{
+  "capturedAt": "2026-10-29T16:49:43.1253200+07:00",
+  "referenceHead": "1b910e3971841afeec83d53bc0539f3d50167f5d",
+  "sourceState": "working-tree; pre-existing unrelated dirty changes preserved",
+  "scope": "step 0A source snapshot, no runtime modification",
+  "baseline": {
+    "exitCode": 0,
+    "cwd": "F:/ZaloCRM-CorepViet/backend",
+    "database": "mocked; no database connection",
+    "command": "node node_modules/vitest/vitest.mjs run tests/unit/reports-review-evidence.test.ts tests/custom-report-sqli.test.ts",
+    "testsPassed": 10,
+    "filesPassed": 2,
+    "durationMs": 629
+  },
+  "files": [
+    {
+      "path": "backend/prisma/schema.prisma",
+      "sha256": "bf77de6cd4f5335fc22e6ea7e243db98e55e690785a12eef9106200f50cff582"
+    },
+    {
+      "path": "backend/src/app.ts",
+      "sha256": "c16f3e13351268f2877ca32080f2632eb091cef20176a806a88395c203bca5e4"
+    },
+    {
+      "path": "backend/src/modules/activity/activity-logger.ts",
+      "sha256": "09f384973d08753c882543d1b20f9e364d15af24215f14f2210f683f4fc9f3dd"
+    },
+    {
+      "path": "backend/src/modules/ai/ai-auto-reply-service.ts",
+      "sha256": "490644bb5118962a5373d2682220be52faeecd01fabde09b2573b7ab161d3a7b"
+    },
+    {
+      "path": "backend/src/modules/ai/ai-followup-cron.ts",
+      "sha256": "ca57fdbe67f246020f59f5db9e4d39a6d6ee571197831e763b95aa053cd4ffce"
+    },
+    {
+      "path": "backend/src/modules/ai/ai-routes.ts",
+      "sha256": "9eb901c3fa7bbb08c02be5f4e35f1425353e195c0b0f9bef0f4d6cf13c45142e"
+    },
+    {
+      "path": "backend/src/modules/ai/ai-service.ts",
+      "sha256": "afbd6ccb611d79d2071ec65bf89401bef808923198ccb5907a86d6abfbf29270"
+    },
+    {
+      "path": "backend/src/modules/ai/observability/ai-trace-contract.ts",
+      "sha256": "0c88491764a0c3d74f1650a46b0c42c4ab9e5052f5d2f64baa6286a6bb03964a"
+    },
+    {
+      "path": "backend/src/modules/analytics/analytics-routes.ts",
+      "sha256": "97908b7e1ffea4678f9a28577e5ee654713b7e61a4ddd36a269086d388f6fe58"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/conversion-funnel.ts",
+      "sha256": "1628f55b7e5365a66e09f22a0a65a76d6d3045c3f283945a1d07e4851bf19658"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/custom-report.ts",
+      "sha256": "2920696dcf7e430d0abc19818780ce25a1efb92e9608a62597ac5f34ffb908f5"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/response-time.ts",
+      "sha256": "321dda49e5c482cdd13a16d0b6e5486ad4e29704fdfdd1ad14bb82bff612837c"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/team-performance.ts",
+      "sha256": "6d4a2e6227387fc6a32915d6fdf70935f8e6036d3bb62ed48f7de19214579e56"
+    },
+    {
+      "path": "backend/src/modules/analytics/saved-report-routes.ts",
+      "sha256": "d491f31367c0972c48dfe21e375657ff125601c97f3e3e5d2d8f6656ae7b416c"
+    },
+    {
+      "path": "backend/src/modules/automation/automation-report-routes.ts",
+      "sha256": "fddd56c685138f6735871e8847000cbbea25212b69ce330ec7ebceac607271b6"
+    },
+    {
+      "path": "backend/src/modules/broadcast/broadcast-report-routes.ts",
+      "sha256": "e506707b4c5af15ebfb86b8356234f433e185470377862f69295154b86c244ab"
+    },
+    {
+      "path": "backend/src/modules/chat/message-handler.ts",
+      "sha256": "d663e0cd7a12806be97cd300e60e8b055e86faf29bf30b1856988d745489963e"
+    },
+    {
+      "path": "backend/src/modules/contacts/contact-scope.ts",
+      "sha256": "915910db6ab649e8ff993154077609cadfe6bc5f8058ef328f76865f8a7d1105"
+    },
+    {
+      "path": "backend/src/modules/dashboard/excel-sheet-builders.ts",
+      "sha256": "a44529b0aec27974131810e1861c07aba56c5d1082c03584be96c95f865350a6"
+    },
+    {
+      "path": "backend/src/modules/dashboard/report-analytics-routes.ts",
+      "sha256": "4080acb95d1aabc35376743c9d54236366823f1309c2f482b9329658383032e3"
+    },
+    {
+      "path": "backend/src/modules/dashboard/report-routes.ts",
+      "sha256": "5fc51987e0bdfd82154f011d6f6d5c2ffec190d7e4e9d038a6227f3b8a513b49"
+    },
+    {
+      "path": "backend/src/modules/engagement/engagement-service.ts",
+      "sha256": "14000c4316a0e2b5d2961ffd4dd375690a0a58e2b3b66dad53420f37cf7140f2"
+    },
+    {
+      "path": "backend/src/modules/privacy/redact.ts",
+      "sha256": "8aab6aa97e88622c74f4e937d213c9267cad4c0e6125c59bc203fbbbc3390809"
+    },
+    {
+      "path": "backend/src/modules/rbac/owner-scope.ts",
+      "sha256": "82615d9f635785db702cf96301cf75839446fda1ff0d4f73a612f921b64f418a"
+    },
+    {
+      "path": "backend/src/modules/zalo/nick-metrics-service.ts",
+      "sha256": "e3e00088d3ff9b5aab8c1e0d114ff539bb9e95e205b9218b85b6e26980e00833"
+    },
+    {
+      "path": "backend/src/modules/zalo/status-log-service.ts",
+      "sha256": "aeac9cbd7ff2a37489df4efc37f3cf1eb18fb1597e0dbe430b2ed62b49c2bce4"
+    },
+    {
+      "path": "backend/src/modules/zalo/zalo-scope.ts",
+      "sha256": "95b835d4dda9063634ca14cb87ee0160a87f5d798193438ef04314d1e721a08a"
+    },
+    {
+      "path": "backend/tests/custom-report-sqli.test.ts",
+      "sha256": "e7ce83d5caf0eae83bf19029d45ec3cb8335047e3fc5f82a49d9777050ba2ac7"
+    },
+    {
+      "path": "backend/tests/unit/reports-review-evidence.test.ts",
+      "sha256": "26d47084e88403001c91fc6859c7db7640ad478ee9e959a4fac91ddb962ff953"
+    },
+    {
+      "path": "backend/vitest.config.ts",
+      "sha256": "8c3d027fd84afb5ad05782645f0ad3c25fa5927678b0b553a77292a67d262772"
+    },
+    {
+      "path": "frontend/src/composables/use-analytics.ts",
+      "sha256": "45e59aefd18960bfed1fc8bc8f4fecee562502534bb31cae8aac564312ccbfb5"
+    },
+    {
+      "path": "frontend/src/layouts/DefaultLayout.vue",
+      "sha256": "de6df209b4718201032ee5e2b9e7ce987887e2e13a6486cbfd639a90544ac2b2"
+    },
+    {
+      "path": "frontend/src/router/index.ts",
+      "sha256": "ba3e6f898fa06b8c8f86672c6b8bdabb3f053ae05f596d059de78465d96d7cbf"
+    },
+    {
+      "path": "frontend/src/views/AnalyticsView.vue",
+      "sha256": "602b6a7b3b53506ee3f5ad496d298cfbdfff863861955ecad243742b97e0468a"
+    },
+    {
+      "path": "frontend/src/views/reports/AuditReport.vue",
+      "sha256": "b1232af2351de7d9e7ca624214c81e5a10f4320c85a971fd16e285d910c408df"
+    },
+    {
+      "path": "frontend/src/views/reports/AutomationReport.vue",
+      "sha256": "ea8fb8c44d0bdbc7242580cbde7dae50492ba6e675232385a57098ce64755bd0"
+    },
+    {
+      "path": "frontend/src/views/reports/BroadcastReport.vue",
+      "sha256": "8f9f87f5e1d238d9c8482f7d9c4ca46e12e82484edd6253869a69f9b970bdb1a"
+    },
+    {
+      "path": "frontend/src/views/reports/EngagementReport.vue",
+      "sha256": "14d645245fe3e84c1cd5bdae3810589ea94d880954b8d1e54c680c7f3c676448"
+    },
+    {
+      "path": "frontend/src/views/reports/NickFleetReport.vue",
+      "sha256": "f64238d24dc2c2da054d9076289bf1cf9eef369ee6c2b79d972e508ca21910bc"
+    },
+    {
+      "path": "frontend/src/views/reports/OverviewReport.vue",
+      "sha256": "37c80688d4ec40c78607e7ae4c105bb3e80fdbfb5b846e145cb1a38dead930d1"
+    },
+    {
+      "path": "frontend/src/views/reports/PipelineReport.vue",
+      "sha256": "edb0286845cf0b46119b0a97106857f350767aa647e34c4289aed8224267f714"
+    },
+    {
+      "path": "frontend/src/views/reports/ReportsShell.vue",
+      "sha256": "64747b08d1c7e8fe8a77a1e29622e6430152f79e050aa6faace16ce497d6a0e4"
+    },
+    {
+      "path": "frontend/src/views/reports/SalesReport.vue",
+      "sha256": "33eb581e0ece3a1a5758e1e07300af34ee5cca5577557f2ac8fea19a31a6c2ed"
+    },
+    {
+      "path": "frontend/src/views/ReportsView.vue",
+      "sha256": "1586ad534d639cbf99503d302fc1fe3af1447b54851c12177199edddbc920c86"
+    }
+  ]
+}

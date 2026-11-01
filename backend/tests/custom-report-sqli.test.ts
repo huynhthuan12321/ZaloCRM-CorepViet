@@ -1,3 +1,4 @@
+import { orgReportScope } from '../src/modules/dashboard/report-scope.js';
 /**
  * custom-report-sqli.test.ts — Regression test for SQL injection fix in
  * analytics custom report (phase 02 of security plan).
@@ -10,7 +11,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the prisma client BEFORE importing the module under test.
-const queryRawMock = vi.fn();
+const queryRawMock = vi.hoisted(() => vi.fn());
 vi.mock('../src/shared/database/prisma-client.js', () => ({
   prisma: { $queryRaw: queryRawMock },
 }));
@@ -69,7 +70,7 @@ describe('custom-report SQL injection regression', () => {
       groupBy: 'day',
       dateRange: { from: '2024-01-01', to: '2024-12-31' },
       filters: { source: malicious },
-    });
+    }, orgReportScope('org-1'));
 
     const { sql, bound } = flatten(queryRawMock.mock.calls[0]);
     expect(bound).toContain(malicious);
@@ -83,7 +84,7 @@ describe('custom-report SQL injection regression', () => {
       groupBy: 'day',
       dateRange: { from: '2024-01-01', to: '2024-12-31' },
       filters: { source: 'facebook' },
-    });
+    }, orgReportScope('org-1'));
     const { sql, bound } = flatten(queryRawMock.mock.calls[0]);
     expect(bound).toContain('facebook');
     expect(sql).not.toContain("'facebook'");
@@ -94,7 +95,7 @@ describe('custom-report SQL injection regression', () => {
       metrics: ['contacts_new'],
       groupBy: 'day',
       dateRange: { from: '2024-01-01', to: '2024-12-31' },
-    });
+    }, orgReportScope('org-1'));
     const { sql } = flatten(queryRawMock.mock.calls[0]);
     expect(sql).not.toContain('source =');
   });
@@ -106,7 +107,7 @@ describe('custom-report SQL injection regression', () => {
         // @ts-expect-error — intentionally invalid value
         groupBy: "day'; DROP TABLE users--",
         dateRange: { from: '2024-01-01', to: '2024-12-31' },
-      }),
+      }, orgReportScope('org-1')),
     ).rejects.toThrow();
   });
 
@@ -119,7 +120,7 @@ describe('custom-report SQL injection regression', () => {
       metrics: ['appointments'],
       groupBy: 'user',
       dateRange: { from: '2024-01-01', to: '2024-12-31' },
-    });
+    }, orgReportScope('org-1'));
     expect(result.labels).toEqual(['Alice', 'Bob']);
     expect(result.datasets[0]?.data).toEqual([5, 3]);
   });

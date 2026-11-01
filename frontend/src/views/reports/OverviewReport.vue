@@ -3,12 +3,15 @@
 <script setup lang="ts">
 import { api } from '@/api'
 import { ref, onMounted, computed, watch } from 'vue'
+import { vietnamDateRange } from '@/utils/report-period'
 
 type Range = 'today' | '7d' | '30d'
 
 const data = ref<any>(null)
 const loading = ref(true)
+const loadError = ref('')
 const range = ref<Range>('30d')
+let loadSequence = 0;
 
 const rangeBtns: { key: Range; label: string }[] = [
   { key: 'today', label: 'Hôm nay' },
@@ -16,35 +19,30 @@ const rangeBtns: { key: Range; label: string }[] = [
   { key: '30d', label: '30 ngày' },
 ]
 
-function ymd(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 function rangeDates(r: Range): { from: string; to: string } {
-  const to = new Date()
-  const from = new Date()
-  if (r === 'today') {
-    // from = today
-  } else if (r === '7d') {
-    from.setDate(from.getDate() - 6)
-  } else {
-    from.setDate(from.getDate() - 29)
-  }
-  return { from: ymd(from), to: ymd(to) }
+  return vietnamDateRange(r === 'today' ? 1 : r === '7d' ? 7 : 30)
 }
 
 async function load() {
+  const sequence = ++loadSequence
+  const { from, to } = rangeDates(range.value)
   loading.value = true
+  data.value = null
+  loadError.value = ''
   try {
-    const { from, to } = rangeDates(range.value)
-    data.value = (await api.get('/reports/overview', { params: { from, to } })).data
-  } catch {
-    // keep last data / null on failure
+    const response = await api.get('/reports/overview', { params: { from, to } })
+    if (sequence !== loadSequence) return
+    if (response.data.from !== from || response.data.to !== to) {
+      throw new Error('Overview response period does not match the selected period')
+    }
+    data.value = response.data
+  } catch (error) {
+    if (sequence === loadSequence) {
+      loadError.value = 'Không tải được dữ liệu báo cáo. Hãy thử lại.'
+      console.error('[OverviewReport] load failed', error)
+    }
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
@@ -53,13 +51,15 @@ watch(range, load)
 
 // ---- helpers --------------------------------------------------------------
 function n(v: any): string {
+  if (v == null) return 'Chưa có dữ liệu'
   const num = Number(v)
-  return Number.isFinite(num) ? num.toLocaleString('vi-VN') : '0'
+  return Number.isFinite(num) ? num.toLocaleString('vi-VN') : 'Chưa có dữ liệu'
 }
 
 function pct(v: any): string {
+  if (v == null) return 'Chưa có dữ liệu'
   const num = Number(v)
-  if (!Number.isFinite(num)) return '0'
+  if (!Number.isFinite(num)) return 'Chưa có dữ liệu'
   // show one decimal, vi-VN uses comma
   return num.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
 }
@@ -154,7 +154,7 @@ function quotaW(v: any): string {
         <div>
           <div class="rpt-h1">Tổng quan điều hành</div>
           <div class="rpt-sub">
-            Sức khỏe toàn hệ thống trong một màn: đội nick, tăng trưởng khách hàng, phễu chốt, hoạt động automation.
+            Tổng hợp nick, khách hàng, hoạt động tin nhắn và lịch hẹn theo dữ liệu đang ghi nhận.
           </div>
         </div>
       </div>
@@ -185,7 +185,7 @@ function quotaW(v: any): string {
       <v-icon icon="mdi-loading" size="20" /> Đang tải dữ liệu…
     </div>
 
-    <template v-else>
+    <template v-else-if="data">
       <!-- KPI ROW 1 -->
       <div class="grid g-4" style="margin-bottom:14px">
         <div class="kpi">
@@ -209,7 +209,7 @@ function quotaW(v: any): string {
         <div class="kpi">
           <div class="top"><span class="label">Tin nhắn hôm nay</span><span class="kic"><v-icon icon="mdi-message-text-outline" size="18" /></span></div>
           <div class="val">{{ n(kpis.msgToday) }}</div>
-          <div class="delta up"><v-icon icon="mdi-robot-outline" size="13" /> {{ n(kpis.msgByBot) }} do bot gửi</div>
+          <div class="delta up"><v-icon icon="mdi-robot-outline" size="13" /> {{ n(kpis.msgByBot) }} tin automation gửi</div>
         </div>
       </div>
 
@@ -218,7 +218,7 @@ function quotaW(v: any): string {
         <div class="kpi">
           <div class="top"><span class="label">Lịch hẹn hôm nay</span><span class="kic"><v-icon icon="mdi-calendar-clock" size="18" /></span></div>
           <div class="val">{{ n(kpis.apptToday) }}</div>
-          <div class="delta flat"><v-icon icon="mdi-check" size="13" /> {{ n(kpis.apptDone) }} đã hoàn thành</div>
+          <div class="delta flat"><v-icon icon="mdi-check" size="13" /> {{ n(kpis.apptDone) }} hoàn thành trong kỳ</div>
         </div>
         <div class="kpi accent-warn">
           <div class="top"><span class="label">Lead pool đang chờ</span><span class="kic"><v-icon icon="mdi-gift-outline" size="18" /></span></div>
@@ -227,15 +227,18 @@ function quotaW(v: any): string {
         </div>
         <div class="kpi accent-ok">
           <div class="top"><span class="label">Tỉ lệ chốt</span><span class="kic"><v-icon icon="mdi-flag-checkered" size="18" /></span></div>
-          <div class="val">{{ pct(kpis.closeRate) }}<span class="u">%</span></div>
-          <div class="delta" :class="(Number(kpis.closeRateDelta) || 0) >= 0 ? 'up' : 'down'">
-            <v-icon :icon="(Number(kpis.closeRateDelta) || 0) >= 0 ? 'mdi-trending-up' : 'mdi-trending-down'" size="13" />
-            {{ (Number(kpis.closeRateDelta) || 0) >= 0 ? '+' : '' }}{{ pct(kpis.closeRateDelta) }}đ
+          <div class="val">{{ pct(kpis.closeRate) }}<span v-if="kpis.closeRate != null" class="u">%</span></div>
+          <div class="delta flat">
+            <v-icon icon="mdi-minus" size="13" />
+            <template v-if="kpis.closeRateDelta != null">
+              {{ kpis.closeRateDelta >= 0 ? '+' : '' }}{{ pct(kpis.closeRateDelta) }}đ vs kỳ trước
+            </template>
+            <template v-else>Chưa xác định được trạng thái thắng</template>
           </div>
         </div>
         <div class="kpi">
           <div class="top"><span class="label">Kết bạn thành công</span><span class="kic"><v-icon icon="mdi-account-check-outline" size="18" /></span></div>
-          <div class="val">{{ pct(kpis.friendAcceptRate) }}<span class="u">%</span></div>
+          <div class="val">{{ pct(kpis.friendAcceptRate) }}<span v-if="kpis.friendAcceptRate != null" class="u">%</span></div>
           <div class="delta flat"><v-icon icon="mdi-circle-medium" size="13" /> {{ n(kpis.friendInviteAccepted) }}/{{ n(kpis.friendInviteSent) }} lời mời</div>
         </div>
       </div>
@@ -244,7 +247,7 @@ function quotaW(v: any): string {
       <div class="grid g-3" style="margin-bottom:14px">
         <div class="card col-2">
           <div class="card-h">
-            <div class="t"><v-icon icon="mdi-chart-bar" size="18" /> Tin nhắn 14 ngày</div>
+            <div class="t"><v-icon icon="mdi-chart-bar" size="18" /> Tin nhắn trong kỳ</div>
             <div class="meta">Khách gửi / Mình gửi</div>
           </div>
           <div class="card-b">
@@ -263,8 +266,8 @@ function quotaW(v: any): string {
 
         <div class="card">
           <div class="card-h">
-            <div class="t"><v-icon icon="mdi-filter-outline" size="18" /> Phễu chốt</div>
-            <div class="meta">{{ range === 'today' ? 'Hôm nay' : range === '7d' ? '7 ngày' : '30 ngày' }}</div>
+            <div class="t"><v-icon icon="mdi-filter-outline" size="18" /> Khách hàng theo trạng thái</div>
+            <div class="meta">Snapshot hiện tại</div>
           </div>
           <div class="card-b">
             <div v-if="funnel.length" class="funnel">
@@ -289,8 +292,8 @@ function quotaW(v: any): string {
       <div class="grid g-2">
         <div class="card">
           <div class="card-h">
-            <div class="t"><v-icon icon="mdi-trophy-outline" size="18" /> Top sale</div>
-            <span class="meta">Top 5</span>
+            <div class="t"><v-icon icon="mdi-account-multiple-outline" size="18" /> Sale có khách mới</div>
+            <span class="meta">Top 5 · theo khách mới trong kỳ</span>
           </div>
           <div class="card-b" style="padding:0">
             <table v-if="topSales.length" class="tbl">
@@ -305,7 +308,7 @@ function quotaW(v: any): string {
                   </td>
                   <td class="num">{{ n(s?.newContacts) }}</td>
                   <td class="num">{{ n(s?.sent) }}</td>
-                  <td class="num"><span class="pill ok">{{ n(s?.closed) }}</span></td>
+                  <td class="num"><span class="pill">{{ n(s?.closed) }}</span></td>
                 </tr>
               </tbody>
             </table>
@@ -336,7 +339,10 @@ function quotaW(v: any): string {
                     </template>
                     <template v-else>—</template>
                   </td>
-                  <td class="num">{{ pct(nk?.uptime7d) }}%</td>
+                  <td class="num">
+                    <template v-if="nk?.uptime7d != null">{{ pct(nk.uptime7d) }}%</template>
+                    <span v-else>Chưa có dữ liệu</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -345,5 +351,9 @@ function quotaW(v: any): string {
         </div>
       </div>
     </template>
+    <div v-else class="rk-empty" role="alert">
+      {{ loadError || 'Không có dữ liệu báo cáo.' }}
+      <button class="rk-btn ghost" :disabled="loading" @click="load">Thử lại</button>
+    </div>
   </div>
 </template>
