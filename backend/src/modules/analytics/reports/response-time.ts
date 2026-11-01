@@ -18,7 +18,7 @@ export async function getResponseTimeAnalysis(orgId:string,from:string,to:string
   const asOf=new Date();
   const { start, end } = resolveReportPeriod({ from, to }, { defaultDays: 1 });
   const rows=await prisma.message.findMany({
-    where:{sentAt:{gte:start,lte:asOf},isLocal:false,isDeleted:false,conversation:{orgId,isVirtual:false,threadType:'user',zaloAccountId:scope.kind==='org'?{not:null}:{in:scope.readableAccountIds??scope.accountIds??[]}}},
+    where:{sentAt:{gte:start,lte:asOf},isLocal:false,isDeleted:false,conversation:{orgId,isVirtual:false,threadType:'user',zaloAccountId:scope.kind==='org'?undefined:{in:scope.readableAccountIds??scope.accountIds??[]}}},
     select:{id:true,conversationId:true,conversation:{select:{zaloAccountId:true}},sentAt:true,senderType:true,sentVia:true,repliedByUserId:true,isLocal:true,isDeleted:true,metadata:true},
     orderBy:[{sentAt:'asc'},{id:'asc'}],take:LIMIT+1,
   });

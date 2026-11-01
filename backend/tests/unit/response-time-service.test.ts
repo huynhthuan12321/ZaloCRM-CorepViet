@@ -61,7 +61,9 @@ describe('Response-time service uses the approved last-inbound rule',()=>{
  it('uses org-wide counters as main for admins without creating a shared section',async()=>{
   db.message.findMany.mockResolvedValue([row('a','09:00','contact',null,'nick-a','a'),row('b','09:00','contact',null,'nick-b','b')]);
   const r=await getResponseTimeAnalysis('org-a','2026-10-29','2026-10-29',{orgId:'org-a',viewerId:'admin',kind:'org',userIds:null,accountIds:null});
-  expect(db.message.findMany.mock.calls[0][0].where.conversation).toMatchObject({orgId:'org-a',zaloAccountId:{not:null}});
+  const conversationWhere=db.message.findMany.mock.calls[0][0].where.conversation;
+  expect(conversationWhere).toMatchObject({orgId:'org-a'});
+  expect(conversationWhere.zaloAccountId).toBeUndefined();
   expect(r).toMatchObject({pending:2,mainPending:2,sharedPending:0,mainUnattributed:0,sharedUnattributed:0});
  });
  it('does not classify an ungranted nick as shared or main, including after a grant is revoked',async()=>{
