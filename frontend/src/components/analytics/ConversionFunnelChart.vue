@@ -4,12 +4,22 @@
   <v-card>
     <v-card-title class="text-body-1">Phễu chuyển đổi</v-card-title>
     <v-card-text>
+      <div v-if="data?.stagesMeaning === 'created_in_period_current_status'" class="text-caption text-medium-emphasis mb-2">
+        Cohort tạo trong kỳ, phân nhóm theo trạng thái hiện tại; không phải sự kiện chuyển đổi trong kỳ.
+        <span v-if="data.asOf"> Cập nhật {{ data.asOf }}.</span>
+      </div>
       <div v-if="chartData" class="chart-wrap">
         <Bar :data="chartData" :options="chartOptions" />
       </div>
       <div v-else class="text-center pa-8 text-grey">Không có dữ liệu</div>
       <div v-if="data?.avgConversionDays" class="text-caption text-grey mt-2 text-center">
         Thời gian chuyển đổi trung bình: {{ data.avgConversionDays }} ngày
+      </div>
+      <div
+        v-else-if="data?.avgConversionDaysAvailability === 'unavailable'"
+        class="text-caption text-medium-emphasis mt-2 text-center"
+      >
+        Chưa thể đo thời gian chuyển đổi: thiếu lịch sử sự kiện chuyển trạng thái.
       </div>
     </v-card-text>
   </v-card>

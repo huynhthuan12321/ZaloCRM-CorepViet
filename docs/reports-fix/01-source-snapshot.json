@@ -1,0 +1,95 @@
+{
+  "capturedAt": "2026-11-01T18:57:01.8845683+07:00",
+  "stage": "1A foundation backend; independent 1B not yet performed",
+  "referenceHead": "1b910e3971841afeec83d53bc0539f3d50167f5d",
+  "checks": {
+    "testExitCode": 0,
+    "testFiles": 9,
+    "testCases": 45,
+    "typecheckExitCode": 0,
+    "command": "node node_modules/vitest/vitest.mjs run tests/unit/reports-review-evidence.test.ts tests/custom-report-sqli.test.ts tests/unit/report-scope-policy.test.ts tests/unit/response-turns.test.ts tests/unit/report-scope-postgres.test.ts tests/unit/saved-report-scope.test.ts tests/unit/response-time-service.test.ts tests/unit/report-http-scope.test.ts tests/unit/custom-report-response-time.test.ts",
+    "database": "PGlite in-memory only; Prisma/auth mocks in route tests"
+  },
+  "files": [
+    {
+      "path": "backend/src/modules/analytics/analytics-routes.ts",
+      "sha256": "2ef6d2c6830f9f71d54c1268ecd95e5c6f48da2e2f3d4cefd1461a785f0ba780"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/conversion-funnel.ts",
+      "sha256": "d65b39ea2a9e7b639f381e09fead0b2bb2b94022cdfc61d37ccf5017ab30dac7"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/custom-report.ts",
+      "sha256": "e0b9e123dd5e491a9694dd34c4908a8b63ac84fe0a646adf5d46d5556458d03e"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/response-time.ts",
+      "sha256": "8172999c947073a065a98e0db1c791e19fbcbe7b8b28a32a5cc9bc606b426516"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/team-performance.ts",
+      "sha256": "9117afdc4668eb3a0d2effeb7095589366049ef611fd3a2145d0bef4f6e7ec31"
+    },
+    {
+      "path": "backend/src/modules/analytics/saved-report-routes.ts",
+      "sha256": "3c118531b75ef7974eb44d7687ef6e460265d6283acbdd537c8f53ad1f5f6801"
+    },
+    {
+      "path": "backend/src/modules/dashboard/excel-sheet-builders.ts",
+      "sha256": "5859e2883776619db92fe469d5569546bcf1dc96421bff16f2e914078bb5a708"
+    },
+    {
+      "path": "backend/src/modules/dashboard/report-analytics-routes.ts",
+      "sha256": "10ffe0b6f8a392307504491e8598181fdec8ab38c4131cd630ba902d3c7a2f76"
+    },
+    {
+      "path": "backend/src/modules/dashboard/report-routes.ts",
+      "sha256": "797c368eefa66ffa51b7c16bb889eebe1ed05233166de2b29985860e934f6031"
+    },
+    {
+      "path": "backend/src/modules/dashboard/report-scope.ts",
+      "sha256": "828c1a9a246e53358224f29d5c371b541547a4f5ff34ce24906df200ee9ce582"
+    },
+    {
+      "path": "backend/src/modules/dashboard/response-turns.ts",
+      "sha256": "912c05d5ea671e7e989327b698f0dfd788c0711997d172ad29860d760973f5c3"
+    },
+    {
+      "path": "backend/tests/custom-report-sqli.test.ts",
+      "sha256": "03b3545c86c12fda9b1b60faf8e8aa38457f5250dd27a26fa3180bcb8480a3d7"
+    },
+    {
+      "path": "backend/tests/unit/custom-report-response-time.test.ts",
+      "sha256": "0d3a64d6147d8303f80fb266ecba3ab6623c606f441b1c877cd3c5591c78aa9c"
+    },
+    {
+      "path": "backend/tests/unit/report-http-scope.test.ts",
+      "sha256": "c685379a7698429dbfab2db9cb1be8b8a1466af716883dfffb1a77e47893c292"
+    },
+    {
+      "path": "backend/tests/unit/report-scope-policy.test.ts",
+      "sha256": "b1b367680378db5df64c56422c0688a454bcc59a313a3bce6a5c1a1621b7948e"
+    },
+    {
+      "path": "backend/tests/unit/report-scope-postgres.test.ts",
+      "sha256": "d29a577cfa7df98197a1cba1124bc6f172deb098e053a3d29d41f226c7b9bf3e"
+    },
+    {
+      "path": "backend/tests/unit/reports-review-evidence.test.ts",
+      "sha256": "4f7e4aba6f143a86fd1990fefb7f152ade68fec4160257fce42878d0bf1f8b64"
+    },
+    {
+      "path": "backend/tests/unit/response-time-service.test.ts",
+      "sha256": "91f014c5cce57705c61247abf66877385dfdf6e47f17df89f99cda3a5d121e7a"
+    },
+    {
+      "path": "backend/tests/unit/response-turns.test.ts",
+      "sha256": "934c90acfa8f703cc223115eebcee3e1305c6a6390999cf072f726963f89b13d"
+    },
+    {
+      "path": "backend/tests/unit/saved-report-scope.test.ts",
+      "sha256": "662ea4758cccc123069f6cd26bfca13f75b3212f6258406c64ca23719f0c6b91"
+    }
+  ]
+}

@@ -155,6 +155,7 @@
 <script setup lang="ts">
 import { api } from '@/api';
 import { ref, onMounted, watch, computed } from 'vue';
+import { shiftDate, vietnamDate, vietnamMonthStart, vietnamWeekRange, vietnamDateRange } from '@/utils/report-period';
 
 const data = ref<any>(null);
 const loading = ref(true);
@@ -179,28 +180,21 @@ function saleNameOf(userId: string | null): string {
   return saleName.value.get(userId) ?? '—';
 }
 
-function pad(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function rangeDates() {
-  const now = new Date();
-  const from = new Date(now);
-  const to = new Date(now);
+  const to = vietnamDate();
   if (range.value === 'today') {
-    // from = to = hôm nay
+    return { from: to, to };
   } else if (range.value === 'yesterday') {
-    from.setDate(from.getDate() - 1);
-    to.setDate(to.getDate() - 1);
+    const yesterday = shiftDate(to, -1);
+    return { from: yesterday, to: yesterday };
   } else if (range.value === '7d') {
-    from.setDate(from.getDate() - 6);
+    return vietnamDateRange(7);
   } else if (range.value === 'thisWeek') {
-    // Tuần này: từ Thứ 2 (ISO) đến hôm nay.
-    const dow = (now.getDay() + 6) % 7; // 0 = Thứ 2
-    from.setDate(from.getDate() - dow);
+    return vietnamWeekRange();
   } else if (range.value === 'thisMonth') {
-    from.setDate(1);
+    return { from: vietnamMonthStart(), to };
   }
-  return { from: pad(from), to: pad(to) };
+  return vietnamDateRange(7);
 }
 
 async function load() {

@@ -1,3 +1,4 @@
+import { gateReportAccess, reportScope } from '../dashboard/report-scope.js';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 /**
@@ -16,6 +17,16 @@ import {
 } from './analytics-service.js';
 import type { ReportConfig } from './analytics-service.js';
 import { getOwnerScope, applyOwnerScope } from '../rbac/owner-scope.js';
+import { isInvalidReportPeriodError, resolveReportPeriod } from '../dashboard/report-period.js';
+
+function invalidPeriod(reply: FastifyReply, err: unknown) {
+  if (!isInvalidReportPeriodError(err)) return null;
+  return reply.status(400).send({
+    error: 'Invalid report date range',
+    code: 'invalid_report_date_range',
+    message: err.message,
+  });
+}
 
 export async function savedReportRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
@@ -119,28 +130,32 @@ export async function savedReportRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/v1/saved-reports/:id/run — execute saved report
   app.post('/api/v1/saved-reports/:id/run', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
+      if (!(await gateReportAccess(request, reply))) return;
+      const scope = reportScope(request);
       const { orgId } = request.user!;
       const { id } = request.params as { id: string };
-      const report = await prisma.savedReport.findFirst({ where: { id, orgId } });
+      const report = await prisma.savedReport.findFirst({ where: { id, orgId, ...(scope.kind === 'org' ? {} : { createdBy: { in: scope.userIds ?? [] } }) } });
       if (!report) return reply.status(404).send({ error: 'Report not found' });
 
       const config = report.config as any;
-      const from = config.dateRange?.from ?? new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-      const to = config.dateRange?.to ?? new Date().toISOString().split('T')[0];
+      const period = resolveReportPeriod(config?.dateRange ?? {});
+      const normalizedConfig = { ...config, dateRange: { from: period.from, to: period.to } };
 
       switch (report.type) {
         case 'conversion_funnel':
-          return await getConversionFunnel(orgId, from, to);
+          return await getConversionFunnel(orgId, period.from, period.to, scope);
         case 'team_performance':
-          return await getTeamPerformance(orgId, from, to);
+          return await getTeamPerformance(orgId, period.from, period.to, scope);
         case 'response_time':
-          return await getResponseTimeAnalysis(orgId, from, to);
+          return await getResponseTimeAnalysis(orgId, period.from, period.to, scope);
         case 'custom':
-          return await executeCustomReport(orgId, config as ReportConfig);
+          return await executeCustomReport(orgId, normalizedConfig as ReportConfig, scope);
         default:
           return reply.status(400).send({ error: `Unknown report type: ${report.type}` });
       }
     } catch (err) {
+      const invalid = invalidPeriod(reply, err);
+      if (invalid) return invalid;
       logger.error('[saved-reports] Run error:', err);
       return reply.status(500).send({ error: 'Failed to run saved report' });
     }

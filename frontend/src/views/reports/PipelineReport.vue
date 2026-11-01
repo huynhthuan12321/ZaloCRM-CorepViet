@@ -13,8 +13,8 @@
         <div>
           <div class="rpt-h1">Pipeline &amp; Lead Pool</div>
           <div class="rpt-sub">
-            Lead đang kẹt ở stage nào, nguồn nào ra chốt tốt, và lead pool chia có công bằng không —
-            soi nhanh để gỡ tắc và cân tải đội sale.
+            Theo dõi lead theo stage và phân phối Lead Pool. Chỉ số chốt và thời gian ở stage
+            chưa có nguồn dữ liệu đủ tin cậy để đối soát.
           </div>
         </div>
       </div>
@@ -42,7 +42,8 @@
       <v-icon icon="mdi-loading" size="20" class="mdi-spin" /> Đang tải báo cáo…
     </div>
 
-    <template v-else>
+    <template v-else-if="pipe || pool">
+      <div v-if="loadError" class="rk-empty" role="status">{{ loadError }}</div>
       <!-- KPI ROW -->
       <div class="grid g-4" style="margin-bottom:18px">
         <div class="kpi accent-ok">
@@ -50,14 +51,14 @@
             <span class="label">Tỉ lệ chốt</span>
             <span class="kic"><v-icon icon="mdi-flag-checkered" size="17" /></span>
           </div>
-          <div class="val">{{ fmtPct(pipe?.kpis?.closeRate) }}<span class="u">%</span></div>
+          <div class="val">{{ fmtPct(pipe?.kpis?.closeRate) }}<span v-if="pipe?.kpis?.closeRate != null" class="u">%</span></div>
         </div>
         <div class="kpi">
           <div class="top">
             <span class="label">Time-in-stage TB</span>
             <span class="kic"><v-icon icon="mdi-timer-sand" size="17" /></span>
           </div>
-          <div class="val">{{ fmtNum(pipe?.kpis?.avgTimeInStageDays) }}<span class="u">ngày</span></div>
+          <div class="val">{{ fmtNum(pipe?.kpis?.avgTimeInStageDays) }}<span v-if="pipe?.kpis?.avgTimeInStageDays != null" class="u">ngày</span></div>
         </div>
         <div class="kpi accent-warn">
           <div class="top">
@@ -71,7 +72,8 @@
             <span class="label">Tỉ lệ trả lead</span>
             <span class="kic"><v-icon icon="mdi-backup-restore" size="17" /></span>
           </div>
-          <div class="val">{{ fmtPct(pool?.kpis?.returnRate) }}<span class="u">%</span></div>
+          <div class="val">{{ fmtPct(pool?.kpis?.returnRate) }}<span v-if="pool?.kpis?.returnRate != null" class="u">%</span></div>
+          <div v-if="pool && pool.kpis?.returnRate == null" class="delta flat">Mẫu số nghiệp vụ chưa được xác nhận</div>
         </div>
       </div>
 
@@ -81,7 +83,7 @@
         <div class="card col-2">
           <div class="card-h">
             <div class="t"><v-icon icon="mdi-filter-outline" size="17" /> Phễu pipeline</div>
-            <div class="meta">% là tỉ lệ rớt sang stage sau</div>
+            <div class="meta">Số khách hiện tại theo stage · snapshot</div>
           </div>
           <div class="card-b">
             <div v-if="funnel.length" class="funnel">
@@ -91,8 +93,8 @@
                   <i :style="{ width: funnelWidth(s) + '%' }"></i>
                   <div class="vv">{{ fmtInt(s.count) }}</div>
                 </div>
-                <div class="drop" :class="{ faint: i === 0 }">
-                  {{ i === 0 ? '—' : '-' + fmtPct(s.dropPct) + '%' }}
+                <div class="drop" :class="{ faint: i === 0 || s.dropPct == null }">
+                  {{ i === 0 ? '—' : s.dropPct == null ? 'Chưa có dữ liệu' : '-' + fmtPct(s.dropPct) + '%' }}
                 </div>
               </div>
             </div>
@@ -152,15 +154,19 @@
                   </div>
                 </td>
                 <td class="num">{{ fmtInt(r.leads) }}</td>
-                <td class="num">{{ fmtPct(r.contactedPct) }}%</td>
+                <td class="num">
+                  <template v-if="r.contactedPct != null">{{ fmtPct(r.contactedPct) }}%</template>
+                  <span v-else class="faint">Chưa có dữ liệu</span>
+                </td>
                 <td class="num"><span class="pill" :class="closedPillCls(r.closeRate)">{{ fmtInt(r.closed) }}</span></td>
                 <td>
-                  <div style="display:flex;align-items:center;gap:8px">
+                  <div v-if="r.closeRate != null" style="display:flex;align-items:center;gap:8px">
                     <div class="bar" :class="barCls(r.closeRate)" style="flex:1;max-width:90px">
                       <i :style="{ width: clampPct(r.closeRate) + '%' }"></i>
                     </div>
                     <span class="b">{{ fmtPct(r.closeRate) }}%</span>
                   </div>
+                  <span v-else class="faint">Chưa có dữ liệu</span>
                 </td>
               </tr>
             </tbody>
@@ -243,17 +249,24 @@
         </div>
       </div>
     </template>
+    <div v-else class="rk-empty" role="alert">
+      {{ loadError || 'Không tải được dữ liệu báo cáo.' }}
+      <button class="rk-btn ghost" :disabled="loading" @click="load">Thử lại</button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { api } from '@/api';
 import { ref, computed, onMounted, watch } from 'vue';
+import { vietnamDateRange } from '@/utils/report-period';
 
 const pipe = ref<any>(null);
 const pool = ref<any>(null);
 const loading = ref(true);
 const range = ref('30d');
+const loadError = ref('');
+let loadSequence = 0;
 
 const ranges = [
   { key: 'today', label: 'Hôm nay', days: 0 },
@@ -266,24 +279,20 @@ const rangeLabel = computed(() => ranges.find((r) => r.key === range.value)?.lab
 
 function dateRange() {
   const days = ranges.find((r) => r.key === range.value)?.days ?? 30;
-  const toD = new Date();
-  const fromD = new Date();
-  fromD.setDate(fromD.getDate() - days);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: iso(fromD), to: iso(toD) };
+  return vietnamDateRange(Math.max(1, days));
 }
 
 // ---- formatters (vi-VN) ----
 const vi = new Intl.NumberFormat('vi-VN');
 const vi1 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 function fmtInt(v: any): string {
-  return v == null || isNaN(Number(v)) ? '0' : vi.format(Math.round(Number(v)));
+  return v == null || isNaN(Number(v)) ? 'Chưa có dữ liệu' : vi.format(Math.round(Number(v)));
 }
 function fmtNum(v: any): string {
-  return v == null || isNaN(Number(v)) ? '0' : vi1.format(Number(v));
+  return v == null || isNaN(Number(v)) ? 'Chưa có dữ liệu' : vi1.format(Number(v));
 }
 function fmtPct(v: any): string {
-  return v == null || isNaN(Number(v)) ? '0' : vi1.format(Number(v));
+  return v == null || isNaN(Number(v)) ? 'Chưa có dữ liệu' : vi1.format(Number(v));
 }
 function clampPct(v: any): number {
   const n = Number(v);
@@ -331,12 +340,14 @@ function initials(name?: string): string {
   return (a + b).toUpperCase();
 }
 function barCls(rate: any): string {
+  if (rate == null) return '';
   const n = Number(rate) || 0;
   if (n >= 20) return 'ok';
   if (n < 6) return 'warn';
   return '';
 }
 function closedPillCls(rate: any): string {
+  if (rate == null) return '';
   const n = Number(rate) || 0;
   if (n >= 12) return 'ok';
   if (n < 6) return 'warn';
@@ -357,21 +368,30 @@ function stuckPillCls(v: any): string {
 
 // ---- load ----
 async function load() {
+  const sequence = ++loadSequence;
+  const { from, to } = dateRange();
   loading.value = true;
+  pipe.value = null;
+  pool.value = null;
+  loadError.value = '';
   try {
-    const { from, to } = dateRange();
-    const [a, b] = await Promise.all([
+    const [a, b] = await Promise.allSettled([
       api.get('/reports/pipeline', { params: { from, to } }),
       api.get('/reports/lead-pool', { params: { from, to } }),
     ]);
-    pipe.value = a.data;
-    pool.value = b.data;
+    if (sequence !== loadSequence) return;
+    if (a.status === 'fulfilled' && a.value.data.from === from && a.value.data.to === to) pipe.value = a.value.data;
+    else console.error('[PipelineReport] pipeline request failed', a.status === 'rejected' ? a.reason : a.value.data);
+    if (b.status === 'fulfilled' && b.value.data.from === from && b.value.data.to === to) pool.value = b.value.data;
+    else console.error('[PipelineReport] lead-pool request failed', b.status === 'rejected' ? b.reason : b.value.data);
+    if (!pipe.value || !pool.value) loadError.value = 'Một phần dữ liệu chưa tải được hoặc không khớp kỳ đã chọn. Hãy thử lại.';
   } catch (e) {
-    console.error('[PipelineReport] load failed', e);
-    pipe.value = null;
-    pool.value = null;
+    if (sequence === loadSequence) {
+      loadError.value = 'Không tải được báo cáo Pipeline. Hãy thử lại.';
+      console.error('[PipelineReport] load failed', e);
+    }
   } finally {
-    loading.value = false;
+    if (sequence === loadSequence) loading.value = false;
   }
 }
 

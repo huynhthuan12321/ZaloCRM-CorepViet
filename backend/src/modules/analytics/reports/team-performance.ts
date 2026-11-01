@@ -1,3 +1,5 @@
+import { getResponseTimeAnalysis } from './response-time.js';
+import { reportModelWhere, messageReportSql, type ReportScope } from '../../dashboard/report-scope.js';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 /**
@@ -5,6 +7,7 @@
  * appointments completed, avg response time.
  */
 import { prisma } from '../../../shared/database/prisma-client.js';
+import { resolveReportPeriod } from '../../dashboard/report-period.js';
 
 export interface TeamMember {
   userId: string;
@@ -23,14 +26,13 @@ export async function getTeamPerformance(
   orgId: string,
   from: string,
   to: string,
+  scope: ReportScope,
 ): Promise<TeamPerformanceResult> {
-  const gte = new Date(from);
-  const lt = new Date(to);
-  lt.setDate(lt.getDate() + 1);
+  const { start: gte, end: lt, dateStart, dateEnd } = resolveReportPeriod({ from, to }, { defaultDays: 1 });
 
   // Get all active users in org
   const orgUsers = await prisma.user.findMany({
-    where: { orgId, isActive: true },
+    where: { AND: [{ orgId, isActive: true }, reportModelWhere(scope, 'user')] },
     select: { id: true, fullName: true },
   });
 
@@ -45,7 +47,7 @@ export async function getTeamPerformance(
       SELECT m.replied_by_user_id AS user_id, COUNT(*)::bigint AS cnt
       FROM messages m
       JOIN conversations c ON c.id = m.conversation_id
-      WHERE c.org_id = ${orgId}
+      WHERE ${messageReportSql(scope, 'people')}
         AND m.sender_type = 'self'
         AND m.replied_by_user_id = ANY(${userIds})
         AND m.sent_at >= ${gte} AND m.sent_at < ${lt}
@@ -54,35 +56,27 @@ export async function getTeamPerformance(
     // Contacts converted per user
     prisma.contact.groupBy({
       by: ['assignedUserId'],
-      where: {
+      where: { AND: [{
         orgId,
         status: 'converted',
         assignedUserId: { in: userIds },
         updatedAt: { gte, lt },
-      },
+      }, reportModelWhere(scope, 'contact')] },
       _count: true,
     }),
     // Appointments completed per user
     prisma.appointment.groupBy({
       by: ['assignedUserId'],
-      where: {
+      where: { AND: [{
         orgId,
         status: 'completed',
         assignedUserId: { in: userIds },
-        appointmentDate: { gte, lt },
-      },
+        appointmentDate: { gte: dateStart, lt: dateEnd },
+      }, reportModelWhere(scope, 'appointment')] },
       _count: true,
     }),
-    // Avg response time from DailyMessageStat
-    prisma.$queryRaw<Array<{ user_id: string; avg_rt: number | null }>>`
-      SELECT user_id, AVG(avg_response_time_seconds)::float AS avg_rt
-      FROM daily_message_stats
-      WHERE org_id = ${orgId}
-        AND user_id = ANY(${userIds})
-        AND stat_date >= ${gte}::date AND stat_date < ${lt}::date
-        AND avg_response_time_seconds IS NOT NULL
-      GROUP BY user_id
-    `,
+    // Shared last-customer-message pairing, weighted by actual response turns.
+    getResponseTimeAnalysis(orgId, from, to, scope),
   ]);
 
   // Build lookup maps
@@ -91,7 +85,7 @@ export async function getTeamPerformance(
     convertedRows.map((r) => [r.assignedUserId, r._count]),
   );
   const aptMap = new Map(aptRows.map((r) => [r.assignedUserId, r._count]));
-  const rtMap = new Map(rtRows.map((r) => [r.user_id, r.avg_rt]));
+  const rtMap = new Map(rtRows.byUser.map((r) => [r.userId, r.avgSeconds]));
 
   const users: TeamMember[] = orgUsers.map((u) => ({
     userId: u.id,

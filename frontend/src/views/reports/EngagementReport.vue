@@ -1,15 +1,26 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { api } from '@/api'
+import { vietnamDateRange } from '@/utils/report-period'
+
+type Range = 'today' | '7d' | '30d'
+
+const range = ref<Range>('30d')
+const ranges: { key: Range; label: string }[] = [
+  { key: 'today', label: 'Hôm nay' },
+  { key: '7d', label: '7 ngày' },
+  { key: '30d', label: '30 ngày' },
+]
 
 interface Kpis {
   hotCount: number
   coolingCount: number
-  customerInitiatedPct: number
-  avgInteractionsPerDay: number
+  customerInitiatedPct: number | null
+  avgInteractionsPerDay: number | null
 }
+type Availability = { status: 'available' } | { status: 'unavailable'; reason: string }
 interface HeatRow { contactId: string; name: string; cells: number[] }
 interface PatternSlice { pattern: string; count: number }
 interface CoolingRow { contactId: string; name: string; saleName: string; silentDays: number; score: number }
@@ -18,7 +29,12 @@ interface InteractionTypes { inbound: number; outbound: number; reaction: number
 interface EngagementData {
   from?: string
   to?: string
+  asOf?: string
   kpis: Kpis
+  availability?: {
+    customerInitiatedPct?: Availability
+    avgInteractionsPerDay?: Availability
+  }
   heatmap: HeatRow[]
   patternDist: PatternSlice[]
   cooling: CoolingRow[]
@@ -28,29 +44,51 @@ interface EngagementData {
 
 const data = ref<EngagementData | null>(null)
 const loading = ref(true)
+const loadError = ref('')
+let requestId = 0
+
+function rangeDates(selected: Range) {
+  return vietnamDateRange(selected === 'today' ? 1 : selected === '7d' ? 7 : 30)
+}
 
 async function load() {
+  const currentRequestId = ++requestId
   loading.value = true
+  loadError.value = ''
+  data.value = null
   try {
-    const res = await api.get('/reports/engagement')
+    const period = rangeDates(range.value)
+    const res = await api.get('/reports/engagement', { params: period })
+    if (currentRequestId !== requestId) return
+    if (res.data.from !== period.from || res.data.to !== period.to) {
+      throw new Error('Engagement response period mismatch')
+    }
     data.value = res.data
-  } catch (e) {
-    data.value = null
+  } catch (error) {
+    if (currentRequestId === requestId) {
+      data.value = null
+      loadError.value = 'Không tải được báo cáo tương tác. Hãy thử lại.'
+      console.error('[EngagementReport] load failed', error)
+    }
   } finally {
-    loading.value = false
+    if (currentRequestId === requestId) loading.value = false
   }
 }
 onMounted(load)
+watch(range, load)
 
 // ── helpers ──────────────────────────────────────────────
 const nf = new Intl.NumberFormat('vi-VN')
 function fmt(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return '0'
+  if (n == null || !Number.isFinite(n)) return 'Chưa có dữ liệu'
   return nf.format(n)
 }
 function pct(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return '0'
+  if (n == null || !Number.isFinite(n)) return 'Chưa có dữ liệu'
   return nf.format(Math.round(n))
+}
+function hasValue(n: number | null | undefined): n is number {
+  return n != null && Number.isFinite(n)
 }
 
 const AV_COLORS = ['#1786be', '#7a4fb0', '#b0734f', '#4fb09a', '#b04f6e', '#4f7ab0', '#b0a14f', '#5b8f4f']
@@ -133,9 +171,18 @@ function silentPill(days: number): string {
 
       <!-- FILTERS -->
       <div class="rpt-filters">
-        <div class="seg"><button class="on">28 ngày</button></div>
+        <div class="seg">
+          <button
+            v-for="item in ranges"
+            :key="item.key"
+            :class="{ on: range === item.key }"
+            :aria-pressed="range === item.key"
+            :disabled="loading"
+            @click="range = item.key"
+          >{{ item.label }}</button>
+        </div>
         <span class="faint" style="font-size: 11.5px; font-weight: 600">
-          Cửa sổ cố định cho heatmap nhịp tương tác
+          Kỳ áp dụng cho chỉ số tổng hợp; heatmap vẫn là cửa sổ cố định 28 ngày UTC
         </span>
       </div>
 
@@ -144,11 +191,21 @@ function silentPill(days: number): string {
         <v-icon size="18">mdi-loading</v-icon> Đang tải báo cáo tương tác…
       </div>
 
+      <div v-else-if="loadError" class="rk-empty" role="alert">
+        {{ loadError }}
+        <button class="rk-btn ghost" :disabled="loading" @click="load">Thử lại</button>
+      </div>
+
       <!-- EMPTY -->
-      <div v-else-if="!data" class="rk-empty">Không có dữ liệu tương tác cho kỳ này.</div>
+      <div v-else-if="!data" class="rk-empty">Chưa có dữ liệu tương tác cho kỳ này.</div>
 
       <!-- CONTENT -->
       <template v-else>
+        <div class="faint" style="margin-bottom: 14px; font-size: 12px">
+          Chỉ số tổng hợp: {{ data.from }} – {{ data.to }} (giờ Việt Nam).
+          KH nóng/nguội, phân bố nhịp và danh sách khách là snapshot tại {{ data.asOf }}.
+        </div>
+
         <!-- KPI ROW -->
         <div class="grid g-4" style="margin-bottom: 18px">
           <div class="kpi accent-ok">
@@ -172,7 +229,9 @@ function silentPill(days: number): string {
               <span class="label">KH khởi tạo chat</span>
               <span class="kic"><v-icon size="18">mdi-message-arrow-left-outline</v-icon></span>
             </div>
-            <div class="val">{{ pct(data.kpis.customerInitiatedPct) }}<span class="u">%</span></div>
+            <div class="val">
+              {{ pct(data.kpis.customerInitiatedPct) }}<span v-if="hasValue(data.kpis.customerInitiatedPct)" class="u">%</span>
+            </div>
             <div class="delta flat"><v-icon size="14">mdi-circle-medium</v-icon> Inbound chủ động</div>
           </div>
           <div class="kpi">

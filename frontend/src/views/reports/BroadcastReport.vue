@@ -137,6 +137,7 @@
 <script setup lang="ts">
 import { api } from '@/api';
 import { ref, onMounted, watch, computed } from 'vue';
+import { vietnamDateRange } from '@/utils/report-period';
 
 const data = ref<any>(null);
 const loading = ref(true);
@@ -153,20 +154,8 @@ const byNick = computed<any[]>(() => data.value?.byNick ?? []);
 const byList = computed<any[]>(() => data.value?.byList ?? []);
 const recentRuns = computed<any[]>(() => data.value?.recentRuns ?? []);
 
-function pad(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function rangeDates() {
-  const to = new Date();
-  const from = new Date();
-  if (range.value === 'today') {
-    // from = to (same day)
-  } else if (range.value === '7d') {
-    from.setDate(from.getDate() - 6);
-  } else {
-    from.setDate(from.getDate() - 29);
-  }
-  return { from: pad(from), to: pad(to) };
+  return vietnamDateRange(range.value === 'today' ? 1 : range.value === '7d' ? 7 : 30);
 }
 
 async function load() {
@@ -206,6 +195,6 @@ function statusLabel(s: string): string {
 }
 function fmtDate(d: string | null): string {
   if (!d) return '—';
-  return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+  return new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
 }
 </script>

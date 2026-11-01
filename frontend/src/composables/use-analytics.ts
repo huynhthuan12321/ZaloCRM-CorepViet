@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 import { ref } from 'vue';
 import { api } from '@/api';
+import { vietnamDateRange } from '@/utils/report-period';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -12,9 +13,15 @@ export interface FunnelStage {
 }
 
 export interface ConversionFunnelData {
+  from?: string;
+  to?: string;
+  asOf?: string;
+  stagesMeaning?: 'created_in_period_current_status';
   stages: FunnelStage[];
   totalContacts: number;
   avgConversionDays: number | null;
+  avgConversionDaysAvailability?: 'available' | 'unavailable';
+  avgConversionDaysReason?: string;
 }
 
 export interface TeamMember {
@@ -34,6 +41,16 @@ export interface ResponseTimeData {
   daily: { date: string; avgSeconds: number }[];
   overall: number | null;
   byUser: { userId: string; fullName: string; avgSeconds: number }[];
+  availability?: 'available' | 'unavailable';
+  reason?: string;
+  /** Legacy aliases are main-only; shared-only nicks have separate counters. */
+  pending?: number;
+  unattributed?: number;
+  mainPending?: number;
+  sharedPending?: number;
+  mainUnattributed?: number;
+  sharedUnattributed?: number;
+  asOf?: string;
 }
 
 export interface ReportConfig {
@@ -45,7 +62,12 @@ export interface ReportConfig {
 
 export interface CustomReportResult {
   labels: string[];
-  datasets: { metric: string; data: number[] }[];
+  datasets: {
+    metric: string;
+    data: (number | null)[];
+    availability?: 'available' | 'unavailable';
+    reason?: string;
+  }[];
 }
 
 export interface SavedReport {
@@ -58,12 +80,7 @@ export interface SavedReport {
 
 // ── Composable ────────────────────────────────────────────────────────────────
 
-const defaultFrom = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return d.toISOString().slice(0, 10);
-};
-const defaultTo = () => new Date().toISOString().slice(0, 10);
+const defaultRange = () => vietnamDateRange(30);
 
 export function useAnalytics() {
   const funnel = ref<ConversionFunnelData | null>(null);
@@ -72,8 +89,9 @@ export function useAnalytics() {
   const customResult = ref<CustomReportResult | null>(null);
   const savedReports = ref<SavedReport[]>([]);
   const loading = ref(false);
-  const dateFrom = ref(defaultFrom());
-  const dateTo = ref(defaultTo());
+  const initialRange = defaultRange();
+  const dateFrom = ref(initialRange.from);
+  const dateTo = ref(initialRange.to);
 
   async function fetchFunnel() {
     const res = await api.get('/analytics/conversion-funnel', {

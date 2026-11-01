@@ -13,8 +13,8 @@
         <div>
           <div class="rpt-h1">Hiệu suất Sale &amp; Team</div>
           <div class="rpt-sub">
-            Ai đang làm tốt, ai đang kẹt — đo công bằng theo nhịp thật của từng người.
-            Xếp hạng, rollup theo phòng ban và tốc độ phản hồi thực tế.
+            Theo dõi hoạt động, lịch hẹn và tốc độ phản hồi từ dữ liệu đã ghi nhận.
+            Chỉ số chốt và xếp hạng hiệu quả sẽ hiển thị khi có nguồn đo phù hợp.
           </div>
         </div>
       </div>
@@ -50,7 +50,7 @@
       <div class="grid g-4" style="margin-bottom:18px">
         <div class="kpi">
           <div class="top">
-            <span class="label">Sale hoạt động</span>
+            <span class="label">Sale có KH phụ trách</span>
             <span class="kic"><v-icon icon="mdi-account-check-outline" size="18" /></span>
           </div>
           <div class="val">
@@ -69,49 +69,44 @@
             <span class="label">Tốc độ phản hồi TB</span>
             <span class="kic"><v-icon icon="mdi-timer-sand" size="18" /></span>
           </div>
-          <div class="val">{{ fmt(data.kpis.avgResponseMin) }}<span class="u">phút</span></div>
+          <div class="val">{{ fmt(data.kpis.avgResponseMin) }}<span v-if="data.kpis.avgResponseMin != null" class="u">phút</span></div>
         </div>
         <div class="kpi">
           <div class="top">
-            <span class="label">Tỉ lệ chốt TB</span>
+            <span class="label">Tỉ lệ chốt hiện tại</span>
             <span class="kic"><v-icon icon="mdi-flag-checkered" size="18" /></span>
           </div>
-          <div class="val">{{ fmtPct(data.kpis.avgCloseRate) }}<span class="u">%</span></div>
+          <div class="val">{{ fmtPct(data.kpis.avgCloseRate) }}<span v-if="data.kpis.avgCloseRate != null" class="u">%</span></div>
         </div>
       </div>
 
       <!-- LEADERBOARD -->
       <div class="card" style="margin-bottom:14px">
         <div class="card-h">
-          <div class="t"><v-icon icon="mdi-trophy-outline" size="18" /> Bảng xếp hạng Sale</div>
-          <div class="meta">{{ rangeLabel }} · điểm hiệu suất tổng hợp 0–100</div>
+          <div class="t"><v-icon icon="mdi-account-group-outline" size="18" /> Số liệu theo Sale</div>
+          <div class="meta">
+            {{ rangeLabel }} · khách phụ trách và trạng thái chốt là snapshot
+            <span v-if="data.sentUnattributed > 0"> · {{ fmt(data.sentUnattributed) }} tin chưa xác định người gửi</span>
+          </div>
         </div>
         <div class="card-b" style="padding:0">
           <table v-if="data.sales.length" class="tbl">
             <thead>
               <tr>
-                <th style="width:40px">#</th>
                 <th>Sale</th>
                 <th class="num">KH phụ trách</th>
                 <th class="num">Tin gửi</th>
                 <th class="num">Phản hồi TB</th>
-                <th class="num">Lịch hẹn</th>
-                <th class="num">Chốt</th>
+                <th class="num">Lịch hẹn (kỳ)</th>
+                <th class="num">Chốt hiện tại</th>
                 <th class="num">Lead pool dùng</th>
-                <th style="width:170px">Điểm hiệu suất</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="(s, i) in data.sales"
+                v-for="s in data.sales"
                 :key="s.userId"
-                :style="i < 3 ? 'background:var(--rk-brand-softer)' : ''"
               >
-                <td
-                  class="b"
-                  :class="{ muted: i >= 3 }"
-                  :style="i < 3 ? 'color:var(--rk-brand-700)' : ''"
-                >{{ i + 1 }}</td>
                 <td>
                   <div class="cellname">
                     <span class="av" :style="{ background: avColor(s.name) }">{{ initials(s.name) }}</span>
@@ -124,19 +119,11 @@
                 <td class="num">{{ fmt(s.contacts) }}</td>
                 <td class="num">{{ fmt(s.sent) }}</td>
                 <td class="num">
-                  <span class="pill" :class="respClass(s.avgResponseMin)">{{ fmt(s.avgResponseMin) }} phút</span>
+                  <span class="pill" :class="respClass(s.avgResponseMin)">{{ fmt(s.avgResponseMin) }}<template v-if="s.avgResponseMin != null"> phút</template></span>
                 </td>
                 <td class="num">{{ fmt(s.apptDone) }} / {{ fmt(s.apptNoShow) }}</td>
-                <td class="num"><span class="pill ok">{{ fmt(s.closed) }}</span></td>
+                <td class="num"><span class="pill" :class="s.closed == null ? '' : 'ok'">{{ fmt(s.closed) }}</span></td>
                 <td class="num">{{ fmt(s.leadPoolUsed) }}</td>
-                <td>
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <div class="bar" :class="scoreClass(s.score)" style="flex:1">
-                      <i :style="{ width: clampPct(s.score) + '%' }"></i>
-                    </div>
-                    <span class="b" style="font-variant-numeric:tabular-nums">{{ fmt(s.score) }}</span>
-                  </div>
-                </td>
               </tr>
             </tbody>
           </table>
@@ -150,7 +137,7 @@
         <div class="card">
           <div class="card-h">
             <div class="t"><v-icon icon="mdi-office-building-outline" size="18" /> Rollup theo phòng ban</div>
-            <div class="meta">{{ rangeLabel }}</div>
+            <div class="meta">{{ rangeLabel }} · khách là snapshot, tin gửi trong kỳ</div>
           </div>
           <div class="card-b" style="padding:0">
             <table v-if="data.byDept.length" class="tbl">
@@ -167,20 +154,20 @@
                 <tr v-for="d in data.byDept" :key="d.deptName">
                   <td>
                     <div class="cellname">
-                      <span class="dot" :class="d.closeRate >= 10 ? 'ok' : 'warn'"></span>
+                      <span class="dot" :class="d.closeRate == null ? '' : d.closeRate >= 10 ? 'ok' : 'warn'"></span>
                       <div>{{ d.deptName || '—' }}</div>
                     </div>
                   </td>
                   <td class="num">{{ fmt(d.contacts) }}</td>
                   <td class="num">{{ fmt(d.sent) }}</td>
                   <td class="num">
-                    <span class="pill" :class="d.closeRate >= 10 ? 'ok' : 'warn'">{{ fmt(d.closed) }}</span>
+                    <span class="pill" :class="d.closeRate == null ? '' : d.closeRate >= 10 ? 'ok' : 'warn'">{{ fmt(d.closed) }}</span>
                   </td>
                   <td class="num">
                     <span
                       class="b"
-                      :style="{ color: d.closeRate >= 10 ? '#157f3c' : '#b45309' }"
-                    >{{ fmtPct(d.closeRate) }}%</span>
+                      :style="{ color: d.closeRate == null ? undefined : d.closeRate >= 10 ? '#157f3c' : '#b45309' }"
+                    >{{ fmtPct(d.closeRate) }}<template v-if="d.closeRate != null">%</template></span>
                   </td>
                 </tr>
               </tbody>
@@ -196,7 +183,7 @@
             <div class="meta">Theo lượt trả lời · {{ rangeLabel }}</div>
           </div>
           <div class="card-b">
-            <div v-if="data.responseBuckets.length" class="chart">
+            <div v-if="data.responseBuckets?.length" class="chart">
               <div v-for="b in data.responseBuckets" :key="b.label" class="col">
                 <div class="stack">
                   <i :style="{ height: bucketHeight(b.count) + '%' }"></i>
@@ -204,7 +191,7 @@
                 <div class="x">{{ b.label }}</div>
               </div>
             </div>
-            <div v-else class="rk-empty">Chưa có dữ liệu phản hồi.</div>
+            <div v-else class="rk-empty">Chưa có dữ liệu phản hồi trong kỳ.</div>
           </div>
         </div>
       </div>
@@ -230,12 +217,12 @@
         </div>
         <div class="kpi">
           <div class="top"><span class="label">Module dùng nhiều nhất</span><span class="kic"><v-icon icon="mdi-view-grid-outline" size="18" /></span></div>
-          <div class="val" style="font-size:18px;line-height:1.3">{{ usage.kpis.topModule }}</div>
+          <div class="val" style="font-size:18px;line-height:1.3">{{ usage.kpis.topModule ?? 'Chưa có dữ liệu' }}</div>
         </div>
       </div>
 
       <div v-if="usage" class="grid g-2">
-        <!-- Xếp hạng dùng CRM hiệu quả -->
+        <!-- Hiệu quả theo kết quả CRM -->
         <div class="card">
           <div class="card-h">
             <div class="t"><v-icon icon="mdi-medal-outline" size="18" /> Xếp hạng dùng CRM hiệu quả</div>
@@ -269,7 +256,7 @@
                   <td class="num b">{{ fmtPct(s.closesPerHour) }}</td>
                   <td>
                     <div style="display:flex;align-items:center;gap:8px">
-                      <div class="bar" :class="scoreClass(s.effScore)" style="flex:1"><i :style="{ width: clampPct(s.effScore) + '%' }"></i></div>
+                      <div v-if="s.effScore != null" class="bar" :class="scoreClass(s.effScore)" style="flex:1"><i :style="{ width: clampPct(s.effScore) + '%' }"></i></div>
                       <span class="b" style="font-variant-numeric:tabular-nums">{{ fmt(s.effScore) }}</span>
                     </div>
                   </td>
@@ -374,7 +361,7 @@
       </div>
 
       <!-- 3) QUADRANT — Nỗ lực vs Kết quả -->
-      <div v-if="usage?.bySale?.length" class="card" style="margin-top:14px">
+      <div v-if="usage?.bySale?.length && usage?.availability?.outcomes?.status !== 'unavailable'" class="card" style="margin-top:14px">
         <div class="card-h">
           <div class="t"><v-icon icon="mdi-chart-scatter-plot" size="18" /> Nỗ lực vs Kết quả</div>
           <div class="meta">giờ dùng CRM × số chốt · {{ rangeLabel }}</div>
@@ -412,7 +399,7 @@
       </div>
 
       <!-- 4) FUNNEL per sale — Phễu hoạt động → chốt -->
-      <div v-if="usage?.funnel?.length" class="card" style="margin-top:14px">
+      <div v-if="usage?.funnel?.length && usage?.availability?.outcomes?.status !== 'unavailable'" class="card" style="margin-top:14px">
         <div class="card-h">
           <div class="t"><v-icon icon="mdi-filter-variant" size="18" /> Phễu hoạt động → chốt</div>
           <div class="meta">Tin gửi → KH phản hồi → Lịch hẹn → Chốt · top {{ usage.funnel.length }} · {{ rangeLabel }}</div>
@@ -439,6 +426,9 @@
             </div>
           </div>
         </div>
+      </div>
+      <div v-if="usage?.availability?.outcomes?.status === 'unavailable'" class="rk-empty" role="status">
+        Chưa thể tính hiệu quả/chốt vì chưa xác định được trạng thái thắng trong pipeline.
       </div>
 
       <!-- 5) PERIOD COMPARE — So sánh kỳ này vs kỳ trước -->
@@ -474,9 +464,10 @@
                 </td>
                 <td class="num">{{ fmtDur(c.avgMin) }}</td>
                 <td class="num">
-                  <span class="pill" :class="deltaClass(c.dAvgMin)">
+                  <span v-if="c.dAvgMin != null" class="pill" :class="deltaClass(c.dAvgMin)">
                     <v-icon :icon="deltaIcon(c.dAvgMin)" size="12" /> {{ fmtDur(Math.abs(c.dAvgMin)) }}
                   </span>
+                  <span v-else>Chưa có dữ liệu</span>
                 </td>
               </tr>
             </tbody>
@@ -487,15 +478,23 @@
       <div v-if="usage?.note" class="usage-note">
         <v-icon icon="mdi-information-outline" size="14" /> {{ usage.note }}
       </div>
+      <div v-if="usageError" class="rk-empty" role="status">{{ usageError }}</div>
+      <div v-if="usage?.availability?.activity?.status === 'unavailable'" class="rk-empty" role="status">
+        Hoạt động CRM vượt giới hạn truy vấn; các KPI sử dụng CRM được ẩn để tránh hiển thị số liệu thiếu.
+      </div>
     </template>
 
     <!-- EMPTY -->
-    <div v-else class="rk-empty">Không tải được dữ liệu báo cáo.</div>
+    <div v-else class="rk-empty" role="alert">
+      {{ salesError || 'Không tải được dữ liệu báo cáo.' }}
+      <button class="rk-btn ghost" :disabled="loading" @click="load">Thử lại</button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue';
+import { vietnamDateRange } from '@/utils/report-period';
 import { api } from '@/api';
 
 interface SaleRow {
@@ -504,19 +503,19 @@ interface SaleRow {
   deptName: string;
   contacts: number;
   sent: number;
-  avgResponseMin: number;
+  avgResponseMin: number | null;
   apptDone: number;
   apptNoShow: number;
-  closed: number;
+  closed: number | null;
   leadPoolUsed: number;
-  score: number;
+  score: number | null;
 }
 interface DeptRow {
   deptName: string;
   contacts: number;
   sent: number;
-  closed: number;
-  closeRate: number;
+  closed: number | null;
+  closeRate: number | null;
 }
 interface Bucket { label: string; count: number }
 interface SalesData {
@@ -526,42 +525,48 @@ interface SalesData {
     activeSales: number;
     totalSales: number;
     avgSentPerSale: number;
-    avgResponseMin: number;
-    avgCloseRate: number;
+    avgResponseMin: number | null;
+    avgCloseRate: number | null;
   };
   sales: SaleRow[];
   byDept: DeptRow[];
-  responseBuckets: Bucket[];
+  responseBuckets: Bucket[] | null;
+  sentUnattributed: number;
 }
 
 // Mức độ dùng CRM (endpoint #9 /reports/crm-usage)
 interface UsageSale {
   userId: string; name: string; deptName: string;
-  activeDays: number; avgActiveMinPerDay: number; actions: number;
-  topModule: string; closesPerHour: number; effScore: number;
-  activeHours: number; closed: number;
+  activeDays: number; avgActiveMinPerDay: number | null; actions: number;
+  topModule: string; closesPerHour: number | null; effScore: number | null;
+  activeHours: number; closed: number | null;
 }
 interface ModuleUsage { module: string; label: string; actions: number; pct: number }
 interface DailyPoint { date: string; min: number }
 interface DailySeries { userId: string; name: string; color: string; points: DailyPoint[] }
 interface HeatCell { d: number; h: number; count: number }
-interface FunnelRow { userId: string; name: string; sent: number; replied: number; appts: number; closed: number }
+interface FunnelRow { userId: string; name: string; sent: number; replied: number; appts: number; closed: number | null }
 interface CompareRow {
   userId: string; name: string;
   actions: number; prevActions: number; dActions: number;
-  avgMin: number; prevAvgMin: number; dAvgMin: number;
+  avgMin: number | null; prevAvgMin: number | null; dAvgMin: number | null;
 }
 interface CrmUsageData {
   from: string; to: string;
-  kpis: { activeSalesToday: number; avgActiveMinPerDay: number; totalActions: number; topModule: string };
+  kpis: { activeSalesToday: number | null; avgActiveMinPerDay: number | null; totalActions: number | null; topModule: string | null };
   bySale: UsageSale[];
   moduleUsage: ModuleUsage[];
   note: string;
   dailySeries: DailySeries[];
   days: string[];
-  hourHeat: { max: number; cells: HeatCell[] };
+  hourHeat: { max: number; cells: HeatCell[] } | null;
   funnel: FunnelRow[];
   compare: CompareRow[];
+  availability?: {
+    activity?: { status: 'available' | 'unavailable'; reason?: string };
+    previousActivity?: { status: 'available' | 'unavailable'; reason?: string };
+    outcomes?: { status: 'available' | 'unavailable'; reason?: string };
+  };
 }
 
 const ranges = [
@@ -574,36 +579,54 @@ const data = ref<SalesData | null>(null);
 const usage = ref<CrmUsageData | null>(null);
 const loading = ref(true);
 const range = ref<string>('30d');
+const salesError = ref('');
+const usageError = ref('');
+let loadSequence = 0;
 
 const rangeLabel = computed(() => ranges.find((r) => r.key === range.value)?.label ?? '');
 
 function dateRange(): { from: string; to: string } {
   const days = ranges.find((r) => r.key === range.value)?.days ?? 30;
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - days);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: iso(from), to: iso(to) };
+  return vietnamDateRange(days);
 }
 
 async function load() {
+  const sequence = ++loadSequence;
+  const { from, to } = dateRange();
   loading.value = true;
+  data.value = null;
+  usage.value = null;
+  salesError.value = '';
+  usageError.value = '';
   try {
-    const { from, to } = dateRange();
     const [perf, use] = await Promise.allSettled([
       api.get('/reports/sales-performance', { params: { from, to } }),
       api.get('/reports/crm-usage', { params: { from, to } }),
     ]);
-    data.value = perf.status === 'fulfilled' ? perf.value.data : null;
-    usage.value = use.status === 'fulfilled' ? use.value.data : null;
-    if (perf.status === 'rejected') console.error('[SalesReport] sales-performance failed', perf.reason);
-    if (use.status === 'rejected') console.error('[SalesReport] crm-usage failed', use.reason);
+    if (sequence !== loadSequence) return;
+    if (perf.status === 'fulfilled' && perf.value.data.from === from && perf.value.data.to === to) {
+      data.value = perf.value.data;
+    } else {
+      salesError.value = perf.status === 'rejected'
+        ? 'Không tải được báo cáo hiệu suất Sale. Hãy thử lại.'
+        : 'API trả về dữ liệu không khớp kỳ đã chọn.';
+      console.error('[SalesReport] sales-performance failed', perf.status === 'rejected' ? perf.reason : perf.value.data);
+    }
+    if (use.status === 'fulfilled' && use.value.data.from === from && use.value.data.to === to) {
+      usage.value = use.value.data;
+    } else {
+      usageError.value = use.status === 'rejected'
+        ? 'Không tải được dữ liệu sử dụng CRM. Hãy thử lại.'
+        : 'API sử dụng CRM trả về dữ liệu không khớp kỳ đã chọn.';
+      console.error('[SalesReport] crm-usage failed', use.status === 'rejected' ? use.reason : use.value.data);
+    }
   } catch (e) {
-    console.error('[SalesReport] load failed', e);
-    data.value = null;
-    usage.value = null;
+    if (sequence === loadSequence) {
+      salesError.value = 'Không tải được dữ liệu báo cáo. Hãy thử lại.';
+      console.error('[SalesReport] load failed', e);
+    }
   } finally {
-    loading.value = false;
+    if (sequence === loadSequence) loading.value = false;
   }
 }
 
@@ -613,14 +636,15 @@ watch(range, load);
 // ---- formatting helpers (vi-VN) ----
 const nf = new Intl.NumberFormat('vi-VN');
 function fmt(n: number | null | undefined): string {
-  return n == null ? '0' : nf.format(Math.round(n));
+  return n == null ? 'Chưa có dữ liệu' : nf.format(Math.round(n));
 }
 function fmtPct(n: number | null | undefined): string {
-  return n == null ? '0' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n);
+  return n == null ? 'Chưa có dữ liệu' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n);
 }
 // phút → "Xh Ym" (cho thời gian dùng CRM)
 function fmtDur(min: number | null | undefined): string {
-  const m = Math.round(Number(min) || 0);
+  if (min == null) return 'Chưa có dữ liệu';
+  const m = Math.round(min);
   if (m <= 0) return '0m';
   const h = Math.floor(m / 60), r = m % 60;
   return h > 0 ? (r > 0 ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
@@ -631,12 +655,14 @@ function clampPct(n: number | null | undefined): number {
 }
 
 // response-time thresholds: <10 ok, <20 warn, else danger
-function respClass(min: number): string {
+function respClass(min: number | null): string {
+  if (min == null) return '';
   if (min < 10) return 'ok';
   if (min < 20) return 'warn';
   return 'danger';
 }
-function scoreClass(score: number): string {
+function scoreClass(score: number | null): string {
+  if (score == null) return '';
   if (score >= 75) return 'ok';
   if (score >= 50) return '';
   return 'danger';
@@ -644,7 +670,7 @@ function scoreClass(score: number): string {
 
 // bar chart heights normalized to max bucket
 const maxBucket = computed(() =>
-  Math.max(1, ...(data.value?.responseBuckets.map((b) => b.count) ?? [1])),
+  Math.max(1, ...(data.value?.responseBuckets?.map((b) => b.count) ?? [1])),
 );
 function bucketHeight(count: number): number {
   return Math.max(4, Math.round((count / maxBucket.value) * 100));
@@ -784,8 +810,8 @@ const quadDots = computed(() =>
 );
 
 // ---- 4) FUNNEL per sale: chuẩn hoá theo sent ----
-function funnelPct(value: number, sent: number): number {
-  if (!sent || sent <= 0) return 0;
+function funnelPct(value: number | null, sent: number): number {
+  if (value == null || !sent || sent <= 0) return 0;
   return Math.max(0, Math.min(100, (value / sent) * 100));
 }
 
