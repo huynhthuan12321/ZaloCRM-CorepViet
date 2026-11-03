@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 import { Socket } from 'node:net';
-import { resolveProbeHost } from '../http/probe-host.js';
+import { probeLookup, resolveProbeHost } from '../http/probe-host.js';
 
 // A health burst shares one disposable client, never the business Prisma pool.
 let pending: Promise<void> | null = null;
@@ -17,16 +17,20 @@ export function checkDatabaseReadiness(): Promise<void> {
     try {
       const connectionString = process.env.DATABASE_URL;
       if (!connectionString) throw new Error('Database unavailable');
-      const address = await resolveProbeHost(new URL(connectionString).hostname, controller.signal);
-      controller.signal.throwIfAborted();
       socket = new Socket();
-      const connect = socket.connect.bind(socket);
-      // Keep pg's original URL, auth, SSL policy and hostname for TLS verification.
-      // Only the TCP transport uses the bounded resolver's numeric address.
-      socket.connect = ((port: number, _host: string) => connect({ port, host: address })) as typeof socket.connect;
       client = new Client({ connectionString, stream: () => socket!,
         connectionTimeoutMillis: 1000, query_timeout: 1000, statement_timeout: 1000 });
       client.on('error', () => {}); // Status only: never expose credentials/errors.
+      // Use pg's parsed host, including query-string host overrides and sockets.
+      // Leave its URL/auth/SSL parser and original TLS verification host intact.
+      if (!client.host.startsWith('/')) {
+        const addresses = await resolveProbeHost(client.host, controller.signal);
+        controller.signal.throwIfAborted();
+        const connect = socket.connect.bind(socket);
+        socket.connect = ((port: number, host: string) => connect({ port, host,
+          lookup: probeLookup(addresses), autoSelectFamily: true })) as typeof socket.connect;
+      }
+      controller.signal.throwIfAborted();
       await client.connect();
       await client.query('SELECT 1');
     } catch {

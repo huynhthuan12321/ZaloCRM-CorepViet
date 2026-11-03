@@ -12,8 +12,10 @@
 // AOF persistence: Redis container chạy `--appendonly yes --appendfsync everysec`
 // (docker-compose.yml). Verify POC spike 5/5 PASS 2026-06-01.
 
-import { Redis } from 'ioredis';
-import { resolveProbeHost } from '../http/probe-host.js';
+import { Redis, AbstractConnector, type StandaloneConnectionOptions } from 'ioredis';
+import { createConnection as createTcpConnection } from 'node:net';
+import { connect as connectTls } from 'node:tls';
+import { probeLookup, resolveProbeHost } from '../http/probe-host.js';
 import { logger } from '../utils/logger.js';
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://redis:6379';
@@ -75,12 +77,29 @@ export function isBullMQRedisHealthy(): Promise<boolean> {
     try {
       const url = new URL(REDIS_URL);
       const host = url.hostname.replace(/^\[|\]$/g, '');
-      const address = await resolveProbeHost(host, controller.signal);
+      const addresses = await resolveProbeHost(host, controller.signal);
       controller.signal.throwIfAborted();
-      // Preserve URL auth/DB and TLS verification hostname; only TCP uses the address.
-      url.hostname = address.includes(':') ? '[' + address + ']' : address;
-      probe = new Redis(url.toString(), {
+      // Keep ioredis URL parsing/auth/DB and the original TLS verification host.
+      // Only the disposable connector receives pre-resolved OS address results.
+      class ProbeConnector extends AbstractConnector {
+        private options: StandaloneConnectionOptions;
+        constructor(options: unknown) { super(0); this.options = options as StandaloneConnectionOptions; }
+        async connect() {
+          controller.signal.throwIfAborted();
+          const options = { host: this.options.host, port: this.options.port ?? 6379,
+            family: 0, autoSelectFamily: true, lookup: probeLookup(addresses) };
+          this.connecting = true;
+          this.stream = this.options.path
+            ? createTcpConnection({ path: this.options.path })
+            : this.options.tls ? connectTls({ ...options, ...this.options.tls }) : createTcpConnection(options);
+          this.stream.once('error', err => { this.firstError = err; });
+          return this.stream;
+        }
+        disconnect() { this.connecting = false; this.stream?.destroy(); }
+      }
+      probe = new Redis(REDIS_URL, {
         ...(url.protocol === 'rediss:' ? { tls: { servername: host } } : {}),
+        Connector: ProbeConnector,
         lazyConnect: true, enableOfflineQueue: false,
         maxRetriesPerRequest: 0, retryStrategy: () => null,
         connectTimeout: 1000, commandTimeout: 1000, disconnectTimeout: 0,

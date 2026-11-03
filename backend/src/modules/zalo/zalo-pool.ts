@@ -533,7 +533,7 @@ class ZaloAccountPool {
         // Ghi reason='passive' + mốc rớt để FE đếm "đã mất kết nối X phút Y giây" tăng dần.
         // KHÔNG ghi đè nếu đã 'manual' (sale ngắt thủ công rồi nick mới rớt — giữ nguyên manual).
         void prisma.zaloAccount.updateMany({
-          where: { id, orgId, NOT: { disconnectReason: 'manual' } },
+          where: { id, orgId, OR: [{ disconnectReason: null }, { disconnectReason: { not: 'manual' } }] },
           data: { disconnectReason: 'passive', disconnectedAt: new Date() },
         }).catch((err) => logger.warn(`[zalo:${id}] set passive disconnect lỗi:`, err));
         stopMessageSync(id);

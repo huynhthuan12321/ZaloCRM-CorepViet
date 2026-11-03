@@ -191,3 +191,48 @@ describe('RC4 duplicate owner lookup remains scoped without relying on RLS', () 
     await expect((zaloPool as any).findOwnerOfZaloUid('own-uid','current-account')).rejects.toThrow(/tenant context/);
   });
 });
+
+describe('passive disconnect callback nullable reason', () => {
+  it.each([null, 'passive', 'manual', 'other'])('records passive from %s while preserving manual and tenant', async initialReason => {
+    vi.useFakeTimers();
+    try {
+      const row = { id: 'reason-account', orgId: 'org-1', status: 'connected', disconnectReason: initialReason as string | null, disconnectedAt: null as Date | null };
+      const foreign = { id: 'foreign-account', orgId: 'org-2', status: 'connected', disconnectReason: null };
+      // Model nullable WHERE semantics (NULL is not true for SQL NOT/equality).
+      function matches(where: any, record: any): boolean {
+        return Object.entries(where).every(([key, value]: [string, any]) => {
+          if (key === 'OR') return value.some((clause: any) => matches(clause, record));
+          if (key === 'NOT') return record.disconnectReason !== null && !matches(value, record);
+          if (value && typeof value === 'object' && 'not' in value) return record[key] !== null && record[key] !== value.not;
+          return record[key] === value;
+        });
+      }
+      prismaMock.zaloAccount.findUnique.mockImplementation(async ({ where }) => matches(where, row) ? row : null);
+      prismaMock.zaloAccount.update.mockImplementation(async ({ where, data }) => {
+        expect(getTenantContext()).toMatchObject({ orgId: 'org-1', bypassTenantGuard: false });
+        if (matches(where, row)) Object.assign(row, data);
+        return { orgId: 'org-1', ownerUserId: 'owner-1' };
+      });
+      prismaMock.zaloAccount.updateMany.mockImplementation(async ({ where, data }) => {
+        expect(getTenantContext()).toMatchObject({ orgId: 'org-1', bypassTenantGuard: false });
+        let count = 0;
+        for (const record of [row, foreign]) if (matches(where, record)) { Object.assign(record, data); count++; }
+        return { count };
+      });
+      vi.mocked(writeTransition).mockResolvedValue(undefined);
+      const { attachZaloListener } = await import('../src/modules/zalo/zalo-listener-factory.js');
+      const pool = zaloPool as any;
+      pool.instances.set(row.id, { status: 'connected', epoch: 901, api: null });
+      await withTenant('org-1', async () => pool.attachListener(row.id, {}));
+      const listener = vi.mocked(attachZaloListener).mock.calls.at(-1)![0];
+      expect(getTenantContext()).toBeUndefined();
+      listener.onDisconnected(row.id);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(row.status).toBe('disconnected');
+      expect(row.disconnectReason).toBe(initialReason === 'manual' ? 'manual' : 'passive');
+      expect(row.disconnectedAt === null).toBe(initialReason === 'manual');
+      expect(foreign).toMatchObject({ status: 'connected', disconnectReason: null });
+      expect(getTenantContext()).toBeUndefined();
+    } finally { vi.clearAllTimers(); vi.useRealTimers(); }
+  });
+});
