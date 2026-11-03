@@ -1,3 +1,4 @@
+import { forEachOrganization } from '../../shared/tenant/for-each-organization.js';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 /**
@@ -25,17 +26,21 @@ export async function backfillStatusLog(): Promise<{
   backfilled: number;
   skipped: number;
 }> {
-  const accounts = await prisma.zaloAccount.findMany({
-    select: { id: true, orgId: true, status: true, lastConnectedAt: true, createdAt: true },
-  });
-
+  let totalAccounts = 0;
   let backfilled = 0;
   let skipped = 0;
+  await forEachOrganization(async (orgId) => {
+    const accounts = await prisma.zaloAccount.findMany({
+      where: { orgId },
+      select: { id: true, orgId: true, status: true, lastConnectedAt: true, createdAt: true },
+  });
+
+  totalAccounts += accounts.length;
 
   for (const acct of accounts) {
     // Idempotent: skip nếu đã có open record
     const existing = await prisma.zaloAccountStatusLog.findFirst({
-      where: { accountId: acct.id, endedAt: null },
+      where: { orgId, accountId: acct.id, endedAt: null },
       select: { id: true },
     });
     if (existing) {
@@ -65,10 +70,11 @@ export async function backfillStatusLog(): Promise<{
     backfilled++;
   }
 
+  });
   logger.info(
-    `[status-log-backfill] totalAccounts=${accounts.length} backfilled=${backfilled} skipped=${skipped}`,
+    `[status-log-backfill] totalAccounts=${totalAccounts} backfilled=${backfilled} skipped=${skipped}`,
   );
-  return { totalAccounts: accounts.length, backfilled, skipped };
+  return { totalAccounts, backfilled, skipped };
 }
 
 function mapToLogStatus(status: string): ZaloStatus | null {

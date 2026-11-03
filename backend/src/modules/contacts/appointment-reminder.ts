@@ -1,3 +1,4 @@
+import { forEachOrganization } from '../../shared/tenant/for-each-organization.js';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 /**
@@ -57,20 +58,22 @@ export function startAppointmentReminder(io: Server): void {
       const startOfDay = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 0, 0, 0);
       const endOfDay = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 23, 59, 59, 999);
 
-      const appointments = await prisma.appointment.findMany({
-        where: {
-          appointmentDate: { gte: startOfDay, lte: endOfDay },
-          status: 'scheduled',
-          reminderSent: false,
-        },
-        include: {
-          contact: { select: { fullName: true, phone: true } },
-          assignedUser: { select: { id: true, fullName: true } },
-        },
+      await forEachOrganization(async (orgId) => {
+        const appointments = await prisma.appointment.findMany({
+          where: {
+            orgId,
+            appointmentDate: { gte: startOfDay, lte: endOfDay },
+            status: 'scheduled',
+            reminderSent: false,
+          },
+          include: {
+            contact: { select: { fullName: true, phone: true } },
+            assignedUser: { select: { id: true, fullName: true } },
+          },
       });
 
       for (const apt of appointments) {
-        io.emit('appointment:reminder', {
+        io.to(`org:${orgId}`).emit('appointment:reminder', {
           appointmentId: apt.id,
           contactName: apt.contact.fullName,
           contactPhone: apt.contact.phone,
@@ -90,6 +93,7 @@ export function startAppointmentReminder(io: Server): void {
       }
 
       logger.info(`[reminder] Sent ${appointments.length} reminder(s)`);
+      });
     } catch (err) {
       logger.error('[reminder] Cron job error:', err);
     }
@@ -103,13 +107,15 @@ export function startAppointmentReminder(io: Server): void {
   async function flipOverdue() {
     try {
       const now = new Date();
-      const result = await prisma.appointment.updateMany({
-        where: { status: 'scheduled', appointmentDate: { lt: now } },
-        data: { status: 'overdue' },
+      await forEachOrganization(async (orgId) => {
+        const result = await prisma.appointment.updateMany({
+          where: { orgId, status: 'scheduled', appointmentDate: { lt: now } },
+          data: { status: 'overdue' },
       });
       if (result.count > 0) {
         logger.info(`[appointment] Auto-flipped ${result.count} scheduled → overdue`);
       }
+      });
     } catch (err) {
       logger.error('[appointment] Overdue auto-flip error:', err);
     }
@@ -135,25 +141,27 @@ export function startAppointmentReminder(io: Server): void {
       const now = new Date();
       // Prefilter rộng (buffer 12h): appointmentDate là 00:00 UTC của NGÀY; lọc chính xác bằng dueMs.
       const prefilterMax = new Date(now.getTime() + 12 * 60 * 60_000);
-      const candidates = await prisma.appointment.findMany({
-        where: {
-          status: { in: ['scheduled', 'overdue'] },
-          actionPromptCount: { lt: 3 },
-          assignedUserId: { not: null },
-          assignedUser: { is: { isActive: true } }, // sale nghỉ việc → ngừng bắn tin (Luật D3)
-          appointmentDate: { lte: prefilterMax },
-        },
-        // Lịch mới ưu tiên trước để backlog lỗi cũ không chiếm hết take=200.
-        orderBy: { appointmentDate: 'desc' },
-        select: {
-          id: true,
-          orgId: true,
-          appointmentDate: true,
-          appointmentTime: true,
-          actionPromptCount: true,
-          lastActionPromptAt: true,
-        },
-        take: 200,
+      await forEachOrganization(async (orgId) => {
+        const candidates = await prisma.appointment.findMany({
+          where: {
+            orgId,
+            status: { in: ['scheduled', 'overdue'] },
+            actionPromptCount: { lt: 3 },
+            assignedUserId: { not: null },
+            assignedUser: { is: { isActive: true } }, // sale nghỉ việc → ngừng bắn tin (Luật D3)
+            appointmentDate: { lte: prefilterMax },
+          },
+          // Lịch mới ưu tiên trước để backlog lỗi cũ không chiếm hết take=200.
+          orderBy: { appointmentDate: 'desc' },
+          select: {
+            id: true,
+            orgId: true,
+            appointmentDate: true,
+            appointmentTime: true,
+            actionPromptCount: true,
+            lastActionPromptAt: true,
+          },
+          take: 200,
       });
       if (!candidates.length) return;
       const orgIds = [...new Set(candidates.map((c) => c.orgId))];
@@ -204,6 +212,7 @@ export function startAppointmentReminder(io: Server): void {
         }
       }
       if (sent > 0) logger.info(`[appointment] Đã gửi ${sent} nhắc hoàn thành`);
+      });
     } catch (err) {
       logger.error('[appointment] action-prompt cron error:', err);
     } finally {

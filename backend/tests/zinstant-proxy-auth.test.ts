@@ -13,9 +13,10 @@ import Fastify, { FastifyInstance } from 'fastify';
 // Auth middleware mock — flip behaviour per test via `authShouldPass`.
 let authShouldPass = true;
 vi.mock('../src/modules/auth/auth-middleware.js', () => ({
-  authMiddleware: async (req: any, reply: any) => {
+  authMiddleware: (req: any, reply: any, done: () => void) => {
     if (authShouldPass) {
       req.user = { id: 'user-1', orgId: 'org-1', role: 'admin', email: 't@x' };
+      done();
       return;
     }
     reply.status(401).send({ error: 'Unauthorized' });

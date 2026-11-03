@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildLiveHealth, buildReadyHealth } from '../../src/shared/http/health.js';
 
 describe('health check helpers', () => {
@@ -56,5 +56,22 @@ describe('health check helpers', () => {
   it('PH-HC06 body has no messenger key when not provided (backward compatible)', async () => {
     const result = await buildReadyHealth({ checkDb: async () => {}, checkRedis: () => true });
     expect(result.body).not.toHaveProperty('messenger');
+  });
+});
+
+describe('bounded Redis readiness', () => {
+  it('returns 503 on rejected probe without exposing its error', async () => {
+    const result = await buildReadyHealth({ checkDb: async () => {}, checkRedis: async () => { throw new Error('private-detail'); } });
+    expect(result.statusCode).toBe(503);
+    expect(JSON.stringify(result)).not.toContain('private-detail');
+  });
+  it('returns 503 on a nonresponding probe and clears its timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = buildReadyHealth({ checkDb: async () => {}, checkRedis: () => new Promise<boolean>(() => {}) });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect((await pending).statusCode).toBe(503);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
   });
 });

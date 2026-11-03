@@ -31,7 +31,18 @@ export async function buildReadyHealth(input: {
   } catch {
     db = 'disconnected';
   }
-  if (!(await input.checkRedis())) redis = 'disconnected';
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const healthy = await Promise.race([
+      Promise.resolve().then(input.checkRedis),
+      new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2000); }),
+    ]);
+    if (!healthy) redis = 'disconnected';
+  } catch {
+    redis = 'disconnected';
+  } finally {
+    clearTimeout(timer);
+  }
   const ok = db === 'connected' && redis === 'connected';
   return {
     statusCode: ok ? 200 : 503,

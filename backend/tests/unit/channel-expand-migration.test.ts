@@ -37,8 +37,8 @@ describe('channel expand deployment contract (static; not a PostgreSQL execution
   it.each(models)('requires tenant context for new model %s', model => {
     expect(ORG_SCOPED_MODELS.has(model)).toBe(true);
   });
-  it('keeps legacy Message tenant-guard behavior while DB trigger derives org in D', () => {
-    expect(ORG_SCOPED_MODELS.has('Message')).toBe(false);
+  it('guards Message in the application while retaining the DB org derivation default', () => {
+    expect(ORG_SCOPED_MODELS.has('Message')).toBe(true);
     expect(schema).toMatch(/orgId\s+String\s+@default\(dbgenerated\(\)\)\s+@map\("org_id"\)/);
   });
 });

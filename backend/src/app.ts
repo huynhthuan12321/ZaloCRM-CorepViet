@@ -1,3 +1,4 @@
+import { forEachOrganization } from './shared/tenant/for-each-organization.js';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 // ZaloCRM is free software under the GNU Affero General Public License v3.0 (see LICENSE).
@@ -610,19 +611,21 @@ async function bootstrap() {
     // FIX 2 nick-ghost (2026-06-13): boot reconnect chỉ kéo nick THẬT (zaloUid != null)
     // chưa ẩn. Guard chính ở zaloPool.reconnect; đây là lớp 2 chặn thẻ ma bật WS lúc khởi
     // động server → tránh tranh chấp session với nick thật ngay sau boot.
-    const accounts = await prisma.zaloAccount.findMany({
-      where: { sessionData: { not: Prisma.JsonNull }, archivedAt: null, zaloUid: { not: null } },
-      select: { id: true, sessionData: true },
+    await forEachOrganization(async (orgId) => {
+      const accounts = await prisma.zaloAccount.findMany({
+        where: { orgId, sessionData: { not: Prisma.JsonNull }, archivedAt: null, zaloUid: { not: null } },
+        select: { id: true, sessionData: true },
     });
     logger.info(`Attempting reconnect for ${accounts.length} Zalo account(s)`);
     for (const account of accounts) {
       const session = decryptSessionData<{ cookie: any; imei: string; userAgent: string }>(account.sessionData);
       if (session?.imei) {
-        zaloPool.reconnect(account.id, session).catch((err) => {
+        await zaloPool.reconnect(account.id, session).catch((err) => {
           logger.warn(`Auto-reconnect failed for account ${account.id}:`, err);
         });
       }
     }
+    });
   } catch (err) {
     logger.error('Failed to load accounts for reconnect:', err);
   }

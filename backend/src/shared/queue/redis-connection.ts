@@ -67,17 +67,30 @@ export function getBullMQRedis(): Redis {
 // gọi getBullMQRedis(), hoặc status "nói dối" khi Redis chết giữa chừng). Chủ động:
 //  1) getBullMQRedis() → tự tạo + kết nối (lazyConnect:false) nếu chưa có.
 //  2) ping() → xác nhận Redis thực sự phản hồi.
-export async function isBullMQRedisHealthy(): Promise<boolean> {
-  try {
-    const redis = getBullMQRedis();
-    await redis.ping();
-    return !connectionFailed && redis.status === 'ready';
-  } catch (err) {
-    logger.error(
-      `[bullmq-redis] health check failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return false;
-  }
+// A health probe must not queue commands on the worker connection (which has
+// unlimited retries). Share one bounded, disposable probe across concurrent requests.
+let readinessProbe: Promise<boolean> | null = null;
+export function isBullMQRedisHealthy(): Promise<boolean> {
+  if (readinessProbe) return readinessProbe;
+  readinessProbe = (async () => {
+    const probe = new Redis(REDIS_URL, {
+      lazyConnect: true, enableOfflineQueue: false,
+      maxRetriesPerRequest: 0, retryStrategy: () => null,
+      connectTimeout: 1000, commandTimeout: 1000,
+    });
+    probe.on('error', () => {}); // Readiness exposes status only, never credentials.
+    const deadline = setTimeout(() => probe.disconnect(), 1500);
+    try {
+      await probe.connect();
+      return await probe.ping() === 'PONG';
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(deadline);
+      probe.disconnect();
+    }
+  })().finally(() => { readinessProbe = null; });
+  return readinessProbe;
 }
 
 export async function closeBullMQRedis(): Promise<void> {
