@@ -104,9 +104,9 @@ export async function zinstantProxyRoutes(app: FastifyInstance): Promise<void> {
   // explicitly-public bankcard and sticker prefixes. Previously every
   // endpoint was unauthenticated, letting anyone enumerate Zalo user PII
   // (phone, DOB) through /zalo-user-info/* via the host org's accounts.
-  app.addHook('preHandler', async (request, reply) => {
-    if (PUBLIC_PATH_PREFIXES.some((p) => request.url.startsWith(p))) return;
-    await authMiddleware(request, reply);
+  app.addHook('preHandler', (request, reply, done) => {
+    if (PUBLIC_PATH_PREFIXES.some((p) => request.url.startsWith(p))) return done();
+    authMiddleware(request, reply, done);
   });
 
   // GET /api/v1/zalo-bankcard?url=<encoded zalo cdn url> → structured JSON
