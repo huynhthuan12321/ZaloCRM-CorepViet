@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
-import { resolveTikTokPersonalConfig } from '../../config/tiktok-personal-config.js';
+import { mockChannelEnabled } from '../../config/mock-channel-config.js';
 import { emitAuthorizedChannelEvent } from './channel-socket.js';
 import { hasChannelAccess } from './channel-scope.js';
 import { clearPilotRuntimeState } from './pilot-observability.js';
@@ -27,7 +27,7 @@ export async function mockChannelAccountRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
   app.addHook('preHandler', requireGrant('conversation', 'access'));
 
-  const available = () => resolveTikTokPersonalConfig().effective.mock;
+  const available = () => mockChannelEnabled();
   const actor = (request: { user?: { id: string; orgId: string } }) => ({
     userId: request.user!.id,
     orgId: request.user!.orgId,

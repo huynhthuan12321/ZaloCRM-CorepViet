@@ -49,28 +49,11 @@ describe('mock channel worker authentication', () => {
     });
   });
 
-  it('derives and verifies a production TikTok worker secret per account', () => {
-    const env = { NODE_ENV: 'production', TIKTOK_PERSONAL_WORKER_SECRET: secret };
-    const derived = deriveChannelWorkerSecret(accountId, 'TIKTOK_WEB_SESSION', env)!;
-    const liveSignature = createHmac('sha256', derived)
-      .update(`${timestamp}.${nonce}.${body}`)
-      .digest('hex');
-    expect(derived).not.toBe(secret);
-    expect(verifyChannelWorkerRequest(
-      body,
-      { signature: liveSignature, timestamp, nonce },
-      accountId,
-      'TIKTOK_WEB_SESSION',
-      env,
-      Number(timestamp),
-    )).toEqual({ valid: true, nonce });
-    expect(verifyChannelWorkerRequest(
-      body,
-      { signature: liveSignature, timestamp, nonce },
-      otherAccountId,
-      'TIKTOK_WEB_SESSION',
-      env,
-      Number(timestamp),
-    )).toMatchObject({ valid: false, reason: 'bad_signature' });
+  it('rejects retired providers even with old configuration', () => {
+    const env = { NODE_ENV: 'test', MOCK_CHANNEL_WORKER_SECRET: secret, TIKTOK_PERSONAL_WORKER_SECRET: secret };
+    const provider = 'TIKTOK_WEB_SESSION' as Parameters<typeof deriveChannelWorkerSecret>[1];
+    expect(deriveChannelWorkerSecret(accountId, provider, env)).toBeNull();
+    expect(verifyChannelWorkerRequest(body, { signature, timestamp, nonce }, accountId, provider, env, Number(timestamp)))
+      .toEqual({ valid: false, reason: 'worker_secret_unavailable' });
   });
 });

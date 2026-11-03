@@ -12,7 +12,7 @@ export interface ChannelIdentityInput {
 
 /**
  * Resolve only inside one channel account. Names and avatars are presentation
- * data and never merge a TikTok/mock identity with an existing Zalo contact.
+ * data and never merge a mock identity with an existing Zalo contact.
  */
 export async function resolveChannelContact(tx: TxClient, input: ChannelIdentityInput) {
   const existing = await tx.contactIdentity.findUnique({

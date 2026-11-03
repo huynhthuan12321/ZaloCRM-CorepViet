@@ -142,7 +142,7 @@
               <span v-if="conv.threadType === 'group'" class="group-icon">👥</span>
               <span v-if="conv.isVirtual" class="virtual-chip" title="Chat nội bộ — KH chưa có Zalo, tin nhắn KHÔNG gửi đi">🔒</span>
               {{ displayName(conv) }}
-              <span v-if="conv.channelAccount" class="virtual-chip">{{ conv.channelAccount.provider === 'TIKTOK_WEB_SESSION' ? 'TikTok' : 'Thử nghiệm' }}</span>
+              <span v-if="conv.channelAccount" class="virtual-chip">Thử nghiệm</span>
               <!-- Theo dõi (anh chốt 2026-06-15): khách đang trong "theo dõi" → chuông ngay sau tên.
                    Icon hệ thống mdi (đồng bộ), không emoji. -->
               <v-icon

@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto';
 import { verifyHmacRequest } from '../../shared/security/hmac.js';
 
 const MIN_SECRET_LENGTH = 32;
-type WorkerProvider = 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION';
+type WorkerProvider = 'MOCK_BROWSER';
 
 export interface WorkerAuthHeaders {
   signature?: string;
@@ -29,11 +29,6 @@ export function deriveMockWorkerSecret(
     .digest('hex');
 }
 
-export function tiktokWorkerSecret(env: NodeJS.ProcessEnv = process.env): string | null {
-  const secret = env.TIKTOK_PERSONAL_WORKER_SECRET?.trim();
-  return secret && secret.length >= MIN_SECRET_LENGTH ? secret : null;
-}
-
 export function deriveChannelWorkerSecret(
   accountId: string,
   provider: WorkerProvider,
@@ -41,12 +36,7 @@ export function deriveChannelWorkerSecret(
 ): string | null {
   if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(accountId)) return null;
   if (provider === 'MOCK_BROWSER') return deriveMockWorkerSecret(accountId, env);
-  const master = tiktokWorkerSecret(env);
-  return master
-    ? createHmac('sha256', master)
-      .update(`tiktok-personal-worker:${accountId}`)
-      .digest('hex')
-    : null;
+  return null;
 }
 
 export function verifyChannelWorkerRequest(

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../shared/database/prisma-client.js';
-import { resolveTikTokPersonalConfig } from '../../config/tiktok-personal-config.js';
+import { mockChannelEnabled } from '../../config/mock-channel-config.js';
 import { userHasGrant } from '../rbac/permission-group-service.js';
 
 export type ChannelPermission = 'read' | 'chat' | 'admin';
@@ -12,11 +12,7 @@ const permitted: Record<ChannelPermission, string[]> = {
 };
 
 export function allowedChannelProviders(): string[] {
-  const cfg = resolveTikTokPersonalConfig();
-  return [
-    ...(cfg.effective.mock ? ['MOCK_BROWSER'] : []),
-    ...(cfg.effective.enabled ? ['TIKTOK_WEB_SESSION'] : []),
-  ];
+  return mockChannelEnabled() ? ['MOCK_BROWSER'] : [];
 }
 
 export function channelAccountPredicate(

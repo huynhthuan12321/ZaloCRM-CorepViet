@@ -4,7 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { DISPLAYABLE_NICK_WHERE } from '../zalo/zalo-scope.js';
 
 export interface InboxFilters {
-  channel?: 'all' | 'zalo' | 'tiktok' | 'mock';
+  channel?: 'all' | 'zalo' | 'mock';
   channelAccountId?: string;
   search?: string;
   unread?: boolean;
@@ -21,8 +21,7 @@ export function unifiedInboxWhere(args: {
     branches.push({ zaloAccountId: { in: zaloIds }, channelAccountId: null, zaloAccount: DISPLAYABLE_NICK_WHERE });
   }
   if (filters.channel !== 'zalo') {
-    const provider = filters.channel === 'tiktok' ? 'TIKTOK_WEB_SESSION'
-      : filters.channel === 'mock' ? 'MOCK_BROWSER' : undefined;
+    const provider = 'MOCK_BROWSER';
     branches.push({
       zaloAccountId: null, channelAccountId: filters.channelAccountId ?? { not: null },
       channelAccount: { AND: [channelScope, ...(provider ? [{ provider }] : [])] },

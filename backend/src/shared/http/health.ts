@@ -11,12 +11,6 @@ export type ReadyHealth = {
    * Docker healthcheck dùng /health/ready — Messenger lỗi không được kéo Zalo xuống.
    */
   messenger?: { status: 'disabled' | 'ready' | 'misconfigured'; inbound: boolean; outbound: boolean };
-  /** Informational foundation status; never gates DB/Redis readiness. */
-  tiktok?: {
-    status: 'disabled' | 'mock_only' | 'read_only' | 'available' | 'unavailable' | 'misconfigured';
-    inbound: boolean;
-    outbound: boolean;
-  };
 };
 
 export function buildLiveHealth(uptime = process.uptime()): { status: 'ok'; uptime: number } {
@@ -29,7 +23,6 @@ export async function buildReadyHealth(input: {
   uptime?: number;
   timestamp?: string;
   messenger?: ReadyHealth['messenger'];
-  tiktok?: ReadyHealth['tiktok'];
 }): Promise<{ statusCode: 200 | 503; body: ReadyHealth }> {
   let db: ReadyHealth['db'] = 'connected';
   let redis: ReadyHealth['redis'] = 'connected';
@@ -49,7 +42,6 @@ export async function buildReadyHealth(input: {
       uptime: input.uptime ?? process.uptime(),
       timestamp: input.timestamp ?? new Date().toISOString(),
       ...(input.messenger ? { messenger: input.messenger } : {}),
-      ...(input.tiktok ? { tiktok: input.tiktok } : {}),
     },
   };
 }

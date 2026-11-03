@@ -320,7 +320,7 @@ export function useChat() {
   function currentUserIdForPrivacy(): string | null { return authStore.user?.id ?? null; }
   function privacyUnlockedRef(): boolean { return !!privacyStore.isUnlocked; }
   const conversations = ref<Conversation[]>([]);
-  const inboxChannel = ref<'legacy' | 'all' | 'mock' | 'tiktok'>('legacy');
+  const inboxChannel = ref<'legacy' | 'all' | 'mock'>('legacy');
   const channelAccountFilter = ref<string | null>(null);
   const channelUnreadOnly = ref(false);
   const channelCounts = ref({ total: 0, unread: 0 });

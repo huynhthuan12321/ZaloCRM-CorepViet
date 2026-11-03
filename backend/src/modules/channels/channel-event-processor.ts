@@ -182,7 +182,7 @@ export async function processChannelEvent(eventId: string, io?: Server): Promise
         sentAt,
         sentVia: 'user',
         metadata: {
-          channel: account.provider === 'TIKTOK_WEB_SESSION' ? 'tiktok_web_session' : 'mock_browser',
+          channel: 'mock_browser',
           eventKey: data.eventKey,
         },
       },

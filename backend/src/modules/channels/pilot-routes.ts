@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { runSystemQuery } from '../../shared/tenant/tenant-context.js';
-import { resolveTikTokPersonalConfig } from '../../config/tiktok-personal-config.js';
+import { mockChannelEnabled } from '../../config/mock-channel-config.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
 import { hasChannelAccess } from './channel-scope.js';
@@ -71,7 +71,7 @@ export async function channelPilotRoutes(app: FastifyInstance) {
   app.addContentTypeParser(CONTENT_TYPE, { parseAs: 'string', bodyLimit: 512 * 1024 }, (_request, body, done) => done(null, body));
 
   app.post('/internal/channel-workers/pilot/heartbeat', async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
+    if (!mockChannelEnabled()) return reply.code(404).send({ error: 'Not found' });
     const { decoded, verified } = parseSignedBody(request);
     if (!verified.valid) return reply.code(401).send({ error: 'Unauthorized', code: verified.reason });
     const parsed = heartbeatSchema.safeParse(decoded);
@@ -86,7 +86,7 @@ export async function channelPilotRoutes(app: FastifyInstance) {
   });
 
   app.post('/internal/channel-workers/pilot/reconcile', async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
+    if (!mockChannelEnabled()) return reply.code(404).send({ error: 'Not found' });
     const { decoded, verified } = parseSignedBody(request);
     if (!verified.valid) return reply.code(401).send({ error: 'Unauthorized', code: verified.reason });
     const parsed = reconciliationSchema.safeParse(decoded);
@@ -137,7 +137,7 @@ export async function channelPilotRoutes(app: FastifyInstance) {
   app.get('/api/v1/channel-accounts/mock/fleet', {
     preHandler: [authMiddleware, requireGrant('conversation', 'access')],
   }, async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
+    if (!mockChannelEnabled()) return reply.code(404).send({ error: 'Not found' });
     const actor = { userId: request.user!.id, orgId: request.user!.orgId };
     const user = await prisma.user.findFirst({
       where: { id: actor.userId, orgId: actor.orgId, isActive: true },
@@ -178,7 +178,7 @@ export async function channelPilotRoutes(app: FastifyInstance) {
   app.get('/api/v1/channel-accounts/mock/:id/pilot', {
     preHandler: [authMiddleware, requireGrant('conversation', 'access')],
   }, async (request, reply) => {
-    if (!resolveTikTokPersonalConfig().effective.mock) return reply.code(404).send({ error: 'Not found' });
+    if (!mockChannelEnabled()) return reply.code(404).send({ error: 'Not found' });
     const { id } = request.params as { id: string };
     const actor = { userId: request.user!.id, orgId: request.user!.orgId };
     if (!(await hasChannelAccess(actor, id, 'admin'))) return reply.code(404).send({ error: 'Not found' });

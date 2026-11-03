@@ -30,7 +30,6 @@ import { Prisma } from '@prisma/client';
 import { config } from './config/index.js';
 import { validateProductionConfig } from './config/validate-production-config.js';
 import { messengerConfig, messengerHealthSummary } from './config/messenger-config.js';
-import { tiktokPersonalConfig, tiktokPersonalHealthSummary } from './config/tiktok-personal-config.js';
 import { prisma } from './shared/database/prisma-client.js';
 import { decryptSessionData } from './shared/crypto/session-crypto.js';
 import { logger } from './shared/utils/logger.js';
@@ -47,7 +46,6 @@ import { channelInboxRoutes } from './modules/channels/channel-inbox-routes.js';
 import { registerChannelSocketHandlers } from './modules/channels/channel-socket.js';
 import { channelEventIngressRoutes } from './modules/channels/event-ingress.js';
 import { mockChannelAccountRoutes } from './modules/channels/mock-channel-account-routes.js';
-import { tiktokChannelAccountRoutes } from './modules/channels/tiktok-channel-account-routes.js';
 import { channelOutboundRoutes } from './modules/channels/outbound-command-routes.js';
 import { channelPilotRoutes } from './modules/channels/pilot-routes.js';
 import { startChannelEventProcessor, stopChannelEventProcessor } from './modules/channels/channel-event-processor.js';
@@ -292,7 +290,6 @@ async function bootstrap() {
   await app.register(chatRoutes);
   await app.register(channelInboxRoutes);
   await app.register(mockChannelAccountRoutes);
-  await app.register(tiktokChannelAccountRoutes);
   await app.register(channelEventIngressRoutes);
   await app.register(channelOutboundRoutes);
   await app.register(channelPilotRoutes);
@@ -339,6 +336,8 @@ async function bootstrap() {
   await app.register(dashboardActionHubRoutes);
   await app.register(reportRoutes);
   await app.register(reportAnalyticsRoutes);
+  const { aiReportRoutes } = await import('./modules/dashboard/ai-report-routes.js');
+  await app.register(aiReportRoutes);
   await app.register(userRoutes);
   await app.register(teamRoutes);
   await app.register(orgRoutes);
@@ -407,7 +406,6 @@ async function bootstrap() {
       checkDb: async () => { await prisma.$queryRaw`SELECT 1`; },
       checkRedis: isBullMQRedisHealthy,
       messenger: messengerHealthSummary(messengerConfig),
-      tiktok: tiktokPersonalHealthSummary(tiktokPersonalConfig),
     });
     return reply.status(ready.statusCode).send(ready.body);
   });

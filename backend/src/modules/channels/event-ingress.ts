@@ -35,14 +35,14 @@ export async function channelEventIngressRoutes(app: FastifyInstance) {
       },
       select: { id: true, orgId: true, provider: true },
     }));
-    if (!account || !['MOCK_BROWSER', 'TIKTOK_WEB_SESSION'].includes(account.provider)) {
+    if (!account || !['MOCK_BROWSER'].includes(account.provider)) {
       return reply.code(404).send({ error: 'Unknown account' });
     }
     const verified = verifyChannelWorkerRequest(rawBody, {
       signature: request.headers['x-channel-signature'] as string | undefined,
       timestamp: request.headers['x-channel-timestamp'] as string | undefined,
       nonce: request.headers['x-channel-nonce'] as string | undefined,
-    }, accountId, account.provider as 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION');
+    }, accountId, account.provider as 'MOCK_BROWSER');
     if (!verified.valid) return reply.code(401).send({ error: 'Unauthorized', code: verified.reason });
 
     let observation;

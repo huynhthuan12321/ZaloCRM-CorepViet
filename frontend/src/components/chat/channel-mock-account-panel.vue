@@ -3,7 +3,7 @@
 <template>
   <section class="mock-panel" aria-label="Tài khoản kênh thử nghiệm" :aria-busy="busy">
     <strong>TT09 — giới hạn worker theo tài nguyên</strong>
-    <p class="hint">Chỉ dùng local/test. QR này là dữ liệu mô phỏng, không đăng nhập TikTok.</p>
+    <p class="hint">Chỉ dùng local/test. QR này là dữ liệu mô phỏng, không đăng nhập tài khoản thật.</p>
     <div v-if="fleet" class="fleet" aria-live="polite">
       <strong>TT09 fleet: {{ fleet.capacity.activeWorkers }}/{{ fleet.capacity.effectiveLimit }} worker</strong>
       <small>
@@ -77,7 +77,7 @@ interface FleetStatus {
 }
 const props = defineProps<{ accounts: Account[] }>();
 const emit = defineEmits<{ changed: [] }>();
-const displayName = ref('TikTok Personal thử nghiệm');
+const displayName = ref('Kênh thử nghiệm');
 const externalAccountId = ref('mock-personal-01');
 const pending = ref<{ accountId: string; qr: string; epoch: string } | null>(null);
 const busy = ref(false);

@@ -10,13 +10,12 @@ import { getZaloScope } from '../zalo/zalo-scope.js';
 import { buildPrivacyContext, redactConversationRow, redactMessage } from '../privacy/redact.js';
 import { allowedChannelProviders, channelScope, hasChannelAccess } from './channel-scope.js';
 import { browserChannelCapabilities } from './channel-capabilities.js';
-import { resolveTikTokPersonalConfig } from '../../config/tiktok-personal-config.js';
 import { recheckChannelSubscriptions } from './channel-socket.js';
 import { unifiedInboxWhere } from './unified-inbox-query.js';
 import { channelExtensionPolicy } from './channel-extension-policy.js';
 
 const querySchema = z.object({
-  channel: z.enum(['all', 'zalo', 'tiktok', 'mock']).default('all'),
+  channel: z.enum(['all', 'zalo', 'mock']).default('all'),
   channelAccountId: z.string().uuid().optional(), search: z.string().trim().max(200).default(''),
   unread: z.enum(['true', 'false']).optional(), tab: z.enum(['main', 'other']).optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
@@ -41,13 +40,11 @@ const actor = (request: FastifyRequest) => ({ userId: request.user!.id, orgId: r
 async function channelCapabilities(request: FastifyRequest, account: {
   id: string; provider: string; status: string; enabled: boolean; outboundEnabled: boolean;
 }) {
-  const cfg = resolveTikTokPersonalConfig();
   const configured = browserChannelCapabilities(
-    account.provider as 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION',
-    cfg,
+    account.provider as 'MOCK_BROWSER',
   );
-  const extension = channelExtensionPolicy(configured, cfg);
-  const canChat = !!(['MOCK_BROWSER', 'TIKTOK_WEB_SESSION'].includes(account.provider)
+  const extension = channelExtensionPolicy(configured);
+  const canChat = !!(['MOCK_BROWSER'].includes(account.provider)
     && account.enabled
     && account.outboundEnabled
     && account.status === 'CONNECTED'

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
 /** New-channel contract only; Zalo DTO/transport remains unchanged in TT-04A. */
-export type BrowserChannelProvider = 'MOCK_BROWSER' | 'TIKTOK_WEB_SESSION';
+export type BrowserChannelProvider = 'MOCK_BROWSER';
 export interface ChannelCapabilities {
   readonly textRead: boolean;
   readonly textSend: boolean;

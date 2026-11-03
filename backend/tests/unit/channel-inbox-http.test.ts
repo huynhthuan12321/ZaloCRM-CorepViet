@@ -44,7 +44,7 @@ describe('channel inbox HTTP contract', () => {
     expect((await app.inject('/api/v1/channel-inbox')).statusCode).toBe(503);
     expect(h.accounts).not.toHaveBeenCalled(); expect(h.conversations).not.toHaveBeenCalled();
   });
-  it.each(['limit=0', 'page=-1', 'limit=1000', 'channel=unknown', 'channelAccountId=invalid', 'accountId=zalo-a'])('rejects invalid or ambiguous namespace filter %s', async query => {
+  it.each(['limit=0', 'page=-1', 'limit=1000', 'channel=unknown', 'channel=tiktok', 'channelAccountId=invalid', 'accountId=zalo-a'])('rejects invalid or ambiguous namespace filter %s', async query => {
     expect((await app.inject(`/api/v1/channel-inbox?${query}`)).statusCode).toBe(400);
     expect(h.conversations).not.toHaveBeenCalled();
   });
@@ -57,6 +57,7 @@ describe('channel inbox HTTP contract', () => {
     expect(h.count.mock.calls[1][0].where.AND[0]).toEqual(where);
     const text = JSON.stringify(where);
     expect(text).toContain('zalo-a'); expect(text).toContain('user-a'); expect(text).toContain('MOCK_BROWSER');
+    expect(text).not.toContain('TIKTOK_WEB_SESSION');
     expect(text).toContain('"privacyMode":{"not":"main"}');
   });
   it('404 detail/messages do not query message bodies for unreadable conversations', async () => {
