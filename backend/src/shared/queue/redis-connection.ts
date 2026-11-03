@@ -87,7 +87,7 @@ export function isBullMQRedisHealthy(): Promise<boolean> {
         async connect() {
           controller.signal.throwIfAborted();
           const options = { host: this.options.host, port: this.options.port ?? 6379,
-            family: 0, autoSelectFamily: true, lookup: probeLookup(addresses) };
+            family: this.options.family ?? 0, autoSelectFamily: true, lookup: probeLookup(addresses) };
           this.connecting = true;
           this.stream = this.options.path
             ? createTcpConnection({ path: this.options.path })
