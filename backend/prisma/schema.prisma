@@ -186,6 +186,7 @@ model Organization {
   mediaAssets             MediaAsset[]
   mediaAlbums             MediaAlbum[]
   mediaUsageEvents        MediaUsageEvent[]
+  knowledgeDocs           KnowledgeDoc[]
 
   @@map("organizations")
 }
@@ -440,6 +441,7 @@ model ZaloAccount {
   groupMembers                     GroupMember[]
   groupScans                       GroupScan[]
 
+  @@index([orgId, archivedAt])
   @@map("zalo_accounts")
 }
 
@@ -738,7 +740,8 @@ model Contact {
   @@index([orgId, statusId])
   // Phase Lead Pool FIFO 2026-06-15 — index phục vụ ORDER BY vòng tua. Prisma không
   // khai báo được NULLS FIRST trong @@index → migration SQL tự thêm tay (xem migration).
-  @@index([orgId, pooledCount, lastPooledAt])
+  // SQL-only contacts_pool_robin_idx: NULLS FIRST plus created_at tie-breaker.
+  // Its exact definition is protected by migration/catalog regression checks.
   // Phase 6 aggregate indexes
   @@index([orgId, leadScore(sort: Desc)])
   @@index([orgId, stuckSinceAggregate])
@@ -1869,8 +1872,8 @@ model AiConfig {
 // ═══════════════════════════════════════════════════════════════════════════
 // Knowledge base RAG (Trợ lý AI sản phẩm) — Đợt 1 2026-07-11.
 // Tài liệu BĐS → chunk → embedding (float[] lưu Json) → in-JS cosine search →
-// nhồi vào prompt AI. KHÔNG pgvector (không đụng Postgres image). orgId cột thường
-// (pattern extension, không FK core Organization qua Prisma; FK cascade ở migration).
+// Embeddings remain JSON; orgId references the owning organization.
+// Organization CASCADE relation is represented in both Prisma and SQL.
 // ═══════════════════════════════════════════════════════════════════════════
 model KnowledgeDoc {
   id          String   @id @default(uuid())
@@ -1883,6 +1886,7 @@ model KnowledgeDoc {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   chunks KnowledgeChunk[]
 
   @@index([orgId, createdAt])
@@ -3682,7 +3686,7 @@ model LeadPoolDistribution {
   assignedTo User         @relation("LeadDistributionRecipient", fields: [assignedToUserId], references: [id])
 
   @@index([orgId, distributedAt(sort: Desc)])
-  @@index([orgId, assignedToUserId, distributedAt(sort: Desc)])
+  @@index([orgId, assignedToUserId, distributedAt(sort: Desc)], map: "lead_pool_distributions_org_id_assigned_to_user_id_distributed_")
   @@index([contactId, distributedAt(sort: Desc)])
   @@map("lead_pool_distributions")
 }
@@ -3993,7 +3997,7 @@ model LeadNotifyAck {
   intervalSec         Int       @default(60) @map("interval_sec")
   lastSentAt          DateTime? @map("last_sent_at")
   createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
 
   @@unique([entryId, targetUserId])
   @@index([zaloMsgId])
