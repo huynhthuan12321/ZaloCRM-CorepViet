@@ -19,7 +19,7 @@ Usage:
 
 Deploy mode:
   - aborts when disk usage is > 80%
-  - aborts when the git worktree is dirty
+  - aborts on tracked/untracked changes or unexpected ignored build inputs
   - fetches origin before resolving <SHA>
   - tags the current app image as IMAGE_NAME:<current-git-sha>
     using the running container image if it differs from IMAGE_NAME:latest
@@ -92,20 +92,9 @@ check_disk_gate() {
 }
 
 ensure_clean_worktree() {
-  if [[ "${ALLOW_DIRTY:-0}" == "1" ]]; then
-    return
-  fi
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    run git -C "$REPO_ROOT" diff --quiet --ignore-submodules --
-    run git -C "$REPO_ROOT" diff --cached --quiet --ignore-submodules --
-    log "Dry-run: deploy would stop if the git worktree has uncommitted changes."
-    return
-  fi
-  if ! git -C "$REPO_ROOT" diff --quiet --ignore-submodules -- || \
-     ! git -C "$REPO_ROOT" diff --cached --quiet --ignore-submodules --; then
-    log "ERROR: git worktree has uncommitted changes. Set ALLOW_DIRTY=1 only for an explicitly approved ops run."
-    exit 1
-  fi
+  # Mandatory even for dry-run and ALLOW_DIRTY: this helper only reads Git/path
+  # metadata. Keep the current reviewed gate across checkout of an older target.
+  bash -c "$BUILD_WORKTREE_GATE" -- "$REPO_ROOT"
 }
 
 wait_ready() {
@@ -259,6 +248,7 @@ parse_args() {
 
 main() {
   parse_args "$@"
+  BUILD_WORKTREE_GATE="$(cat "$SCRIPT_DIR/check-build-worktree.sh")"
   require_cmd git
   require_cmd docker
   require_cmd df
@@ -294,6 +284,7 @@ main() {
       HEALTH_ROLLBACK_SHA="$CURRENT_SHORT"
     fi
     run git checkout "$TARGET_SHA"
+    ensure_clean_worktree
     run docker compose -f "$COMPOSE_FILE" build "$COMPOSE_SERVICE"
     run docker tag "$IMAGE_NAME:latest" "$IMAGE_NAME:$TARGET_SHORT"
     run docker compose -f "$COMPOSE_FILE" up -d --no-deps "$COMPOSE_SERVICE"

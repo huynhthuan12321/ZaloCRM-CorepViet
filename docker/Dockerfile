@@ -51,8 +51,10 @@ COPY --from=backend-builder /app/backend/node_modules /app/node_modules
 COPY --from=backend-builder /app/backend/prisma     /app/prisma
 COPY --from=backend-builder /app/backend/prisma.config.ts /app/prisma.config.ts
 COPY --from=backend-builder /app/backend/package.json /app/package.json
-# Scripts dev/ops (seed demo, migrate helpers) — chạy bằng `docker exec ... npx tsx scripts/...`.
-COPY --from=backend-builder /app/backend/scripts    /app/scripts
+# Reviewed operational inventory; never copy an open-ended scripts directory.
+# Keep seed/backfill/repair and the Telegram provisioner referenced by runtime.
+COPY --from=backend-builder /app/backend/scripts/backfill-contact-inbound.mjs /app/backend/scripts/backfill_profile_2026_05_29.ts /app/backend/scripts/cleanup-ghost-nicks.ts /app/backend/scripts/dedup-globalid-dryrun.mjs /app/backend/scripts/migrate-conv-tab-indexes.mjs /app/backend/scripts/seed-demo-data.ts /app/backend/scripts/seed-demo-muctieu.ts /app/backend/scripts/seed-project-blocks.mjs /app/backend/scripts/split-mismerged-contacts.ts /app/backend/scripts/tg-provisioner-login.mjs /app/backend/scripts/update-block-greetings.mjs /app/backend/scripts/wave_1_5_backfill.sql /app/scripts/
+COPY --from=backend-builder /app/backend/scripts/channels/backfill-message-org-id.ts /app/scripts/channels/
 COPY --from=frontend-builder /app/frontend/dist     /app/static
 
 RUN mkdir -p /var/lib/zalo-crm/files
