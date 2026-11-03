@@ -31,13 +31,14 @@
         <button
           v-for="r in ranges"
           :key="r.key"
-          :class="{ on: range === r.key }"
+          :class="{ on: range === r.key }" :aria-pressed="range === r.key"
           @click="range = r.key"
         >{{ r.label }}</button>
       </div>
     </div>
 
     <!-- LOADING -->
+    <ReportContext v-if="data && !loading" :report="data" snapshots="Trạng thái nick và hạn mức hiện tại" />
     <div v-if="loading" class="rk-loading">
       <v-icon icon="mdi-loading" size="20" /> Đang tải dữ liệu…
     </div>
@@ -103,7 +104,7 @@
           <div class="meta">{{ n(nicks.length) }} nick</div>
         </div>
         <div class="card-b" style="padding:0">
-          <table class="tbl">
+          <ReportTable label="Bảng số liệu Nick Zalo"><table class="tbl">
             <thead>
               <tr>
                 <th>Nick</th>
@@ -166,7 +167,7 @@
                 </td>
               </tr>
             </tbody>
-          </table>
+          </table></ReportTable>
         </div>
       </div>
 
@@ -179,7 +180,7 @@
             <div class="meta">% online theo ngày</div>
           </div>
           <div class="card-b">
-            <div v-if="uptimeHeat.length" class="heat h7">
+            <ReportTable v-if="uptimeHeat.length" label="Uptime nick theo 7 ngày"><div class="heat h7">
               <template v-for="row in uptimeHeat" :key="row.nickId">
                 <div class="rl">{{ row.name }}</div>
                 <div
@@ -191,6 +192,7 @@
                 ></div>
               </template>
             </div>
+            </ReportTable>
             <div v-else class="rk-empty">Chưa có dữ liệu uptime.</div>
           </div>
         </div>
@@ -225,6 +227,9 @@
 </template>
 
 <script setup lang="ts">
+import { REPORT_AVATAR_COLORS as AV_COLORS } from '@/utils/report-avatar';
+import ReportTable from './ReportTable.vue'
+import ReportContext from './ReportContext.vue'
 import { api } from '@/api';
 import { ref, onMounted, watch, computed } from 'vue';
 import { vietnamDateRange } from '@/utils/report-period';
@@ -351,7 +356,6 @@ function initials(name: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
-const AV_COLORS = ['#1786be', '#7a4fb0', '#b0734f', '#f79009', '#b04f6e', '#4fb09a', '#2f7dbd', '#9a4fb0', '#b0954f', '#7785a0'];
 function avColor(name: string): string {
   const s = name || '';
   let h = 0;

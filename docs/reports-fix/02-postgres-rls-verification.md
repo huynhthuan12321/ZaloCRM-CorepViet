@@ -1,5 +1,7 @@
 # Nghiệm thu PostgreSQL/RLS cho Báo cáo
 
+**Cập nhật sau sửa 01/11/2026 22:48 (+07):** bộ 15 kiểm tra này đã chạy lại **15/15 PASS**, dùng JWT từ login thật. Thêm 12/12 checks CRM/Audit/RLS/transaction và 2/2 nhóm Automation/Broadcast có dữ liệu PASS. Xem [patch, commands, source lines và giới hạn](03-tenant-rls-remediation.md). Chỉ kết luận PASS phạm vi local đã đo, chưa nghiệm thu migration/production hoặc toàn bước6. Phần FAIL bên dưới giữ nguyên làm bằng chứng trước sửa; `db-setup.json` cũng là snapshot cũ, trạng thái mới ở `db-after-remediation.json`.
+
 **Kết quả: FAIL — đã tái chạy PostgreSQL local lúc 21:06 ngày 01/11/2026 (+07).** Không phải kiểm tra production. Không có thay đổi schema/runtime nào được áp dụng trong lượt nghiệm thu này.
 
 ## Môi trường và giới hạn

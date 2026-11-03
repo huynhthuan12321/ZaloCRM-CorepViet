@@ -537,7 +537,7 @@
  * ──────────────────────────────────────────────────────────────────────── */
 
 /* Touch targets ≥44px on mobile (WCAG AAA recommendation) */
-@media (max-width: 767px) {
+@media not all and (min-width: 768px) { /* complement of 768px desktop rules */
   .airtable-scope .at-btn { min-height: 44px; padding: 10px 18px; }
   .airtable-scope .at-btn--sm { min-height: 44px; padding: 10px 16px; }
   .airtable-scope .at-btn--xs { min-height: 44px; padding: 10px 12px; }
@@ -555,7 +555,7 @@
   .airtable-scope .at-page-title { font-size: 24px; }
 }
 
-@media (max-width: 767px) {
+@media not all and (min-width: 768px) { /* complement of 768px desktop rules */
   .airtable-scope .at-page-title { font-size: 22px; }
   .airtable-scope .at-page-subtitle { font-size: 13px; }
 }

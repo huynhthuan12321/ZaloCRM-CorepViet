@@ -30,9 +30,10 @@ import { auditSecurityAsync } from './security-audit.js';
 import { seedScoringDefaults } from '../scoring/seed-defaults.js';
 import { logger } from '../../shared/utils/logger.js';
 import { config } from '../../config/index.js';
+import { withTenant } from '../../shared/tenant/tenant-context.js';
 
 function autoSeedScoringIfNeeded(orgId: string): void {
-  seedScoringDefaults(orgId).catch((err) => {
+  withTenant(orgId, () => seedScoringDefaults(orgId)).catch((err) => {
     logger.warn({ orgId, err: err?.message }, '[auto-seed-scoring] failed silently');
   });
 }
@@ -92,7 +93,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
     // Fix 2026-06-07: login response kèm passwordChangedAt + onboarding fields để router guard
     // force /setup-password lần đầu. + Phase 2: kèm refreshToken (rotation).
-    const profile = await getProfile(payload.id);
+    const profile = await withTenant(payload.orgId, () => getProfile(payload.id), { userId: payload.id, role: payload.role });
     return { token, refreshToken: refresh.token, user: { ...payload, ...profile } };
   });
 

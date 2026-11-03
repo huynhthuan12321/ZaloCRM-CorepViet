@@ -1,9 +1,12 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <script setup lang="ts">
+import ReportTable from './ReportTable.vue'
+import ReportContext from './ReportContext.vue'
 import { api } from '@/api'
 import { ref, onMounted, computed, watch } from 'vue'
 import { vietnamDateRange } from '@/utils/report-period'
+import { REPORT_AVATAR_COLORS as AV_COLORS } from '@/utils/report-avatar'
 
 type Range = 'today' | '24h' | '7d' | '30d'
 
@@ -92,7 +95,6 @@ function initials(name?: string): string {
   return (parts[parts.length - 2][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-const AV_COLORS = ['#1786be', '#7a4fb0', '#b0734f', '#4fb09a', '#b04f6e', '#0b5880', '#5bb8e5', '#157f3c']
 function avColor(name?: string): string {
   const s = name || ''
   let h = 0
@@ -190,13 +192,14 @@ function disconnectDot(reason?: string): string {
         <button
           v-for="b in rangeBtns"
           :key="b.key"
-          :class="{ on: range === b.key }"
+          :class="{ on: range === b.key }" :aria-pressed="range === b.key"
           @click="range = b.key"
         >{{ b.label }}</button>
       </div>
     </div>
 
     <!-- LOADING -->
+    <ReportContext v-if="data && !loading" :report="data" />
     <div v-if="loading && !data" class="rk-loading">
       <v-icon icon="mdi-loading" size="20" /> Đang tải dữ liệu…
     </div>
@@ -338,7 +341,7 @@ function disconnectDot(reason?: string): string {
           <span class="meta">Audit log</span>
         </div>
         <div class="card-b" style="padding:0">
-          <table v-if="activity.length" class="tbl">
+          <ReportTable v-if="activity.length" label="Bảng số liệu Audit và Hệ thống"><table class="tbl">
             <thead>
               <tr><th>Thời gian</th><th>Người / Bot</th><th>Nhóm</th><th>Hành động</th><th>Đối tượng</th></tr>
             </thead>
@@ -364,7 +367,7 @@ function disconnectDot(reason?: string): string {
                 <td><span class="muted">{{ a?.entityType || '—' }}</span></td>
               </tr>
             </tbody>
-          </table>
+          </table></ReportTable>
           <div v-else class="rk-empty">Chưa có nhật ký hoạt động</div>
         </div>
       </div>
@@ -376,7 +379,7 @@ function disconnectDot(reason?: string): string {
           <span class="meta">24 giờ</span>
         </div>
         <div class="card-b" style="padding:0">
-          <table v-if="disconnects.length" class="tbl">
+          <ReportTable v-if="disconnects.length" label="Bảng số liệu Audit và Hệ thống"><table class="tbl">
             <thead>
               <tr><th>Thời gian</th><th>Nick</th><th>Lý do</th><th class="num">Thời gian rớt</th></tr>
             </thead>
@@ -393,7 +396,7 @@ function disconnectDot(reason?: string): string {
                 <td class="num">{{ n(d?.downMinutes) }} phút</td>
               </tr>
             </tbody>
-          </table>
+          </table></ReportTable>
           <div v-else class="rk-empty">Không có nick mất kết nối trong 24h</div>
         </div>
       </div>

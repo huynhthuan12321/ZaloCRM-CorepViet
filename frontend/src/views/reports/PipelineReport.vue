@@ -31,13 +31,14 @@
         <button
           v-for="r in ranges"
           :key="r.key"
-          :class="{ on: range === r.key }"
+          :class="{ on: range === r.key }" :aria-pressed="range === r.key"
           @click="range = r.key"
         >{{ r.label }}</button>
       </div>
     </div>
 
     <!-- LOADING -->
+    <ReportContext v-if="pipe && !loading" :report="pipe" snapshots="Phễu khách hàng và tồn Lead Pool" />
     <div v-if="loading" class="rk-loading">
       <v-icon icon="mdi-loading" size="20" class="mdi-spin" /> Đang tải báo cáo…
     </div>
@@ -109,7 +110,7 @@
             <div class="meta">ngày · trung bình</div>
           </div>
           <div class="card-b" style="padding:0">
-            <table v-if="timeInStage.length" class="tbl">
+            <ReportTable v-if="timeInStage.length" label="Bảng số liệu Pipeline và Lead Pool"><table class="tbl">
               <thead><tr><th>Stage</th><th class="num">Số ngày TB</th></tr></thead>
               <tbody>
                 <tr v-for="(s, i) in timeInStage" :key="i">
@@ -122,7 +123,7 @@
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </table></ReportTable>
             <div v-else class="rk-empty">Chưa có dữ liệu.</div>
           </div>
         </div>
@@ -135,7 +136,7 @@
           <div class="meta">{{ rangeLabel }} · {{ bySource.length }} nguồn</div>
         </div>
         <div class="card-b" style="padding:0">
-          <table v-if="bySource.length" class="tbl">
+          <ReportTable v-if="bySource.length" label="Bảng số liệu Pipeline và Lead Pool"><table class="tbl">
             <thead>
               <tr>
                 <th>Nguồn</th>
@@ -170,7 +171,7 @@
                 </td>
               </tr>
             </tbody>
-          </table>
+          </table></ReportTable>
           <div v-else class="rk-empty">Chưa có dữ liệu nguồn lead.</div>
         </div>
       </div>
@@ -184,7 +185,7 @@
             <div class="meta">độ công bằng = tải so với TB</div>
           </div>
           <div class="card-b" style="padding:0">
-            <table v-if="byUser.length" class="tbl">
+            <ReportTable v-if="byUser.length" label="Bảng số liệu Pipeline và Lead Pool"><table class="tbl">
               <thead>
                 <tr>
                   <th>Sale</th>
@@ -210,7 +211,7 @@
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </table></ReportTable>
             <div v-else class="rk-empty">Chưa có phân phối lead pool.</div>
           </div>
         </div>
@@ -222,7 +223,7 @@
             <div class="meta">{{ stuck.length }} lead</div>
           </div>
           <div class="card-b" style="padding:0">
-            <table v-if="stuck.length" class="tbl">
+            <ReportTable v-if="stuck.length" label="Bảng số liệu Pipeline và Lead Pool"><table class="tbl">
               <thead>
                 <tr>
                   <th>Khách hàng</th>
@@ -243,7 +244,7 @@
                   <td>{{ s.saleName || '—' }}</td>
                 </tr>
               </tbody>
-            </table>
+            </table></ReportTable>
             <div v-else class="rk-empty">Không có lead bị kẹt.</div>
           </div>
         </div>
@@ -257,6 +258,9 @@
 </template>
 
 <script setup lang="ts">
+import { REPORT_AVATAR_COLORS as avPalette } from '@/utils/report-avatar';
+import ReportTable from './ReportTable.vue'
+import ReportContext from './ReportContext.vue'
 import { api } from '@/api';
 import { ref, computed, onMounted, watch } from 'vue';
 import { vietnamDateRange } from '@/utils/report-period';
@@ -328,7 +332,6 @@ const byUser = computed<any[]>(() => (Array.isArray(pool.value?.byUser) ? pool.v
 const stuck = computed<any[]>(() => (Array.isArray(pool.value?.stuck) ? pool.value.stuck : []));
 
 // ---- styling helpers ----
-const avPalette = ['#7a4fb0', '#1786be', '#b0734f', '#4fb09a', '#b04f6e', '#5a7fb0', '#f79009', '#12b76a'];
 function avColor(i: number): string {
   return avPalette[i % avPalette.length];
 }

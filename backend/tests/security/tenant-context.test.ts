@@ -8,9 +8,17 @@ import {
   getTenantContext,
   requireTenantContext,
   withTenant,
+  runSystemQuery,
 } from '../../src/shared/tenant/tenant-context.js';
 
 describe('tenant-context', () => {
+  it('awaits lazy query thenables inside the tenant and system scopes', async () => {
+    // PrismaPromise starts execution at await/then, rather than construction.
+    const lazy = () => ({ then: (resolve: (value: unknown) => void) => resolve(getTenantContext()) }) as unknown as Promise<unknown>;
+    expect(await withTenant('org-lazy', lazy)).toMatchObject({ orgId: 'org-lazy', bypassTenantGuard: false });
+    expect(await runSystemQuery(lazy)).toMatchObject({ orgId: '*', bypassTenantGuard: true });
+    expect(getTenantContext()).toBeUndefined();
+  });
   it('getTenantContext trả undefined khi chạy ngoài mọi scope', () => {
     expect(getTenantContext()).toBeUndefined();
   });

@@ -2,7 +2,7 @@
    so generic class names (.kpi/.card/.tbl…) never leak into the rest of the app.
    Imported globally in main.ts. Brand tokens fall back to hs-crm-theme.css :root. */
 .rpt-scope{
-  --rk-ink:#1f2d3d; --rk-body:#33414f; --rk-muted:#6b7785; --rk-faint:#97a0ac;
+  --rk-ink:#1f2d3d; --rk-body:#33414f; --rk-muted:#526576; --rk-faint:#526576;
   --rk-bg:#f5f7fa; --rk-surface:#fff; --rk-surface-2:#f8fafc; --rk-hairline:#e6e9ef;
   --rk-brand:var(--brand,#1786be); --rk-brand-700:var(--brand-700,#0b5880); --rk-brand-soft:var(--brand-soft,#e4f1f8); --rk-brand-softer:var(--brand-softer,#f2f8fc); --rk-brand-bright:#5bb8e5;
   --rk-ok:#12b76a; --rk-ok-soft:#e7f7ef; --rk-warn:#f79009; --rk-warn-soft:#fff6e8; --rk-danger:#f04438; --rk-danger-soft:#fdeceb;
@@ -73,7 +73,7 @@
 .rpt-scope .bar>i{display:block;height:100%;border-radius:999px;background:var(--rk-brand)}
 .rpt-scope .bar.ok>i{background:var(--rk-ok)}.rpt-scope .bar.warn>i{background:var(--rk-warn)}.rpt-scope .bar.danger>i{background:var(--rk-danger)}
 /* bar chart */
-.rpt-scope .chart{display:flex;align-items:flex-end;gap:10px;height:180px;padding-top:10px}
+.rpt-scope .chart{display:flex;align-items:flex-end;gap:10px;height:180px;padding-top:10px;min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .rpt-scope .chart .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
 .rpt-scope .chart .stack{width:60%;max-width:34px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;height:100%}
 .rpt-scope .chart .stack i{display:block;border-radius:4px 4px 0 0;background:var(--rk-brand)}
@@ -114,4 +114,97 @@
 .rpt-shell>.rpt-scope{flex:1 1 auto;min-height:0;overflow-y:auto}
 .rpt-subnav a{display:inline-flex;align-items:center;gap:7px;padding:13px 14px;font-size:13px;font-weight:600;color:#6b7785;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap}
 .rpt-subnav a:hover{color:var(--brand-700,#0b5880)}
-.rpt-subnav a.router-link-active{color:var(--brand,#1786be);border-bottom-color:var(--brand,#1786be)}
+.rpt-subnav a.router-link-active{color:var(--brand-700,#0b5880);border-bottom-color:var(--brand,#1786be)}
+
+/* Reports-only responsive layer. Keep other application routes and backend
+   semantics intact. The ancestor rule removes the proven 1100px app minimum
+   only while the report shell is mounted. */
+#app:has(.rpt-app){min-width:0}
+.rpt-shell{min-width:0;height:calc(100dvh - var(--smax-topnav-h,48px))}
+.rpt-shell.crm-mobile{--m-brand:#1786be;--m-brand-strong:#0b5880;--m-bg:#f7f9fc;--m-text:#152838;--m-muted:#526576;--m-line:#d5dce5;--m-focus:#0b5880;--m-touch:44px}
+.rpt-shell>.rpt-scope{min-width:0;overscroll-behavior-y:contain;padding-bottom:env(safe-area-inset-bottom,0px)}
+.rpt-shell .grid{min-width:0}
+.rpt-shell .grid>*{min-width:0}
+.rpt-category{display:none}
+.rpt-access-scope{flex:none;padding:8px 24px;font-size:12px;line-height:1.5;color:#526576;background:#eef5fa;border-bottom:1px solid #d5dce5}
+.rpt-context{margin:0 0 18px;padding:12px 16px;border-left:3px solid #0b5880;background:#edf4f9;border-radius:0 10px 10px 0;color:#33414f;font-size:12px;line-height:1.6}
+.rpt-context p{margin:0;overflow-wrap:anywhere}
+.rpt-context strong{display:inline-block;margin-right:8px;color:#152838}
+.rpt-context .rpt-snapshot-note{margin-top:4px}
+.rpt-table-frame{min-width:0;max-width:100%}
+.rpt-table-scroll{overflow-x:auto;max-width:100%;overscroll-behavior-x:contain;scrollbar-gutter:stable}
+.rpt-table-scroll>.tbl{min-width:max-content}
+.rpt-scroll-hint{display:none}
+.rpt-shell :is(button,a,select,input,[tabindex]):focus-visible,.rpt-detail :is(button,[tabindex]):focus-visible{outline:3px solid #0b5880;outline-offset:3px}
+.rpt-detail{background:#fff;color:#152838;border-radius:16px;padding:20px;overflow-y:auto;font-size:16px;max-height:calc(100dvh - 48px)}
+.rpt-detail header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.rpt-detail h2{font-size:22px;line-height:1.3;overflow-wrap:anywhere}
+.rpt-detail p{font-size:14px;color:#526576;margin:12px 0}
+.rpt-detail dl>div{display:flex;justify-content:space-between;gap:16px;border-top:1px solid #d5dce5;padding:12px 0}
+.rpt-detail dd{font-weight:700;text-align:right;overflow-wrap:anywhere}
+.rpt-detail .rk-btn{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;border:1px solid #d5dce5;border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer}
+.rpt-detail .rk-btn.primary{background:#0b5880;color:#fff}
+@media not all and (min-width:768px){ /* complement of the 768px desktop rules, no fractional gap */
+  .rpt-mobile-app .v-app-bar{height:calc(56px + env(safe-area-inset-top,0px))!important;padding-top:env(safe-area-inset-top,0px);background:#0b5880!important;color:#fff!important}
+  .rpt-mobile-app .v-app-bar .v-btn{min-width:44px;min-height:44px;width:44px;height:44px}
+  .rpt-mobile-brand{min-width:0;display:flex;flex-direction:column;line-height:1.35}
+  .rpt-mobile-brand strong{font-size:18px}.rpt-mobile-brand span{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+  .rpt-mobile-main{padding-top:calc(56px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))!important}
+  .rpt-mobile-app .crm-bottom-nav{height:calc(64px + env(safe-area-inset-bottom,0px))!important}
+  .rpt-mobile-app .rpt-shell{height:calc(100dvh - 56px - 64px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}
+  .rpt-shell>.rpt-scope{padding-bottom:0}
+  .rpt-subnav{display:none}
+  .rpt-category{display:block;flex:none;padding:12px 16px 8px;background:#fff}
+  .rpt-category label{display:block;color:#526576;font-size:12px;font-weight:600;margin-bottom:4px}
+  .rpt-category select{width:100%;min-height:48px;border:1px solid #d5dce5;border-radius:10px;background:#f7f9fc;color:#152838;padding:8px 12px;font:600 16px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;appearance:auto}
+  .rpt-access-scope{padding:8px 16px;font-size:12px}
+  .rpt-shell .rpt-scope{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;--rk-faint:#526576;--rk-muted:#526576;--rk-brand:#0b5880;--rk-warn:#8a4b08;--rk-ok:#157347;--rk-danger:#b42318}
+  .rpt-shell .rpt{padding:20px 16px 32px;min-width:0}
+  .rpt-shell .rpt-head{display:block;margin-bottom:16px}
+  .rpt-shell .rpt-titles{gap:10px;min-width:0}
+  .rpt-shell .rpt-titles>div:last-child{min-width:0}
+  .rpt-shell .rpt-head .ic{width:36px;height:36px;border-radius:10px}
+  .rpt-shell .rpt-h1{font-size:24px;line-height:1.2;overflow-wrap:anywhere}
+  .rpt-shell .rpt-sub{font-size:14px;line-height:1.5}
+  .rpt-shell .rpt-actions{margin-top:12px;flex-wrap:wrap}
+  .rpt-shell :is(.rk-btn,.seg button,.fl-sel){min-height:44px;min-width:44px;font-size:14px}
+  .rpt-shell .rk-btn.primary{background:#0b5880;border-color:#0b5880}
+  .rpt-shell .rpt-filters{padding:8px;margin-bottom:12px;min-width:0;gap:8px}
+  .rpt-shell .seg{flex-wrap:wrap;border-radius:12px;max-width:100%;gap:2px}
+  .rpt-shell .seg button{padding:8px 10px;border-radius:8px}
+  .rpt-shell :is(input,select){font-size:16px;max-width:100%;min-height:44px}
+  .rpt-shell :is(.g-4,.g-3,.g-2){grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .rpt-shell :is(.col-2,.col-3){grid-column:1/-1}
+  .rpt-shell .g-4>.kpi:first-child{grid-column:1/-1;background:#edf4f9;border-color:#c1d8e7}
+  .rpt-shell .g-4>.kpi:first-child .val{font-size:34px}
+  .rpt-shell .g-2>.card,.rpt-shell .g-3>.card{grid-column:1/-1}
+  .rpt-shell .kpi{padding:14px 12px;overflow-wrap:anywhere}
+  .rpt-shell .kpi .label{font-size:13px;line-height:1.4}
+  .rpt-shell .kpi .top{align-items:flex-start;gap:6px}
+  .rpt-shell .kpi .val{font-size:26px;line-height:1.15}
+  .rpt-shell .kpi .val .u{font-size:12px}
+  .rpt-shell .card-h{gap:8px;flex-wrap:wrap;padding:12px}
+  .rpt-shell .card-h .t{font-size:16px;line-height:1.4}
+  .rpt-shell .card-h .meta{font-size:12px;white-space:normal}
+  .rpt-shell .card-b{padding:12px;min-width:0}
+  .rpt-shell .tbl{font-size:14px}
+  .rpt-shell .tbl th{font-size:12px}.rpt-shell .tbl td{padding:12px}
+  .rpt-shell .tbl a{display:inline-flex;align-items:center;min-width:44px;min-height:44px}
+  .rpt-shell .rpt-scroll-hint{display:block;font-size:12px;color:#526576;padding:8px 12px;margin:0;background:#f7f9fc}
+  .rpt-shell .chart{overflow-x:auto;gap:8px}.rpt-shell .chart .col{min-width:28px}
+  .rpt-shell .heat{min-width:780px}.rpt-shell .hh-grid{min-width:640px}
+  .rpt-shell .heat.h7{min-width:440px}
+  .rpt-shell .funnel .nm{width:76px;overflow-wrap:anywhere}.rpt-shell .funnel .stp{gap:8px}
+  .rpt-shell .funnel .drop{width:44px}
+  .rpt-shell .funnel .vv{color:#152838;background:#ffffffdd;height:24px;top:3px;border-radius:4px;padding:0 4px}
+  .rpt-shell .rk-empty,.rpt-shell .rk-loading{padding:24px 12px;font-size:14px;color:#526576}
+  .rpt-shell .rk-empty[role=alert]{font-style:normal;color:#b42318;background:#fff1f0;border-radius:12px}
+  .rpt-shell .rpt-context{font-size:13px;padding:10px 12px}
+  .rpt-shell .rpt-context strong{display:block}
+}
+@media(max-width:359px){
+  .rpt-category{padding-left:12px;padding-right:12px}
+  .rpt-shell .rpt{padding-left:12px;padding-right:12px}
+  .rpt-shell :is(.g-4,.g-3,.g-2){grid-template-columns:minmax(0,1fr)}
+}
+@media(prefers-reduced-motion:reduce){.rpt-shell *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}

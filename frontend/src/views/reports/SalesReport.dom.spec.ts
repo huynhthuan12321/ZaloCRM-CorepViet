@@ -50,6 +50,39 @@ afterEach(() => {
 })
 
 describe('Sales report availability and loading states', () => {
+  it('opens scoped row detail without extra API calls; close and period changes dismiss it', async () => {
+    h.get.mockImplementation((path: string, config: any) => Promise.resolve(response(path, config.params.from, config.params.to)))
+    const wrapper = mount(SalesReport, { global: { stubs: { VIcon: true, VDialog: { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' } } } })
+    await flushPromises()
+    await wrapper.get('button[aria-label="Chi tiết Sale A"]').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Chưa có dữ liệu')
+    expect(wrapper.get('[role="dialog"] dd').text()).toBe('Team A')
+    expect(h.get).toHaveBeenCalledTimes(2)
+    await wrapper.get('button[aria-label="Đóng chi tiết"]').trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await wrapper.get('button[aria-label="Chi tiết Sale A"]').trigger('click')
+    await wrapper.findAll('.seg button')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(h.get).toHaveBeenCalledTimes(4)
+    wrapper.unmount()
+  })
+  it('does not present alphabetical CRM activity rows as an efficiency ranking', async () => {
+    h.get.mockImplementation((path: string) => Promise.resolve(path === '/reports/sales-performance'
+      ? response(path, '2026-10-03', '2026-11-01')
+      : { data: { ...usageData('2026-10-03', '2026-11-01'), bySale: [{
+        userId: 'sale-a', name: 'Sale A', deptName: 'Team A', avgActiveMinPerDay: 15,
+        actions: 3, topModule: 'Khách hàng', closesPerHour: null, effScore: null,
+      }] } }))
+    const wrapper = mount(SalesReport, { global: { stubs: { VIcon: true } } })
+    await flushPromises()
+    const card = wrapper.findAll('.card').find(item => item.text().includes('Hoạt động dùng CRM theo Sale'))!
+    expect(card.text()).toContain('Thời gian ước tính')
+    expect(card.findAll('th').map(item => item.text())).not.toContain('#')
+    expect(card.find('tbody tr').attributes('style')).toBeUndefined()
+    expect(card.text()).not.toContain('Xếp hạng')
+    wrapper.unmount()
+  })
   it('distinguishes measured zero from unavailable metrics', async () => {
     h.get.mockImplementation((path: string) => Promise.resolve(response(path, '2026-10-03', '2026-11-01')))
     const wrapper = mount(SalesReport, { global: { stubs: { VIcon: true } } })

@@ -134,7 +134,8 @@ function createPrismaClient() {
     // RLS sẽ chặn (fail-safe; warn-mode/tenant-guard bắt các chỗ này trước).
     name: 'tenant-rls-setconfig',
     query: {
-      $allModels: {
+      // Top-level also covers $queryRaw/$executeRaw used by report aggregates.
+      // $allModels alone leaves raw SQL without the transaction-local tenant.
         async $allOperations({ args, query }): Promise<unknown> {
           if (!config.rlsSetConfig) return query(args);
           const ctx = getTenantContext();
@@ -148,7 +149,6 @@ function createPrismaClient() {
           const [, result] = await base.$transaction([setStmt, query(args)]);
           return result;
         },
-      },
     },
   });
 }
@@ -169,14 +169,18 @@ export function tenantTransaction<T>(
 ): Promise<T> {
   const ctx = getTenantContext();
   return (prisma.$transaction as any)(async (tx: TxClient) => {
-    if (config.rlsSetConfig && ctx) {
-      if (ctx.bypassTenantGuard || ctx.orgId === '*') {
-        await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
-      } else {
-        await tx.$executeRaw`SELECT set_config('app.current_org', ${ctx.orgId}, true)`;
+    // Include SET LOCAL itself in this frame: the raw-query extension must not
+    // move it into a different auto-commit transaction/connection.
+    return runWithRlsApplied(async () => {
+      if (config.rlsSetConfig && ctx) {
+        if (ctx.bypassTenantGuard || ctx.orgId === '*') {
+          await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
+        } else {
+          await tx.$executeRaw`SELECT set_config('app.current_org', ${ctx.orgId}, true)`;
+        }
       }
-    }
-    return runWithRlsApplied(() => fn(tx));
+      return await fn(tx);
+    });
   }, opts);
 }
 

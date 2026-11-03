@@ -3,7 +3,7 @@
 /**
  * org-scoped-models.ts — Phase 1a (Bảo mật xác thực 2026-06-07)
  *
- * Danh sách 62 model có cột `orgId` (sinh từ prisma/schema.prisma). Tenant-guard
+ * Danh sách 102 model có cột `orgId` (sinh từ prisma/schema.prisma). Tenant-guard
  * (prisma-client.ts) dùng Set này để biết query model nào CẦN tenant context.
  * Model KHÔNG có orgId (Organization, RefreshToken global, enum...) bỏ qua.
  *
@@ -31,4 +31,35 @@ export const ORG_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'LeadPoolConfig', 'LeadPoolBonusQuota', 'FacebookPageAccount',
   'FacebookLeadgenForm', 'WebhookLog', 'MetaCampaignCache', 'NotifyDedupState',
   'ZaloOaAppConfig', 'ZaloOaConnection', 'ZaloFormMapping', 'ZaloLeadEvent',
+  // E-1: all remaining direct orgId models, including retained schema.
+  'Message',
+  'TelegramBridgeConfig',
+  'TelegramUserLink',
+  'Device',
+  'AppointmentActionLink',
+  'MessageTemplateFolder',
+  'KnowledgeDoc',
+  'KnowledgeChunk',
+  'GroupMember',
+  'GroupScan',
+  'CareSession',
+  'LeadPoolDistribution',
+  'FacebookPageConnection',
+  'FacebookFormMapping',
+  'FacebookLeadEvent',
+  'SaleAssignmentState',
+  'LeadNotifyAck',
+  'FacebookAppConfig',
+  'TiktokAppConfig',
+  'TiktokAdvertiserConnection',
+  'MediaBlob',
+  'MediaAsset',
+  'MediaAlbum',
+  'MediaUsageEvent',
+  'ContentBlock',
+  'BroadcastJob',
+  'BroadcastRun',
+  'BroadcastRunItem',
+  'TargetJob',
+  'TargetRunItem',
 ]);

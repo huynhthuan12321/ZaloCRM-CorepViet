@@ -31,8 +31,8 @@ beforeAll(async () => {
   db = new PGlite();
   await db.waitReady;
   await db.exec(`
-    CREATE TABLE conversations(id text PRIMARY KEY, org_id text, zalo_account_id text);
-    CREATE TABLE messages(id text PRIMARY KEY, conversation_id text, sender_type text, sent_at timestamptz);
+    CREATE TABLE conversations(id text PRIMARY KEY, org_id text, zalo_account_id text, is_virtual boolean NOT NULL DEFAULT false);
+    CREATE TABLE messages(id text PRIMARY KEY, conversation_id text, sender_type text, sent_at timestamptz, is_local boolean NOT NULL DEFAULT false, is_deleted boolean NOT NULL DEFAULT false, metadata jsonb);
     INSERT INTO conversations VALUES ('conversation-a', 'org-a', 'nick-a');
     INSERT INTO messages VALUES
       ('before-start', 'conversation-a', 'self', '2026-09-30T16:59:59.999Z'),

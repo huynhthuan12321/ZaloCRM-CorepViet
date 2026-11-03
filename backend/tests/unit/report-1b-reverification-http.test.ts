@@ -28,8 +28,8 @@ const config = { metrics: ['messages_sent', 'messages_received'], groupBy: 'user
 beforeAll(async () => {
   db = new PGlite(); await db.waitReady;
   await db.exec(`CREATE TABLE users(id text, full_name text);
-    CREATE TABLE conversations(id text, org_id text, zalo_account_id text);
-    CREATE TABLE messages(id text, conversation_id text, sender_type text, replied_by_user_id text, sent_at timestamptz);
+    CREATE TABLE conversations(id text, org_id text, zalo_account_id text, is_virtual boolean NOT NULL DEFAULT false);
+    CREATE TABLE messages(id text, conversation_id text, sender_type text, replied_by_user_id text, sent_at timestamptz, is_local boolean NOT NULL DEFAULT false, is_deleted boolean NOT NULL DEFAULT false, metadata jsonb);
     INSERT INTO users VALUES ('sale-a','Sale A'),('sale-b','Sale B');
     INSERT INTO conversations VALUES ('main','org-a','nick-a'),('shared','org-a','nick-b'),('foreign','org-b','nick-a');
     INSERT INTO messages VALUES

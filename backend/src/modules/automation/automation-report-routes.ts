@@ -3,7 +3,7 @@
 /**
  * automation-report-routes.ts — Báo cáo Automation theo Sale / theo nick Zalo.
  *
- * GET /api/v1/reports/automation?from=&to=
+ * GET /api/v1/reports/automation-summary?from=&to=
  *   - kpis:   tổng phễu kết bạn + bám đuổi + nick online trong range
  *   - bySale: gom theo sale (chủ nick) — kbGui/dongY/tuChoi/noZalo/bdGui/phanHoi + tỉ lệ
  *   - byNick: gom theo nick Zalo — như trên + số lần reconnect
@@ -22,6 +22,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { isInvalidReportPeriodError, resolveReportPeriod } from '../dashboard/report-period.js';
+import { resolveReportScope } from '../dashboard/report-scope.js';
 
 function invalidPeriod(reply: FastifyReply, err: unknown) {
   if (!isInvalidReportPeriodError(err)) return null;
@@ -32,8 +33,12 @@ function invalidPeriod(reply: FastifyReply, err: unknown) {
   });
 }
 
-function pct(numerator: number, denominator: number): number {
-  return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : 0;
+function pct(numerator: number, denominator: number): number | null {
+  return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
+}
+
+function rateAvailability(denominator: number, reason: string) {
+  return denominator > 0 ? { status: 'available' as const } : { status: 'unavailable' as const, reason };
 }
 
 // Bộ đếm per nhóm (nick hoặc sale). kbGui = số lời mời đã gửi được (sent+accepted+rejected).
@@ -50,10 +55,10 @@ export async function automationReportRoutes(app: FastifyInstance): Promise<void
 
   app.get('/api/v1/reports/automation-summary', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
-    if (user.role !== 'admin' && user.role !== 'owner') {
-      return reply.status(403).send({ error: 'forbidden', code: 'automation_report_admin_only' });
-    }
     try {
+      if (!await resolveReportScope(user, true)) {
+        return reply.status(403).send({ error: 'forbidden', code: 'automation_report_admin_only' });
+      }
       const orgId = user.orgId;
       const query = request.query as Record<string, string>;
       const { from, to, start, end } = resolveReportPeriod(query, { defaultDays: 7 });
@@ -143,6 +148,10 @@ export async function automationReportRoutes(app: FastifyInstance): Promise<void
           bdGui: b.bdGui, phanHoi: b.phanHoi, reconnect: b.reconnect,
           tiLeDongYPct: pct(b.dongY, b.kbGui),
           tiLePhanHoiPct: pct(b.phanHoi, b.bdGui),
+          availability: {
+            tiLeDongYPct: rateAvailability(b.kbGui, 'no_friendship_attempts_in_period'),
+            tiLePhanHoiPct: rateAvailability(b.bdGui, 'no_care_messages_in_period'),
+          },
         };
       }).sort((a, b) => (b.kbGui + b.bdGui) - (a.kbGui + a.bdGui));
 
@@ -170,6 +179,10 @@ export async function automationReportRoutes(app: FastifyInstance): Promise<void
         bdGui: b.bdGui, phanHoi: b.phanHoi,
         tiLeDongYPct: pct(b.dongY, b.kbGui),
         tiLePhanHoiPct: pct(b.phanHoi, b.bdGui),
+        availability: {
+          tiLeDongYPct: rateAvailability(b.kbGui, 'no_friendship_attempts_in_period'),
+          tiLePhanHoiPct: rateAvailability(b.bdGui, 'no_care_messages_in_period'),
+        },
       })).sort((a, b) => (b.kbGui + b.bdGui) - (a.kbGui + a.bdGui));
 
       // ─── KPI tổng ──────────────────────────────────────────────────────────
@@ -195,6 +208,10 @@ export async function automationReportRoutes(app: FastifyInstance): Promise<void
           tiLeDongYPct: pct(dongY, kbGui),
           tiLePhanHoiPct: pct(phanHoi, bdGui),
           tongNick, nickOnline,
+        },
+        availability: {
+          tiLeDongYPct: rateAvailability(kbGui, 'no_friendship_attempts_in_period'),
+          tiLePhanHoiPct: rateAvailability(bdGui, 'no_care_messages_in_period'),
         },
         bySale, byNick,
       };

@@ -1,6 +1,8 @@
 # Bước 3B — Kiểm tra độc lập KPI và UI
 
-Cập nhật 01/11/2026 (+07). **Kết quả ban đầu: FAIL; remediation đã triển khai, đang chờ kiểm tra độc lập lại.** Bằng chứng ban đầu bên dưới được giữ nguyên; phần cập nhật remediation ghi trạng thái hiện tại.
+**Kết luận mới nhất — 01/11/2026 23:18 (+07): 3B PASS cho contract/rollout nền hiện tại ở local.** Browser mới đạt 20/20 kịch bản trên 8 view với đăng nhập/JWT/DB thật; lỗi/retry, kỳ chậm và quyền leader/member/hai org đạt. DB/JWT/HTTP chạy lại 29/29 PASS. Kết quả backend 52/52 (tách role), DOM 19/19 và type/build PASS từ lượt trước được giữ, không giả đã chạy lại. Xem [bằng chứng browser và giới hạn](03-browser-recheck.md). Bước4 vẫn **NOT_STARTED**, chưa commit/deploy. PASS này không thay nghiệm thu staging/production, migration replay, tải hoặc mobile; metric thiếu nguồn giữ unavailable đúng contract.
+
+Cập nhật 01/11/2026 (+07). **Kết quả ban đầu: FAIL; remediation đã được kiểm tra lại, xem kết luận mới nhất phía trên.** Bằng chứng FAIL/BLOCKED ban đầu và lần CDP timeout bên dưới được giữ nguyên theo thời điểm, không phải trạng thái hiện tại.
 
 ## Phạm vi và cách kiểm tra
 
@@ -96,3 +98,25 @@ Giới hạn: chưa tái nghiệm thu độc lập toàn bộ 3B, chưa đối s
 - Patch mới (cùng nhóm 3B-05): `NickFleetReport.vue` còn 3 chỗ guard bằng `!= null` hoặc không guard đơn vị — uptime 7 ngày (`:137`), tra cứu SĐT (`:164`) và `%` SDK theo loại (`:209`). Đổi sang `hasValue(...)` để giá trị null/không hữu hạn không bao giờ hiện kèm `%` ("Chưa có dữ liệu%"). Không đổi công thức KPI, API hay quyền.
 - Kiểm thử: backend 3 files **22/22 PASS**, backend `tsc --noEmit` PASS; frontend 4 files **10/10 PASS**; `npm.cmd run build` PASS (chỉ còn cảnh báo chunk > 500 kB).
 - Trạng thái không đổi: PASS regression KPI/UI cục bộ; nghiệm thu đầy đủ vẫn **BLOCKED** bởi PostgreSQL/RLS (`02-postgres-rls-verification.md`) và các vùng Automation/Broadcast/CRM Usage/Audit chưa đối soát với DB.
+
+## Kiểm tra xác nhận tiếp — 01/11/2026 22:15 (+07)
+
+- Đối chiếu lại code và regression tests: cả sáu phát hiện 3B-01..06 vẫn được xử lý; tỉ lệ trả lead tiếp tục fail-closed vì chưa có mẫu số nghiệp vụ.
+- Chạy lại backend 3 files: **22/22 PASS**; frontend 4 files: **10/10 PASS**; backend TypeScript và frontend build PASS.
+- Thử mở lại các màn với fixture qua browser automation nhưng CDP connect timeout; chỉ xác nhận Vite local trả HTTP 200. Vì vậy lượt xác nhận này không ghi nhận là browser verification mới.
+- Kết luận giữ nguyên: **PASS các regression KPI/UI cục bộ, chưa PASS nghiệm thu toàn bước 3B**. Automation/Broadcast/CRM Usage/Audit chưa đối soát đầy đủ; PostgreSQL/RLS còn **FAIL 6/15 PASS, 9/15 FAIL**. Chưa đủ điều kiện theo gate “sau khi bước3 PASS” để bắt đầu bước4.
+
+## Bổ sung kiểm tra Automation/Broadcast
+
+- Đối chiếu backend với fixture: Automation dùng `FriendshipAttempt`/`CareSessionEvent`; Broadcast dùng số gửi/lỗi của `BroadcastRun`. Phát hiện tỉ lệ 0% bị trả về khi mẫu số không có bản ghi và UI hiển thị `null` thành0; hai API chưa nêu rõ lý do unavailable.
+- Đã sửa: tỉ lệ mẫu số0 trả `null` và availability reason; số đo0 vẫn giữ0 khi mẫu số có bản ghi. UI Automation/Broadcast giữ hậu tố `%` chỉ cho số hợp lệ, hiện lỗi request riêng với nút thử lại, loại response kỳ sai và response cũ khi đổi kỳ nhanh.
+- Regression mới: backend `automation-broadcast-report-availability.test.ts` **4/4 PASS**; frontend `AutomationReport.dom.spec.ts` + `BroadcastReport.dom.spec.ts` **8/8 PASS**. Cả sáu DOM spec báo cáo **18/18 PASS**; bộ backend report **26/26 PASS**; backend TypeScript và frontend build PASS.
+- Đã thử Vite local: HTTP **200**. Browser CDP kết nối timeout; không ghi nhận kiểm tra browser thật trong lượt này. DOM tests là bằng chứng frontend cục bộ, không thay thế browser test hoặc PostgreSQL/RLS.
+- Còn BLOCKED: chưa đối soát đầy đủ CRM Usage/Audit với PostgreSQL, không có query-plan/production evidence; PostgreSQL/RLS vẫn **6/15 PASS, 9/15 FAIL**. Vì vậy không nâng nghiệm thu 3B lên PASS và bước4 vẫn **NOT_STARTED**.
+
+## Tái kiểm tra sau tenant/RLS remediation — 01/11/2026
+
+- Harness HTTP/JWT trên DB disposable hiện tại: **15/15 PASS**; CRM Usage/Audit và SQL oracle + RLS: **12/12 PASS**; Automation/Broadcast có dữ liệu đối chứng hai org: **2/2 PASS**. Tổng **29/29 checks local PASS**, không phải browser tests hay production acceptance.
+- Regression backend: **42/42 PASS** trong bảy spec dưới role app không bypass RLS; refresh-token integration: **10/10 PASS** riêng dưới owner role trên cùng DB disposable. Sáu DOM spec report: **19/19 PASS**; backend TypeScript và frontend build PASS. Gộp cả tám spec dưới app role không hợp lệ: refresh fixture tạo user không có tenant context nên 10 tests bị skip sau lỗi RLS; xem chi tiết và lệnh tách tại [03-tenant-rls-remediation.md](./03-tenant-rls-remediation.md).
+- Đã xem ảnh browser lưu từ lượt trước; ba tab browser hiện tại đều timeout qua CDP, vì vậy lượt này **không** ghi nhận browser verification mới. Không replay migration, không đo query-plan/tải đại diện.
+- Kết luận: các bản sửa đã tái kiểm tra đạt ở DB/JWT/HTTP và test local; **3B vẫn IN_PROGRESS/chờ browser recheck độc lập**, không PASS toàn bước. PostgreSQL/RLS blocker 6/15 lịch sử đã được xử lý trong disposable DB, nhưng chưa là nghiệm thu staging/production; coverage Engagement và return-rate denominator vẫn unavailable. Bước 4 **NOT_STARTED**.

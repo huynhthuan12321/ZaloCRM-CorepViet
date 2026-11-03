@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <template>
-  <v-app class="smax-app">
+  <v-app class="smax-app" :class="{ 'rpt-app': route.path.startsWith('/reports/') }">
     <!-- ════════ TOP NAV — HS Holding teal-navy shell (redesign 2026-06-05, đảo lock Variant A) ════════ -->
     <!-- Gradient teal-navy + monogram HS + wordmark · 7 tab + Báo cáo + Cài đặt · MDI line icon · active HS -->
     <header class="smax-topnav">
@@ -12,12 +12,23 @@
       </RouterLink>
 
       <!-- Primary nav tabs -->
-      <nav class="nav-tabs">
+      <nav ref="primaryNavigation" class="nav-tabs" aria-label="Điều hướng chính">
+        <!-- Reports compact layout: keep report/settings/account actions visible. -->
+        <v-menu v-model="primaryMenu" :disabled="!isCompactNavigation" :close-on-content-click="true" @after-leave="onPrimaryMenuAfterLeave">
+          <template #activator="{ props: act }">
+            <button class="nav-tab compact-navigation" v-bind="act">
+              <v-icon icon="mdi-menu" size="18" />Điều hướng<span class="caret">▾</span>
+            </button>
+          </template>
+          <v-list density="compact" min-width="220" aria-label="Điều hướng chính">
+            <v-list-item v-for="tab in visiblePrimaryTabs" :key="tab.path" :to="tab.path" :title="tab.label" :prepend-icon="tab.icon" />
+          </v-list>
+        </v-menu>
         <RouterLink
           v-for="tab in visiblePrimaryTabs"
           :key="tab.path"
           :to="tab.path"
-          class="nav-tab"
+          class="nav-tab primary-nav-link"
           :class="{ active: isActive(tab) }"
         >
           <v-icon :icon="tab.icon" size="16" class="ic-svg" />{{ tab.label }}
@@ -29,26 +40,16 @@
              open-on-hover → CLICK + v-model điều khiển. Hover race + click item bị
              chặn quyền làm overlay (z-index 2000) kẹt mở, phủ lên nav nuốt click.
              router.afterEach đóng hết menu. -->
-        <v-menu v-if="authStore.canAccess('engagement_score')" v-model="reportsMenu" :close-on-content-click="true">
+        <v-menu v-if="canViewReports(authStore.user)" v-model="reportsMenu" :close-on-content-click="true">
           <template #activator="{ props: act }">
-            <button class="nav-tab" :class="{ active: isReportsActive }" v-bind="act">
+            <button data-report-nav-trigger class="nav-tab" :class="{ active: isReportsActive }" v-bind="act">
               <v-icon icon="mdi-chart-box-outline" size="16" class="ic-svg" />Báo cáo<span class="caret">▾</span>
             </button>
           </template>
           <!-- Module Báo cáo 7 màn (2026-06-17) — liệt kê trực tiếp cho dễ vào. -->
           <v-list density="compact" min-width="236">
             <v-list-subheader>Báo cáo</v-list-subheader>
-            <v-list-item to="/reports/tong-quan"  title="Tổng quan điều hành"   prepend-icon="mdi-view-dashboard-outline" />
-            <v-list-item to="/reports/nick"        title="Vận hành Nick Zalo"    prepend-icon="mdi-cellphone-link" />
-            <v-list-item to="/reports/sale"        title="Hiệu suất Sale & Team" prepend-icon="mdi-account-tie-outline" />
-            <!-- EE-only: Pipeline (Lead Pool) + Automation report là tính năng Extension.
-                 Ẩn ở Community (route /reports/automation do EE inject → CE không có). -->
-            <v-list-item v-if="isExtension" to="/reports/pipeline"    title="Pipeline & Lead Pool"  prepend-icon="mdi-filter-variant" />
-            <v-list-item v-if="isExtension" to="/reports/automation"  title="Automation & Chăm sóc" prepend-icon="mdi-cog-sync-outline" />
-            <v-list-item to="/reports/engagement"  title="Engagement KH"         prepend-icon="mdi-fire" />
-            <v-list-item to="/reports/audit"       title="Audit & Sức khỏe HT"   prepend-icon="mdi-shield-check-outline" />
-            <!-- Broadcast tự động (🟢 Community extension 2026-07-06) -->
-            <v-list-item to="/reports/broadcast"   title="Broadcast tự động"     prepend-icon="mdi-bullhorn-outline" />
+            <v-list-item v-for="category in reportNavigation" :key="category.to" :to="category.to" :title="category.title" :prepend-icon="category.icon" />
             <v-divider />
             <v-list-item to="/analytics" title="Phân tích nâng cao" prepend-icon="mdi-chart-line" />
           </v-list>
@@ -146,6 +147,8 @@ import { ref, computed, onMounted, nextTick } from 'vue';
 import { useTheme } from 'vuetify';
 import { useRoute, RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { canViewReports, visibleReportCategories } from '@/utils/report-access';
+import { useReportCompactNavigation } from '@/composables/use-report-compact-navigation';
 import { isExtension } from '@ee/edition';
 import { useRouter } from 'vue-router';
 import NotificationBell from '@/components/NotificationBell.vue';
@@ -155,6 +158,7 @@ import Avatar from '@/components/ui/Avatar.vue';
 import { fetchPublicBranding } from '@/api/public-branding';
 // Open-core: extension top-nav shortcuts (empty in Community edition via @ee stub).
 import { eeTopNavShortcuts } from '@ee/nav';
+const reportNavigation = computed(() => visibleReportCategories(authStore.user));
 // 2026-06-04: gỡ MiniOnboardingIndicator (Anh chốt code lại setup 4 bước sau)
 // LeadFloatingButton moved to ConversationFilterSidebar 2026-06-01
 // 2026-06-08: gỡ import api — banner "BỎ LỠ thông báo" đã tắt (checkInternalContactSetup no-op).
@@ -167,9 +171,16 @@ const router = useRouter();
 // + ép đóng HẾT sau mỗi điều hướng (kể cả khi điều hướng bị huỷ/chặn quyền). Dropdown
 // Vuetify (z-index 2000) nếu kẹt mở sẽ phủ lên nav (z-index 100) nuốt click → đây là gốc lỗi.
 const reportsMenu = ref(false);
+const primaryNavigation = ref<HTMLElement | null>(null);
+const { primaryMenu, isCompactNavigation, onPrimaryMenuAfterLeave } = useReportCompactNavigation(
+  () => route.path,
+  // Keep Vuetify's activator ref intact; locate the target via our own navigation element.
+  () => primaryNavigation.value?.querySelector<HTMLButtonElement>('[data-report-nav-trigger]'),
+);
 const settingsMenu = ref(false);
 const userMenu = ref(false);
 function closeAllNavMenus() {
+  primaryMenu.value = false;
   reportsMenu.value = false;
   settingsMenu.value = false;
   userMenu.value = false;
@@ -438,6 +449,7 @@ function logout() {
   box-shadow: inset 0 -2px 0 var(--nav-accent, #5bb8e5);
 }
 .nav-tab.active .ic-svg { color: var(--nav-accent, #5bb8e5); }
+.nav-tab.compact-navigation { display: none; }
 
 /* HD compact — chỉ kick in khi viewport < 1280 (rất hiếm với HD-first target) */
 @media (max-width: 1280px) {
@@ -500,6 +512,21 @@ function logout() {
   display: flex; align-items: center; justify-content: center;
 }
 .user-avatar :deep(.smax-av) { box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
+
+/* Only report routes release the app's 1100px minimum. Compact navigation
+   uses the same permission-filtered tabs; the remaining actions stay in view. */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .rpt-app .primary-nav-link { display: none; }
+  .rpt-app .compact-navigation { display: inline-flex; }
+  .rpt-app .hs-brand { min-width: 0; margin-right: 8px; }
+  .rpt-app .hs-bwm { min-width: 0; max-width: 160px; }
+  .rpt-app .hs-b1 { overflow: hidden; text-overflow: ellipsis; }
+  .rpt-app .nav-tabs { flex: none; }
+  .rpt-app :is(.nav-tab, .icon-btn, .user-avatar) { min-width: 44px; min-height: 44px; }
+  .rpt-app :deep(.icon-btn-wrap) > * { min-width: 44px; min-height: 44px; }
+  .rpt-app :is(.icon-btn, .user-avatar) { flex: none; }
+  .rpt-app .smax-topnav :is(a, button):focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+}
 
 .smax-main {
   background: var(--smax-grey-100);

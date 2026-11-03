@@ -8,7 +8,7 @@
  * tenant-guard + Postgres RLS) tự lấy orgId mà KHÔNG cần truyền tay qua mọi
  * hàm.
  *
- *   HTTP request:  authMiddleware → enterWith(ctx) → handler chạy trong ctx
+ *   HTTP request: authMiddleware → withTenant(..., done) → handler chạy trong ctx
  *   Worker/cron:   withTenant(orgId, fn) → fn chạy trong ctx
  *
  * Phase 0 chỉ CUNG CẤP context, CHƯA enforce. Phase 1 mới bật fail-loud +
@@ -51,7 +51,8 @@ const storage = new AsyncLocalStorage<TenantContext>();
 
 /**
  * Gắn context cho phần async hiện tại trở đi (dùng trong Fastify hook —
- * enterWith persist suốt vòng đời request trong cùng async context).
+ * Chỉ ảnh hưởng continuation được tạo trong context đó; không truyền ngược qua await
+ * của Fastify. HTTP auth dùng withTenant quanh callback done để truyền đúng scope).
  */
 export function enterTenantContext(ctx: TenantContext): void {
   storage.enterWith(ctx);
@@ -98,7 +99,7 @@ export function withTenant<T>(
       role: opts?.role ?? 'system',
       bypassTenantGuard: opts?.bypassTenantGuard ?? false,
     },
-    fn,
+    async () => await fn(),
   );
 }
 
@@ -112,7 +113,7 @@ export function withTenant<T>(
 export function runSystemQuery<T>(fn: () => Promise<T>): Promise<T> {
   return storage.run(
     { orgId: '*', userId: 'system', role: 'system', bypassTenantGuard: true },
-    fn,
+    async () => await fn(),
   );
 }
 
@@ -126,5 +127,5 @@ export function runSystemQuery<T>(fn: () => Promise<T>): Promise<T> {
 export function runWithRlsApplied<T>(fn: () => Promise<T>): Promise<T> {
   const ctx = storage.getStore();
   if (!ctx) return fn();
-  return storage.run({ ...ctx, rlsConfigApplied: true }, fn);
+  return storage.run({ ...ctx, rlsConfigApplied: true }, async () => await fn());
 }

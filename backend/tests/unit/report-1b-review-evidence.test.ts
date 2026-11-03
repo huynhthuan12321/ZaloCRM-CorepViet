@@ -12,8 +12,8 @@ const scope:ReportScope={orgId:'org-a',viewerId:'leader-a',kind:'department',use
 beforeAll(async()=>{
  db=new PGlite();await db.waitReady;
  await db.exec(`CREATE TABLE users(id text,full_name text);
- CREATE TABLE conversations(id text,org_id text,zalo_account_id text);
- CREATE TABLE messages(id text,conversation_id text,sender_type text,replied_by_user_id text,sent_at timestamptz);
+ CREATE TABLE conversations(id text,org_id text,zalo_account_id text,is_virtual boolean NOT NULL DEFAULT false);
+ CREATE TABLE messages(id text,conversation_id text,sender_type text,replied_by_user_id text,sent_at timestamptz,is_local boolean NOT NULL DEFAULT false,is_deleted boolean NOT NULL DEFAULT false,metadata jsonb);
  INSERT INTO users VALUES ('sale-a','Sale A');
  INSERT INTO conversations VALUES ('c-main','org-a','nick-a');
  INSERT INTO messages VALUES ('customer-inbound','c-main','contact',NULL,'2026-11-01T09:00:00+07:00');

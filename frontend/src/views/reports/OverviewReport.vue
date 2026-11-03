@@ -1,9 +1,12 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <script setup lang="ts">
+import ReportTable from './ReportTable.vue'
+import ReportContext from './ReportContext.vue'
 import { api } from '@/api'
 import { ref, onMounted, computed, watch } from 'vue'
 import { vietnamDateRange } from '@/utils/report-period'
+import { REPORT_AVATAR_COLORS as AV_COLORS } from '@/utils/report-avatar'
 
 type Range = 'today' | '7d' | '30d'
 
@@ -72,7 +75,6 @@ function initials(name?: string): string {
   return (parts[parts.length - 2][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-const AV_COLORS = ['#1786be', '#7a4fb0', '#b0734f', '#4fb09a', '#b04f6e', '#0b5880', '#5bb8e5', '#157f3c']
 function avColor(name?: string): string {
   const s = name || ''
   let h = 0
@@ -174,13 +176,14 @@ function quotaW(v: any): string {
         <button
           v-for="b in rangeBtns"
           :key="b.key"
-          :class="{ on: range === b.key }"
+          :class="{ on: range === b.key }" :aria-pressed="range === b.key"
           @click="range = b.key"
         >{{ b.label }}</button>
       </div>
     </div>
 
     <!-- LOADING -->
+    <ReportContext v-if="data && !loading" :report="data" snapshots="Tổng khách, trạng thái khách, nick và lead đang chờ" />
     <div v-if="loading && !data" class="rpt-loading rk-loading">
       <v-icon icon="mdi-loading" size="20" /> Đang tải dữ liệu…
     </div>
@@ -251,7 +254,7 @@ function quotaW(v: any): string {
             <div class="meta">Khách gửi / Mình gửi</div>
           </div>
           <div class="card-b">
-            <div v-if="msgSeries.length" class="chart">
+            <div v-if="msgSeries.length" class="chart" role="region" tabindex="0" aria-label="Tin nhắn theo ngày Việt Nam; cuộn ngang để xem thêm ngày">
               <div v-for="(row, i) in msgSeries" :key="i" class="col">
                 <div class="stack">
                   <i :style="{ height: barH(row?.received) }"></i>
@@ -296,7 +299,7 @@ function quotaW(v: any): string {
             <span class="meta">Top 5 · theo khách mới trong kỳ</span>
           </div>
           <div class="card-b" style="padding:0">
-            <table v-if="topSales.length" class="tbl">
+            <ReportTable v-if="topSales.length" label="Bảng số liệu Tổng quan"><table class="tbl">
               <thead><tr><th>Sale</th><th class="num">KH mới</th><th class="num">Tin gửi</th><th class="num">Chốt</th></tr></thead>
               <tbody>
                 <tr v-for="(s, i) in topSales" :key="s?.userId ?? i">
@@ -311,7 +314,7 @@ function quotaW(v: any): string {
                   <td class="num"><span class="pill">{{ n(s?.closed) }}</span></td>
                 </tr>
               </tbody>
-            </table>
+            </table></ReportTable>
             <div v-else class="rk-empty">Chưa có dữ liệu sale</div>
           </div>
         </div>
@@ -322,7 +325,7 @@ function quotaW(v: any): string {
             <span class="meta">Top 5</span>
           </div>
           <div class="card-b" style="padding:0">
-            <table v-if="riskNicks.length" class="tbl">
+            <ReportTable v-if="riskNicks.length" label="Bảng số liệu Tổng quan"><table class="tbl">
               <thead><tr><th>Nick</th><th>Trạng thái</th><th class="num">Quota</th><th class="num">Uptime 7d</th></tr></thead>
               <tbody>
                 <tr v-for="(nk, i) in riskNicks" :key="nk?.id ?? i">
@@ -345,7 +348,7 @@ function quotaW(v: any): string {
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </table></ReportTable>
             <div v-else class="rk-empty">Không có nick cần chú ý</div>
           </div>
         </div>

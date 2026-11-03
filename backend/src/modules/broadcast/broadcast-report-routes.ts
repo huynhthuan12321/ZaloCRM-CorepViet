@@ -15,6 +15,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { isInvalidReportPeriodError, resolveReportPeriod } from '../dashboard/report-period.js';
+import { resolveReportScope } from '../dashboard/report-scope.js';
 
 function invalidPeriod(reply: FastifyReply, err: unknown) {
   if (!isInvalidReportPeriodError(err)) return null;
@@ -25,8 +26,14 @@ function invalidPeriod(reply: FastifyReply, err: unknown) {
   });
 }
 
-function pct(numerator: number, denominator: number): number {
-  return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : 0;
+function pct(numerator: number, denominator: number): number | null {
+  return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
+}
+
+function rateAvailability(denominator: number) {
+  return denominator > 0
+    ? { status: 'available' as const }
+    : { status: 'unavailable' as const, reason: 'no_broadcast_delivery_attempts_in_period' };
 }
 
 export async function broadcastReportRoutes(app: FastifyInstance): Promise<void> {
@@ -34,10 +41,10 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/v1/reports/broadcast', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
-    if (user.role !== 'admin' && user.role !== 'owner') {
-      return reply.status(403).send({ error: 'forbidden', code: 'broadcast_admin_only' });
-    }
     try {
+      if (!await resolveReportScope(user, true)) {
+        return reply.status(403).send({ error: 'forbidden', code: 'broadcast_admin_only' });
+      }
       const query = request.query as Record<string, string>;
       const { from, to, start, end } = resolveReportPeriod(query);
 
@@ -87,6 +94,7 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
           zaloAccountId, nickName: nick?.displayName ?? nick?.phone ?? 'Nick đã xoá',
           sent: agg.sent, failed: agg.failed, skipped: agg.skipped,
           successRatePct: pct(agg.sent, agg.sent + agg.failed),
+          availability: { successRatePct: rateAvailability(agg.sent + agg.failed) },
         };
       }).sort((a, b) => b.sent - a.sent);
 
@@ -105,6 +113,7 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
           customerListId, listName: list?.name ?? 'Tệp đã xoá',
           sent: agg.sent, failed: agg.failed, skipped: agg.skipped,
           successRatePct: pct(agg.sent, agg.sent + agg.failed),
+          availability: { successRatePct: rateAvailability(agg.sent + agg.failed) },
         };
       }).sort((a, b) => b.sent - a.sent);
 
@@ -133,6 +142,9 @@ export async function broadcastReportRoutes(app: FastifyInstance): Promise<void>
           totalRuns: runs.length,
           totalSent, totalFailed, totalSkipped,
           successRatePct: pct(totalSent, totalSent + totalFailed),
+        },
+        availability: {
+          successRatePct: rateAvailability(totalSent + totalFailed),
         },
         byNick, byList, recentRuns,
       };

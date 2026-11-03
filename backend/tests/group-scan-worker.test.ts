@@ -101,7 +101,7 @@ beforeEach(() => {
 // ── AC #7 — happy path ───────────────────────────────────────────────────────────
 describe('processGroupScan — happy path (1 group, N members)', () => {
   it('upserts N GroupMember rows and ends state=completed', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(
+    prismaMock.groupScan.findUnique.mockResolvedValue(
       scanRecord({ groupIds: ['gA'] }),
     );
     zaloOpsMock.getGroupInfo.mockResolvedValueOnce(
@@ -134,7 +134,7 @@ describe('processGroupScan — happy path (1 group, N members)', () => {
 // ── AC #8 — re-scan / member in 2 groups: upsert in place, lastSeenAt advances ──
 describe('processGroupScan — re-scan uses upsert (no duplicate row)', () => {
   it('upsert update payload sets lastSeenAt (advances on re-scan), update branch has no create', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(scanRecord({ groupIds: ['gA'] }));
+    prismaMock.groupScan.findUnique.mockResolvedValue(scanRecord({ groupIds: ['gA'] }));
     zaloOpsMock.getGroupInfo.mockResolvedValueOnce(groupInfo('gA', { memberIds: ['u1'] }));
 
     await processGroupScan('scan-1');
@@ -152,7 +152,7 @@ describe('processGroupScan — re-scan uses upsert (no duplicate row)', () => {
   });
 
   it('member in 2 groups → one upsert per (group,uid) tuple, no cross-group dup key', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(scanRecord({ groupIds: ['gA', 'gB'] }));
+    prismaMock.groupScan.findUnique.mockResolvedValue(scanRecord({ groupIds: ['gA', 'gB'] }));
     zaloOpsMock.getGroupInfo
       .mockResolvedValueOnce(groupInfo('gA', { memberIds: ['shared'] }))
       .mockResolvedValueOnce(groupInfo('gB', { memberIds: ['shared'] }));
@@ -173,7 +173,7 @@ describe('processGroupScan — re-scan uses upsert (no duplicate row)', () => {
 // ── AC #9 — isFriend only when accepted Friend row exists ──────────────────────
 describe('processGroupScan — isFriend from Friend(accepted)', () => {
   it('sets isFriend=true only for uids returned by Friend(accepted) lookup', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(scanRecord({ groupIds: ['gA'] }));
+    prismaMock.groupScan.findUnique.mockResolvedValue(scanRecord({ groupIds: ['gA'] }));
     zaloOpsMock.getGroupInfo.mockResolvedValueOnce(
       groupInfo('gA', { memberIds: ['friendUid', 'strangerUid'] }),
     );
@@ -202,7 +202,7 @@ describe('processGroupScan — isFriend from Friend(accepted)', () => {
 // ── Regression (test server thật) — roster nằm ở memVerList, memberIds rỗng ──
 describe('processGroupScan — members from memVerList (real zca-js shape)', () => {
   it('extracts uid from memVerList when memberIds + currentMems are empty → completed', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(scanRecord({ groupIds: ['gA'] }));
+    prismaMock.groupScan.findUnique.mockResolvedValue(scanRecord({ groupIds: ['gA'] }));
     // zca-js thật: memberIds=[], currentMems=[], roster ở memVerList "<uid>_<ver>".
     zaloOpsMock.getGroupInfo.mockResolvedValueOnce(
       groupInfo('gA', {
@@ -229,7 +229,7 @@ describe('processGroupScan — members from memVerList (real zca-js shape)', () 
 // ── AC #10 — truncated group (hasMoreMember>0) → partial, members upserted + COUNTED (not inflated) ──
 describe('processGroupScan — truncated group → partial', () => {
   it('hasMoreMember>0 ends state=partial, upserts fetched members, counts ONLY fetched (not totalMember)', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(scanRecord({ groupIds: ['gA'] }));
+    prismaMock.groupScan.findUnique.mockResolvedValue(scanRecord({ groupIds: ['gA'] }));
     // 2 members fetched but totalMember=5, hasMoreMember=3 → roster truncated.
     zaloOpsMock.getGroupInfo.mockResolvedValueOnce(
       groupInfo('gA', { memberIds: ['u1', 'u2'], totalMember: 5, hasMoreMember: 3 }),
@@ -251,7 +251,7 @@ describe('processGroupScan — truncated group → partial', () => {
 // ── AC #11 — one group throws mid-loop → partial, others processed, resumeCursor advances ──
 describe('processGroupScan — per-group failure isolation', () => {
   it('one group throws → state=partial, other group still processed, resumeCursor written for each', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(
+    prismaMock.groupScan.findUnique.mockResolvedValue(
       scanRecord({ groupIds: ['gBad', 'gGood'] }),
     );
     zaloOpsMock.getGroupInfo
@@ -277,7 +277,7 @@ describe('processGroupScan — per-group failure isolation', () => {
   });
 
   it('resume: skips groups already at/under resumeCursor', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(
+    prismaMock.groupScan.findUnique.mockResolvedValue(
       scanRecord({ groupIds: ['gA', 'gB'], resumeCursor: 'gA' }),
     );
     // Only gB should be fetched (gA already done).
@@ -294,7 +294,7 @@ describe('processGroupScan — per-group failure isolation', () => {
 // ── guard: missing scan ─────────────────────────────────────────────────────────
 describe('processGroupScan — missing scan', () => {
   it('returns early (no update) when scan not found', async () => {
-    prismaMock.groupScan.findUnique.mockResolvedValueOnce(null);
+    prismaMock.groupScan.findUnique.mockResolvedValue(null);
     await processGroupScan('nope');
     expect(prismaMock.groupScan.update).not.toHaveBeenCalled();
   });

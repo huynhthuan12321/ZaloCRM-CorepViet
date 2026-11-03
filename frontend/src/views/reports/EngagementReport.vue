@@ -1,6 +1,9 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
 <script setup lang="ts">
+import { REPORT_AVATAR_COLORS as AV_COLORS } from '@/utils/report-avatar'
+import ReportTable from './ReportTable.vue'
+import ReportContext from './ReportContext.vue'
 import { ref, onMounted, watch } from 'vue'
 import { api } from '@/api'
 import { vietnamDateRange } from '@/utils/report-period'
@@ -91,7 +94,6 @@ function hasValue(n: number | null | undefined): n is number {
   return n != null && Number.isFinite(n)
 }
 
-const AV_COLORS = ['#1786be', '#7a4fb0', '#b0734f', '#4fb09a', '#b04f6e', '#4f7ab0', '#b0a14f', '#5b8f4f']
 function initials(name: string): string {
   if (!name) return '?'
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -187,7 +189,8 @@ function silentPill(days: number): string {
       </div>
 
       <!-- LOADING -->
-      <div v-if="loading" class="rk-loading">
+      <ReportContext v-if="data && !loading" :report="data" snapshots="KH nóng/nguội, nhịp và danh sách khách" />
+    <div v-if="loading" class="rk-loading">
         <v-icon size="18">mdi-loading</v-icon> Đang tải báo cáo tương tác…
       </div>
 
@@ -255,7 +258,7 @@ function silentPill(days: number): string {
               Chưa có dữ liệu nhịp tương tác.
             </div>
             <template v-else>
-              <div class="heat" style="margin-bottom: 10px">
+              <ReportTable label="Heatmap tương tác 28 ngày"><div class="heat" style="margin-bottom: 10px">
                 <template v-for="row in data.heatmap" :key="row.contactId">
                   <div class="rl">{{ row.name }}</div>
                   <div
@@ -266,6 +269,7 @@ function silentPill(days: number): string {
                   ></div>
                 </template>
               </div>
+              </ReportTable>
               <!-- legend -->
               <div
                 style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--rk-muted); font-weight: 600"
@@ -331,7 +335,7 @@ function silentPill(days: number): string {
                 <div v-if="!data.cooling || !data.cooling.length" class="rk-empty">
                   Không có khách đang nguội.
                 </div>
-                <table v-else class="tbl">
+                <ReportTable v-else label="Bảng số liệu Engagement"><table class="tbl">
                   <thead>
                     <tr>
                       <th>Khách hàng</th>
@@ -353,7 +357,7 @@ function silentPill(days: number): string {
                       <td class="num">{{ fmt(c.score) }}</td>
                     </tr>
                   </tbody>
-                </table>
+                </table></ReportTable>
               </div>
             </div>
 
@@ -369,7 +373,7 @@ function silentPill(days: number): string {
                 <div v-if="!data.hot || !data.hot.length" class="rk-empty">
                   Không có khách đang nóng.
                 </div>
-                <table v-else class="tbl">
+                <ReportTable v-else label="Bảng số liệu Engagement"><table class="tbl">
                   <thead>
                     <tr>
                       <th>Khách hàng</th>
@@ -391,7 +395,7 @@ function silentPill(days: number): string {
                       <td class="num">{{ fmt(h.score) }}</td>
                     </tr>
                   </tbody>
-                </table>
+                </table></ReportTable>
               </div>
             </div>
           </div>

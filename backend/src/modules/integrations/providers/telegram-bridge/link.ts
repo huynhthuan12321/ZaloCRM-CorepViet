@@ -8,6 +8,7 @@
 import { randomBytes } from 'node:crypto';
 import { prisma } from '../../../../shared/database/prisma-client.js';
 import { logger } from '../../../../shared/utils/logger.js';
+import { runSystemQuery } from '../../../../shared/tenant/tenant-context.js';
 
 interface PendingCode {
   userId: string;
@@ -32,11 +33,13 @@ export async function redeemLinkCode(code: string, telegramUserId: string): Prom
   const entry = codes.get(key);
   if (!entry || Date.now() > entry.expiry) return false;
   codes.delete(key);
-  await prisma.telegramUserLink.upsert({
+  // Identity bootstrap: possession of the unexpired one-time CRM code permits
+  // linking this exact Telegram identity, including an intentional org relink.
+  await runSystemQuery(() => prisma.telegramUserLink.upsert({
     where: { telegramUserId },
     create: { telegramUserId, userId: entry.userId, orgId: entry.orgId },
     update: { userId: entry.userId, orgId: entry.orgId },
-  });
+  }));
   logger.info(`[telegram-bridge] đã gắn telegram ${telegramUserId} → user CRM ${entry.userId}`);
   return true;
 }
@@ -45,8 +48,9 @@ export async function redeemLinkCode(code: string, telegramUserId: string): Prom
 export async function getLinkedUser(
   telegramUserId: string,
 ): Promise<{ userId: string; orgId: string } | null> {
-  return prisma.telegramUserLink.findUnique({
+  // Pre-tenant identity lookup only; message authorization still happens later.
+  return runSystemQuery(() => prisma.telegramUserLink.findUnique({
     where: { telegramUserId },
     select: { userId: true, orgId: true },
-  });
+  }));
 }

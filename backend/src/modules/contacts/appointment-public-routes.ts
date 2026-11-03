@@ -8,6 +8,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
+import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { verifyActionToken, signActionToken, removeAppointmentReminder } from './appointment-zalo-service.js';
 
 export async function appointmentPublicRoutes(app: FastifyInstance): Promise<void> {
@@ -18,10 +19,12 @@ export async function appointmentPublicRoutes(app: FastifyInstance): Promise<voi
     const { code } = request.params as { code?: string };
     const base = '/appointments/action';
     const link = code
-      ? await prisma.appointmentActionLink.findUnique({
+      // Pre-tenant lookup by the existing short-link capability; no business
+      // query bypasses RLS after the signed token establishes its tenant.
+      ? await runSystemQuery(() => prisma.appointmentActionLink.findUnique({
           where: { code },
           select: { appointmentId: true, userId: true, orgId: true, expiresAt: true },
-        })
+        }))
       : null;
     // Hết hạn / không có → đẩy sang trang action với token rỗng → FE hiện "Link đã hết hạn".
     if (!link || link.expiresAt.getTime() <= Date.now()) {
@@ -38,14 +41,14 @@ export async function appointmentPublicRoutes(app: FastifyInstance): Promise<voi
     const { t } = request.query as { t?: string };
     const p = verifyActionToken(t ?? '');
     if (!p) return reply.status(400).send({ error: 'invalid_or_expired_token' });
-    const appt = await prisma.appointment.findFirst({
+    const appt = await withTenant(p.o, () => prisma.appointment.findFirst({
       where: { id: p.a, orgId: p.o },
       select: {
         id: true, status: true, appointmentDate: true, appointmentTime: true, title: true,
         contact: { select: { fullName: true } },
         assignedUser: { select: { fullName: true } },
       },
-    });
+    }));
     if (!appt) return reply.status(404).send({ error: 'not_found' });
     return {
       id: appt.id,
@@ -67,21 +70,23 @@ export async function appointmentPublicRoutes(app: FastifyInstance): Promise<voi
     if (action !== 'completed' && action !== 'cancelled') {
       return reply.status(400).send({ error: 'invalid_action' });
     }
-    const appt = await prisma.appointment.findFirst({
-      where: { id: p.a, orgId: p.o },
-      select: { id: true, status: true },
+    return withTenant(p.o, async () => {
+      const appt = await prisma.appointment.findFirst({
+        where: { id: p.a, orgId: p.o },
+        select: { id: true, status: true },
+      });
+      if (!appt) return reply.status(404).send({ error: 'not_found' });
+      // Đã đóng rồi → idempotent (sale bấm lại link cũ).
+      if (['completed', 'cancelled', 'no_show'].includes(appt.status)) {
+        return { ok: true, status: appt.status, alreadyClosed: true };
+      }
+      await prisma.appointment.update({
+        where: { id: p.a },
+        data: { status: action, statusChangedByUserId: p.u, statusChangedAt: new Date() },
+      });
+      void removeAppointmentReminder(p.a).catch(() => {});
+      logger.info(`[appt-public] appt ${p.a} → ${action} qua token (user ${p.u})`);
+      return { ok: true, status: action };
     });
-    if (!appt) return reply.status(404).send({ error: 'not_found' });
-    // Đã đóng rồi → idempotent (sale bấm lại link cũ).
-    if (['completed', 'cancelled', 'no_show'].includes(appt.status)) {
-      return { ok: true, status: appt.status, alreadyClosed: true };
-    }
-    await prisma.appointment.update({
-      where: { id: p.a },
-      data: { status: action, statusChangedByUserId: p.u, statusChangedAt: new Date() },
-    });
-    void removeAppointmentReminder(p.a).catch(() => {});
-    logger.info(`[appt-public] appt ${p.a} → ${action} qua token (user ${p.u})`);
-    return { ok: true, status: action };
   });
 }

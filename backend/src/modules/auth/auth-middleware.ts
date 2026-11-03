@@ -8,11 +8,11 @@
  * JWT cũ sau khi đổi password / admin reset password. Token thiếu 'tv' (legacy) → bypass
  * check vì user.jwtTokenVersion = 0 default.
  */
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
-import { enterTenantContext, runSystemQuery } from '../../shared/tenant/tenant-context.js';
+import { withTenant, runSystemQuery } from '../../shared/tenant/tenant-context.js';
 
-export async function authMiddleware(
+async function authenticate(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
@@ -50,8 +50,25 @@ export async function authMiddleware(
     // Mọi route nên đọc request.authCtx thay vì request.user.id/userId rải rác.
     // Phase 1 (tenant-guard + RLS) sẽ tự lấy orgId từ context này (chưa enforce ở Phase 0).
     request.authCtx = { userId: claim.id, orgId: claim.orgId, role: claim.role };
-    enterTenantContext(request.authCtx);
   }
+}
+
+// Fastify must invoke its continuation INSIDE the tenant scope. enterWith inside
+// an async preHandler does not set the context of the caller awaiting that hook.
+export function authMiddleware(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  done: HookHandlerDoneFunction,
+): void {
+  void authenticate(request, reply).then(() => {
+    if (reply.sent) return;
+    const ctx = request.authCtx;
+    if (!ctx?.orgId || !ctx.userId) {
+      reply.status(401).send({ error: 'Unauthorized' });
+      return;
+    }
+    return withTenant(ctx.orgId, async () => { done(); }, ctx);
+  }).catch(done);
 }
 
 /**

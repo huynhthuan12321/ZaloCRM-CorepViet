@@ -15,7 +15,7 @@ export interface ReportScope {
 const scopes = new WeakMap<object, ReportScope>();
 export function orgReportScope(orgId:string):ReportScope{return {orgId,viewerId:'',kind:'org',userIds:null,accountIds:null};}
 
-export async function resolveReportScope(user: {id:string;orgId:string}): Promise<ReportScope | null> {
+export async function resolveReportScope(user: {id:string;orgId:string}, adminOnly=false): Promise<ReportScope | null> {
   // Read current membership/grants for every request, including revocation of admin/access.
   const current = await prisma.user.findFirst({
     where: {id:user.id,orgId:user.orgId,isActive:true},
@@ -23,6 +23,7 @@ export async function resolveReportScope(user: {id:string;orgId:string}): Promis
   });
   if(!current)return null;
   if(current.role==='owner'||current.role==='admin')return {orgId:user.orgId,viewerId:user.id,kind:'org',userIds:null,accountIds:null};
+  if(adminOnly)return null;
   const group=current.permissionGroup;
   const grants=group && !group.archivedAt ? group.grants as Record<string,Record<string,unknown>> : {};
   if(grants?.engagement_score?.access!==true)return null;
@@ -53,7 +54,12 @@ export function reportScope(request:FastifyRequest):ReportScope{
 
 export function reportModelWhere(scope:ReportScope,model:string):Record<string,unknown>{
   const org={orgId:scope.orgId};
-  if(scope.kind==='org')return org;
+  if(scope.kind==='org'){
+    // Contract 5.1: merged contacts never enter canonical counts, whatever the scope.
+    if(model==='contact')return {...org,mergedInto:null};
+    if(model==='contactEngagementDaily')return {...org,contact:{orgId:scope.orgId,mergedInto:null}};
+    return org;
+  }
   const users={in:scope.userIds??[]};
   switch(model){
     case 'user':return {...org,id:users};
@@ -73,14 +79,20 @@ export function reportModelWhere(scope:ReportScope,model:string):Record<string,u
 // Aliases below are server constants, never request/config values.
 export function contactReportSql(scope:ReportScope,alias:'c'|''=''){
   const prefix=alias ? Prisma.raw(`${alias}.`) : Prisma.empty;
-  return scope.kind==='org' ? Prisma.sql`${prefix}org_id = ${scope.orgId}` : Prisma.sql`${prefix}org_id = ${scope.orgId} AND ${prefix}assigned_user_id = ANY(${scope.userIds}::text[]) AND ${prefix}merged_into IS NULL`;
+  return scope.kind==='org' ? Prisma.sql`${prefix}org_id = ${scope.orgId} AND ${prefix}merged_into IS NULL` : Prisma.sql`${prefix}org_id = ${scope.orgId} AND ${prefix}assigned_user_id = ANY(${scope.userIds}::text[]) AND ${prefix}merged_into IS NULL`;
+}
+/** Contract 5.1 operational message: real Zalo conversation, no local/deleted/dry-run/test rows. */
+export function canonicalMessageSql(){
+  return Prisma.sql`c.zalo_account_id IS NOT NULL AND c.is_virtual = false
+    AND m.is_local = false AND m.is_deleted = false
+    AND COALESCE(m.metadata->>'dryRun', 'false') <> 'true' AND COALESCE(m.metadata->>'test', 'false') <> 'true'`;
 }
 export function messageReportSql(scope:ReportScope,mode:'main'|'people'='main'){
   // Customer inbound has no CRM author. Keep the staff restriction on outbound;
   // never drop it for another department's employees, even on a readable nick.
-  if(scope.kind==='org')return Prisma.sql`c.org_id = ${scope.orgId}`;
-  if(mode==='people')return Prisma.sql`c.org_id = ${scope.orgId} AND c.zalo_account_id = ANY(${scope.readableAccountIds??scope.accountIds}::text[]) AND m.replied_by_user_id = ANY(${scope.userIds}::text[])`;
-  return Prisma.sql`c.org_id = ${scope.orgId} AND c.zalo_account_id = ANY(${scope.accountIds}::text[]) AND (m.sender_type = 'contact' OR m.replied_by_user_id = ANY(${scope.userIds}::text[]))`;
+  if(scope.kind==='org')return Prisma.sql`c.org_id = ${scope.orgId} AND ${canonicalMessageSql()}`;
+  if(mode==='people')return Prisma.sql`c.org_id = ${scope.orgId} AND c.zalo_account_id = ANY(${scope.readableAccountIds??scope.accountIds}::text[]) AND m.replied_by_user_id = ANY(${scope.userIds}::text[]) AND ${canonicalMessageSql()}`;
+  return Prisma.sql`c.org_id = ${scope.orgId} AND c.zalo_account_id = ANY(${scope.accountIds}::text[]) AND (m.sender_type = 'contact' OR m.replied_by_user_id = ANY(${scope.userIds}::text[])) AND ${canonicalMessageSql()}`;
 }
 export function messageAccountSql(scope:ReportScope){
   return scope.kind==='org'

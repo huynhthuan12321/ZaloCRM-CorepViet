@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   scope: vi.fn(),
   queryRaw: vi.fn(),
   responseTime: vi.fn(),
-  prisma: Object.fromEntries(['status','contact','contactEngagementDaily','zaloAccount','appointment','leadRequest','leadPoolDistribution','user','department','departmentMember','zaloAccountAccess','activityLog'].map(name=>[name,{
+  prisma: Object.fromEntries(['status','contact','contactEngagementDaily','zaloAccount','appointment','leadRequest','leadPoolDistribution','user','department','departmentMember','zaloAccountAccess','activityLog','automationEventLog','zaloAccountStatusLog'].map(name=>[name,{
     findFirst:vi.fn(),findMany:vi.fn(),count:vi.fn(),groupBy:vi.fn(),aggregate:vi.fn(),
   }])),
 }));
@@ -179,6 +179,27 @@ describe('Report review: isolated current-behavior evidence (no database)',()=>{
     expect(result.kpis.customerInitiatedPct).toBe(0);
     expect(result.availability.customerInitiatedPct).toEqual({status:'available'});
     expect(result.kpis.avgInteractionsPerDay).toBeNull();
+  });
+  it('keeps activeSalesToday independent of the selected historical period',async()=>{
+    mocks.prisma.user.findMany.mockResolvedValue([{id:'sale-a',fullName:'Sale A'}]);
+    mocks.prisma.activityLog.groupBy.mockResolvedValue([{userId:'sale-a'}]);
+    const result=await handlers['/api/v1/reports/crm-usage'](request('admin'),reply);
+    expect(result.kpis.activeSalesToday).toBe(1);
+    expect(result.kpis.totalActions).toBe(0);
+    expect(mocks.prisma.activityLog.groupBy).toHaveBeenCalledWith({
+      by:['userId'],where:{AND:[{orgId:'org-a',actorType:'user',userId:{in:['sale-a']},createdAt:{gte:new Date('2026-10-28T17:00:00Z'),lt:new Date('2026-10-29T03:00:00Z')}},{orgId:'org-a'}]},
+    });
+  });
+  it('caps audit snapshots and feed at asOf instead of counting future events',async()=>{
+    const result=await handlers['/api/v1/reports/audit'](request('admin'),reply);
+    expect(result.systemHealth.errorRate24h).toBeNull();
+    for(const model of ['activityLog','automationEventLog','zaloAccountStatusLog']){
+      for(const [args] of mocks.prisma[model].count.mock.calls){
+        const window=args.where.AND[0].createdAt??args.where.AND[0].startedAt;
+        expect(window.lt).toEqual(new Date('2026-10-29T03:00:00Z'));
+      }
+    }
+    expect(mocks.prisma.activityLog.findMany.mock.calls[0][0].where.AND[0].createdAt.lt).toEqual(new Date('2026-10-29T03:00:00Z'));
   });
   it('keeps CRM outcome efficiency unavailable without a won-status mapping',async()=>{
     mocks.prisma.activityLog.findMany.mockResolvedValue([]);

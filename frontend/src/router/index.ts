@@ -3,6 +3,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
+import { canViewAiReport, canViewReports, canViewReportPath } from '@/utils/report-access';
 import { getMarketingFallbackPath, getMarketingFeatureForPath, isMarketingPathEnabled } from '@/utils/marketingFeatureFlags';
 // Open-core: extension route injection (empty in Community edition via @ee stub).
 import { eeSettingsChildren, eeReportsChildren, eeTopRoutes } from '@ee/routes';
@@ -87,17 +88,19 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/reports/ReportsShell.vue'),
     meta: { requiresAuth: true, resource: 'engagement_score' },
     redirect: '/reports/tong-quan',
+    beforeEnter: () => canViewReports(useAuthStore().user) ? true : '/',
     children: [
       { path: 'tong-quan',  name: 'Reports.Overview',   component: () => import('@/views/reports/OverviewReport.vue'),   meta: { resource: 'engagement_score' } },
       { path: 'nick',       name: 'Reports.Nick',       component: () => import('@/views/reports/NickFleetReport.vue'),  meta: { resource: 'engagement_score' } },
       { path: 'sale',       name: 'Reports.Sales',      component: () => import('@/views/reports/SalesReport.vue'),      meta: { resource: 'engagement_score' } },
       { path: 'pipeline',   name: 'Reports.Pipeline',   component: () => import('@/views/reports/PipelineReport.vue'),   meta: { resource: 'engagement_score' } },
       { path: 'engagement', name: 'Reports.Engagement', component: () => import('@/views/reports/EngagementReport.vue'), meta: { resource: 'engagement_score' } },
-      { path: 'audit',      name: 'Reports.Audit',      component: () => import('@/views/reports/AuditReport.vue'),      meta: { resource: 'engagement_score' } },
+      { path: 'audit',      name: 'Reports.Audit',      component: () => import('@/views/reports/AuditReport.vue'),      meta: { resource: 'engagement_score' }, beforeEnter: () => canViewReportPath(useAuthStore().user, '/reports/audit') ? true : '/' },
       // Broadcast tự động (🟢 Community extension 2026-07-06)
-      { path: 'broadcast',  name: 'Reports.Broadcast',  component: () => import('@/views/reports/BroadcastReport.vue'),  meta: { resource: 'engagement_score' } },
+      { path: 'broadcast',  name: 'Reports.Broadcast',  component: () => import('@/views/reports/BroadcastReport.vue'),  meta: { resource: 'engagement_score' }, beforeEnter: () => canViewReportPath(useAuthStore().user, '/reports/broadcast') ? true : '/' },
       // Automation — phễu kết bạn + bám đuổi theo Sale/Nick (🟢 Community extension 2026-07-22)
-      { path: 'automation', name: 'Reports.Automation', component: () => import('@/views/reports/AutomationReport.vue'), meta: { resource: 'engagement_score' } },
+      { path: 'automation', name: 'Reports.Automation', component: () => import('@/views/reports/AutomationReport.vue'), meta: { resource: 'engagement_score' }, beforeEnter: () => canViewReportPath(useAuthStore().user, '/reports/automation') ? true : '/' },
+      { path: 'ai', name: 'Reports.Ai', component: () => import('@/views/reports/AiReport.vue'), meta: { resource: 'engagement_score' }, beforeEnter: () => canViewAiReport(useAuthStore().user) ? true : '/' },
       ...eeReportsChildren,
     ],
   },
@@ -374,6 +377,7 @@ const ROUTE_TITLES: Record<string, string> = {
   'Reports.Automation': 'Báo cáo · Automation & Chăm sóc',
   'Reports.Engagement': 'Báo cáo · Engagement KH',
   'Reports.Audit': 'Báo cáo · Audit & Sức khỏe hệ thống',
+  'Reports.Ai': 'Báo cáo · AI',
   Analytics: 'Phân tích',
   CustomerActivityLog: 'Nhật ký hoạt động KH',
   ContactProfile: 'Hồ sơ khách hàng',

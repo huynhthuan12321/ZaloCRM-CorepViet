@@ -29,7 +29,7 @@ async function humanSentByUser(scope: ReturnType<typeof reportScope>, start: Dat
     FROM messages m
     JOIN conversations c ON c.id = m.conversation_id
     WHERE ${messageAccountSql(scope)}
-      AND c.zalo_account_id IS NOT NULL AND c.is_virtual = false AND c.thread_type = 'user'
+      AND c.zalo_account_id IS NOT NULL AND c.is_virtual = false AND c."threadType" = 'user'
       AND m.sender_type = 'self' AND m.sent_via IN ('user', 'user_native')
       AND m.is_local = false AND m.is_deleted = false
       AND COALESCE(m.metadata->>'dryRun', 'false') <> 'true'
@@ -158,7 +158,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         WHERE ${messageAccountSql(scope)} AND c.zalo_account_id IS NOT NULL
-          AND c.is_virtual = false AND c.thread_type = 'user'
+          AND c.is_virtual = false AND c."threadType" = 'user'
           AND m.is_local = false AND m.is_deleted = false
           AND COALESCE(m.metadata->>'dryRun', 'false') <> 'true'
           AND COALESCE(m.metadata->>'test', 'false') <> 'true'
@@ -975,10 +975,10 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       const last24h = new Date(now.getTime() - 24 * 3600000);
 
       const [changesToday, nickDisconnect24h, totalEvents24h, failedEvents24h] = await Promise.all([
-        prisma.activityLog.count({ where: { AND: [{ orgId, createdAt: { gte: todayStart } }, reportModelWhere(scope, 'activityLog')] } }),
-        prisma.zaloAccountStatusLog.count({ where: { AND: [{ orgId, status: 'disconnected', startedAt: { gte: last24h } }, reportModelWhere(scope, 'zaloAccountStatusLog')] } }),
-        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h } }, reportModelWhere(scope, 'automationEventLog')] } }),
-        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h }, eventType: { contains: 'failed', mode: 'insensitive' } }, reportModelWhere(scope, 'automationEventLog')] } }),
+        prisma.activityLog.count({ where: { AND: [{ orgId, createdAt: { gte: todayStart, lt: now } }, reportModelWhere(scope, 'activityLog')] } }),
+        prisma.zaloAccountStatusLog.count({ where: { AND: [{ orgId, status: 'disconnected', startedAt: { gte: last24h, lt: now } }, reportModelWhere(scope, 'zaloAccountStatusLog')] } }),
+        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h, lt: now } }, reportModelWhere(scope, 'automationEventLog')] } }),
+        prisma.automationEventLog.count({ where: { AND: [{ orgId, createdAt: { gte: last24h, lt: now }, eventType: { contains: 'failed', mode: 'insensitive' } }, reportModelWhere(scope, 'automationEventLog')] } }),
       ]);
       const errorRate24h = totalEvents24h > 0 ? Math.round((failedEvents24h / totalEvents24h) * 1000) / 10 : null;
 
@@ -986,7 +986,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
 
       // activity feed — latest 20
       const activityRows = await prisma.activityLog.findMany({
-        where: { AND: [{ orgId }, reportModelWhere(scope, 'activityLog')] },
+        where: { AND: [{ orgId, createdAt: { lt: now } }, reportModelWhere(scope, 'activityLog')] },
         orderBy: { createdAt: 'desc' },
         take: 20,
         select: {
@@ -1016,7 +1016,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
 
       // disconnects — ZaloAccountStatusLog disconnect events 24h
       const disconnectRows = await prisma.zaloAccountStatusLog.findMany({
-        where: { AND: [{ orgId, status: 'disconnected', startedAt: { gte: last24h } }, reportModelWhere(scope, 'zaloAccountStatusLog')] },
+        where: { AND: [{ orgId, status: 'disconnected', startedAt: { gte: last24h, lt: now } }, reportModelWhere(scope, 'zaloAccountStatusLog')] },
         orderBy: { startedAt: 'desc' },
         take: 50,
         select: {
@@ -1265,7 +1265,12 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
         .sort((a, b) => b.actions - a.actions);
 
       // KPIs.
-      const activeSalesToday = new Set(events.filter((e) => e.createdAt >= todayStart).map((e) => e.userId)).size;
+      // This KPI is a today snapshot, independent of the selected historical period.
+      const activeToday = saleIds.length === 0 ? [] : await prisma.activityLog.groupBy({
+        by: ['userId'],
+        where: { AND: [{ orgId, actorType: 'user', userId: { in: saleIds }, createdAt: { gte: todayStart, lt: now } }, reportModelWhere(scope, 'activityLog')] },
+      });
+      const activeSalesToday = activeToday.length;
       const withTime = bySale.filter((s) => s.activeDays > 0);
       const avgActiveMinPerDay = withTime.length > 0
         ? Math.round(withTime.reduce((a, s) => a + (s.avgActiveMinPerDay ?? 0), 0) / withTime.length) : null;
@@ -1274,7 +1279,7 @@ export async function reportAnalyticsRoutes(app: FastifyInstance): Promise<void>
       return {
         from, to,
         kpis: {
-          activeSalesToday: activityEventsTruncated ? null : activeSalesToday,
+          activeSalesToday,
           avgActiveMinPerDay: activityEventsTruncated ? null : avgActiveMinPerDay,
           totalActions: activityEventsTruncated ? null : totalActions,
           topModule: activityEventsTruncated ? null : topModule,

@@ -20,6 +20,7 @@
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
+import { runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 
 const CHUNK_SIZE = 50;
 
@@ -37,6 +38,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 export async function processGroupScan(scanId: string): Promise<void> {
+  // Trusted queue carries only the scan ID. Locate its tenant, then perform all
+  // reads/writes and provider work in that tenant (same pattern as channel jobs).
+  const located = await runSystemQuery(() => prisma.groupScan.findUnique({
+    where: { id: scanId }, select: { orgId: true },
+  }));
+  if (!located) return;
+  return withTenant(located.orgId, () => processTenantGroupScan(scanId));
+}
+
+async function processTenantGroupScan(scanId: string): Promise<void> {
   const scan = await prisma.groupScan.findUnique({ where: { id: scanId } });
   if (!scan) {
     logger.warn(`[group-scan-worker] scan ${scanId} not found — skip`);

@@ -34,13 +34,14 @@
         <button
           v-for="r in ranges"
           :key="r.key"
-          :class="{ on: range === r.key }"
+          :class="{ on: range === r.key }" :aria-pressed="range === r.key"
           @click="range = r.key"
         >{{ r.label }}</button>
       </div>
     </div>
 
     <!-- LOADING -->
+    <ReportContext v-if="data && !loading" :report="data" snapshots="Khách phụ trách và trạng thái chốt" />
     <div v-if="loading" class="rk-loading">
       <v-icon icon="mdi-loading" class="mdi-spin" /> Đang tải dữ liệu…
     </div>
@@ -90,7 +91,7 @@
           </div>
         </div>
         <div class="card-b" style="padding:0">
-          <table v-if="data.sales.length" class="tbl">
+          <ReportTable v-if="data.sales.length" label="Bảng số liệu Sale và Team"><table class="tbl">
             <thead>
               <tr>
                 <th>Sale</th>
@@ -100,6 +101,7 @@
                 <th class="num">Lịch hẹn (kỳ)</th>
                 <th class="num">Chốt hiện tại</th>
                 <th class="num">Lead pool dùng</th>
+                <th>Chi tiết</th>
               </tr>
             </thead>
             <tbody>
@@ -124,9 +126,10 @@
                 <td class="num">{{ fmt(s.apptDone) }} / {{ fmt(s.apptNoShow) }}</td>
                 <td class="num"><span class="pill" :class="s.closed == null ? '' : 'ok'">{{ fmt(s.closed) }}</span></td>
                 <td class="num">{{ fmt(s.leadPoolUsed) }}</td>
+                <td><button class="rk-btn" :aria-label="`Chi tiết ${s.name}`" @click="openDetail(s, $event)">Chi tiết</button></td>
               </tr>
             </tbody>
-          </table>
+          </table></ReportTable>
           <div v-else class="rk-empty">Chưa có dữ liệu sale trong kỳ này.</div>
         </div>
       </div>
@@ -140,7 +143,7 @@
             <div class="meta">{{ rangeLabel }} · khách là snapshot, tin gửi trong kỳ</div>
           </div>
           <div class="card-b" style="padding:0">
-            <table v-if="data.byDept.length" class="tbl">
+            <ReportTable v-if="data.byDept.length" label="Bảng số liệu Sale và Team"><table class="tbl">
               <thead>
                 <tr>
                   <th>Phòng ban</th>
@@ -171,7 +174,7 @@
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </table></ReportTable>
             <div v-else class="rk-empty">Chưa có dữ liệu phòng ban.</div>
           </div>
         </div>
@@ -183,7 +186,7 @@
             <div class="meta">Theo lượt trả lời · {{ rangeLabel }}</div>
           </div>
           <div class="card-b">
-            <div v-if="data.responseBuckets?.length" class="chart">
+            <div v-if="data.responseBuckets?.length" class="chart" role="region" tabindex="0" aria-label="Phân bố thời gian phản hồi; cuộn ngang để xem thêm">
               <div v-for="b in data.responseBuckets" :key="b.label" class="col">
                 <div class="stack">
                   <i :style="{ height: bucketHeight(b.count) + '%' }"></i>
@@ -222,19 +225,18 @@
       </div>
 
       <div v-if="usage" class="grid g-2">
-        <!-- Hiệu quả theo kết quả CRM -->
+        <!-- Hoạt động CRM; chưa có công thức xếp hạng hiệu quả được xác nhận. -->
         <div class="card">
           <div class="card-h">
-            <div class="t"><v-icon icon="mdi-medal-outline" size="18" /> Xếp hạng dùng CRM hiệu quả</div>
-            <div class="meta">kết quả ÷ giờ dùng · {{ rangeLabel }}</div>
+            <div class="t"><v-icon icon="mdi-account-details-outline" size="18" /> Hoạt động dùng CRM theo Sale</div>
+            <div class="meta">Thời gian ước tính · {{ rangeLabel }}</div>
           </div>
           <div class="card-b" style="padding:0">
-            <table v-if="usage.bySale.length" class="tbl">
+            <ReportTable v-if="usage.bySale.length" label="Bảng số liệu Sale và Team"><table class="tbl">
               <thead>
                 <tr>
-                  <th style="width:36px">#</th>
                   <th>Sale</th>
-                  <th class="num">Giờ / ngày</th>
+                  <th class="num">Thời gian / ngày</th>
                   <th class="num">Thao tác</th>
                   <th>Module chính</th>
                   <th class="num">KQ / giờ</th>
@@ -242,8 +244,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(s, i) in usage.bySale" :key="s.userId" :style="i < 3 ? 'background:var(--rk-brand-softer)' : ''">
-                  <td class="b" :class="{ muted: i >= 3 }" :style="i < 3 ? 'color:var(--rk-brand-700)' : ''">{{ i + 1 }}</td>
+                <tr v-for="s in usage.bySale" :key="s.userId">
                   <td>
                     <div class="cellname">
                       <span class="av" :style="{ background: avColor(s.name) }">{{ initials(s.name) }}</span>
@@ -262,7 +263,7 @@
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </table></ReportTable>
             <div v-else class="rk-empty">Chưa có dữ liệu dùng CRM trong kỳ này.</div>
           </div>
         </div>
@@ -334,7 +335,7 @@
           <div class="meta">đậm = nhiều thao tác · {{ rangeLabel }}</div>
         </div>
         <div class="card-b">
-          <div class="hh">
+          <ReportTable label="Heatmap hoạt động CRM theo giờ và thứ"><div class="hh">
             <div class="hh-grid">
               <template v-for="(wd, d) in WEEKDAYS" :key="'hr' + d">
                 <div class="hh-rl">{{ wd }}</div>
@@ -352,6 +353,7 @@
               >{{ h % 6 === 0 ? h : '' }}</div>
             </div>
           </div>
+          </ReportTable>
           <div class="hh-foot">
             <span class="muted">ít</span>
             <i class="hh-c hl0"></i><i class="hh-c hl1"></i><i class="hh-c hl2"></i><i class="hh-c hl3"></i><i class="hh-c hl4"></i>
@@ -438,7 +440,7 @@
           <div class="meta">top {{ usage.compare.length }} · {{ rangeLabel }} vs kỳ liền trước</div>
         </div>
         <div class="card-b" style="padding:0">
-          <table class="tbl">
+          <ReportTable label="Bảng số liệu Sale và Team"><table class="tbl">
             <thead>
               <tr>
                 <th>Sale</th>
@@ -471,7 +473,7 @@
                 </td>
               </tr>
             </tbody>
-          </table>
+          </table></ReportTable>
         </div>
       </div>
 
@@ -489,10 +491,15 @@
       {{ salesError || 'Không tải được dữ liệu báo cáo.' }}
       <button class="rk-btn ghost" :disabled="loading" @click="load">Thử lại</button>
     </div>
+    <ReportDetail :open="selectedSale !== null" :title="selectedSale?.name ?? ''" :rows="detailRows" :return-focus="detailActivator" @close="selectedSale = null" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { REPORT_AVATAR_COLORS as AV_COLORS } from '@/utils/report-avatar';
+import ReportTable from './ReportTable.vue'
+import ReportContext from './ReportContext.vue'
+import ReportDetail from './ReportDetail.vue'
 import { ref, onMounted, watch, computed } from 'vue';
 import { vietnamDateRange } from '@/utils/report-period';
 import { api } from '@/api';
@@ -579,6 +586,20 @@ const data = ref<SalesData | null>(null);
 const usage = ref<CrmUsageData | null>(null);
 const loading = ref(true);
 const range = ref<string>('30d');
+const selectedSale = ref<SaleRow | null>(null);
+const detailActivator = ref<HTMLElement | null>(null);
+function openDetail(sale: SaleRow, event: MouseEvent) {
+  detailActivator.value = event.currentTarget as HTMLElement;
+  selectedSale.value = sale;
+}
+const detailRows = computed(() => selectedSale.value ? [
+  { label: 'Phòng ban', value: selectedSale.value.deptName || 'Chưa có dữ liệu' },
+  { label: 'Khách phụ trách hiện tại', value: fmt(selectedSale.value.contacts) },
+  { label: 'Tin gửi trong kỳ', value: fmt(selectedSale.value.sent) },
+  { label: 'Phản hồi trung bình (phút)', value: fmt(selectedSale.value.avgResponseMin) },
+  { label: 'Lịch hẹn hoàn thành / vắng (kỳ)', value: `${fmt(selectedSale.value.apptDone)} / ${fmt(selectedSale.value.apptNoShow)}` },
+  { label: 'Chốt hiện tại', value: fmt(selectedSale.value.closed) },
+] : []);
 const salesError = ref('');
 const usageError = ref('');
 let loadSequence = 0;
@@ -591,6 +612,7 @@ function dateRange(): { from: string; to: string } {
 }
 
 async function load() {
+  selectedSale.value = null;
   const sequence = ++loadSequence;
   const { from, to } = dateRange();
   loading.value = true;
@@ -683,10 +705,6 @@ function initials(name: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[parts.length - 2][0] + parts[parts.length - 1][0]).toUpperCase();
 }
-const AV_COLORS = [
-  '#1786be', '#7a4fb0', '#b0734f', '#4fb09a', '#b04f6e',
-  '#5b8def', '#d39237', '#6e7a8a', '#9a6f4f', '#b04f4f',
-];
 function avColor(name: string): string {
   let h = 0;
   for (let i = 0; i < (name || '').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;

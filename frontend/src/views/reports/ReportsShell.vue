@@ -1,31 +1,33 @@
-<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
-<!--
-  ReportsShell — khung Module Báo cáo (2026-06-17). Sub-nav 7 màn + router-view.
-  report-kit.css (global, scope .rpt-scope) cấp design system cho các view con.
--->
+<script setup lang="ts">
+import { computed, useTemplateRef, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { visibleReportCategories } from '@/utils/report-access'
+const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
+const content = useTemplateRef<HTMLDivElement>('content')
+const visibleTabs = computed(() => visibleReportCategories(auth.user))
+const scopeLabel = computed(() => ['owner', 'admin'].includes(auth.user?.role ?? '') ? 'Toàn tổ chức' : 'Phòng ban và phòng con')
+function selectCategory(event: Event) {
+  const target = (event.target as HTMLSelectElement).value
+  if (visibleTabs.value.some(tab => tab.to === target)) void router.push(target)
+}
+watch(() => route.path, () => { if (content.value) content.value.scrollTop = 0 }, { flush: 'post' })
+</script>
+
 <template>
-  <div class="rpt-shell">
-    <nav class="rpt-subnav" aria-label="Báo cáo">
-      <RouterLink v-for="t in tabs" :key="t.to" :to="t.to">
-        <v-icon :icon="t.icon" size="17" /> {{ t.label }}
-      </RouterLink>
+  <div class="rpt-shell crm-mobile">
+    <nav class="rpt-subnav" aria-label="Danh mục báo cáo">
+      <RouterLink v-for="tab in visibleTabs" :key="tab.to" :to="tab.to"><v-icon :icon="tab.icon" size="17" /> {{ tab.label }}</RouterLink>
     </nav>
-    <div class="rpt-scope">
-      <RouterView />
+    <div class="rpt-category">
+      <label for="report-category">Danh mục báo cáo</label>
+      <select id="report-category" :value="route.path" @change="selectCategory">
+        <option v-for="tab in visibleTabs" :key="tab.to" :value="tab.to">{{ tab.title }}</option>
+      </select>
     </div>
+    <div class="rpt-access-scope">Phạm vi quyền: <strong>{{ scopeLabel }}</strong>. Từng chỉ số áp dụng quyền nick và dữ liệu tương ứng.</div>
+    <div ref="content" class="rpt-scope" tabindex="-1"><RouterView /></div>
   </div>
 </template>
-
-<script setup lang="ts">
-const tabs = [
-  { to: '/reports/tong-quan', icon: 'mdi-view-dashboard-outline', label: 'Tổng quan' },
-  { to: '/reports/nick', icon: 'mdi-cellphone-link', label: 'Nick Zalo' },
-  { to: '/reports/sale', icon: 'mdi-account-tie-outline', label: 'Sale & Team' },
-  { to: '/reports/pipeline', icon: 'mdi-filter-variant', label: 'Pipeline & Lead Pool' },
-  { to: '/reports/automation', icon: 'mdi-cog-sync-outline', label: 'Automation' },
-  { to: '/reports/broadcast', icon: 'mdi-bullhorn-outline', label: 'Broadcast' },
-  { to: '/reports/engagement', icon: 'mdi-fire', label: 'Engagement' },
-  { to: '/reports/audit', icon: 'mdi-shield-check-outline', label: 'Audit & Hệ thống' },
-];
-</script>
