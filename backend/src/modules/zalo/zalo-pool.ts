@@ -727,7 +727,7 @@ class ZaloAccountPool {
     includeArchived = false,
   ): Promise<{ accountId: string; ownerName: string | null; ownedByMe: false } | null> {
     const rec = await prisma.zaloAccount.findFirst({
-      where: { zaloUid, NOT: { id: excludeAccountId }, ...(includeArchived ? {} : { archivedAt: null }) },
+      where: { orgId: requireTenantContext().orgId, zaloUid, NOT: { id: excludeAccountId }, ...(includeArchived ? {} : { archivedAt: null }) },
       select: { id: true, owner: { select: { fullName: true } } },
     });
     return rec ? { accountId: rec.id, ownerName: rec.owner?.fullName ?? null, ownedByMe: false } : null;

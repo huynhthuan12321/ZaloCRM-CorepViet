@@ -16,6 +16,7 @@ import { writeTransition } from '../src/modules/zalo/status-log-service.js';
 const prismaMock = {
   zaloAccount: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
@@ -174,5 +175,19 @@ describe('RC4 reconnect account tenant boundary', () => {
       return {id:'background-account',orgId:'org-1',ownerUserId:'user-1',zaloUid:'uid-real',archivedAt:null,disconnectReason:null};
     });
     await zaloPool.reconnect('background-account',CREDS);expect(lookups).toHaveLength(1);expect(zaloLoginMock).toHaveBeenCalledTimes(1);expect(getTenantContext()).toBeUndefined();
+  });
+});
+
+describe('RC4 duplicate owner lookup remains scoped without relying on RLS', () => {
+  it('returns an own-org control, hides foreign UID and rejects missing context', async () => {
+    const rows=[{id:'own-existing',orgId:'org-1',zaloUid:'own-uid',owner:{fullName:'Own user'}},
+      {id:'foreign-existing',orgId:'org-2',zaloUid:'foreign-uid',owner:{fullName:'Foreign user'}}];
+    prismaMock.zaloAccount.findFirst.mockImplementation(async (args:any) => rows.find(row=>
+      row.zaloUid===args.where.zaloUid && (!args.where.orgId||row.orgId===args.where.orgId))??null);
+    const own=await withTenant('org-1',()=>(zaloPool as any).findOwnerOfZaloUid('own-uid','current-account'));
+    expect(own).toMatchObject({accountId:'own-existing',ownerName:'Own user'});
+    const foreign=await withTenant('org-1',()=>(zaloPool as any).findOwnerOfZaloUid('foreign-uid','current-account'));
+    expect(foreign).toBeNull();
+    await expect((zaloPool as any).findOwnerOfZaloUid('own-uid','current-account')).rejects.toThrow(/tenant context/);
   });
 });
