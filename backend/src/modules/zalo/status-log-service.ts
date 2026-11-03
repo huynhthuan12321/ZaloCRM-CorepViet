@@ -12,6 +12,7 @@
  * Xem design doc: ~/.gstack/projects/zalocrm/EVO-THANH-private-hs-design-20260522-184345.md
  */
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
+import { getTenantContext, withTenant } from '../../shared/tenant/tenant-context.js';
 import { logger } from '../../shared/utils/logger.js';
 
 export type ZaloStatus = 'connected' | 'disconnected' | 'auth_failed' | 'qr_pending' | 'expired';
@@ -39,12 +40,20 @@ export async function writeTransition(input: {
   reason: StatusReason;
   at?: Date; // override timestamp (vd cho backfill historical events)
 }): Promise<void> {
+  const ctx = getTenantContext();
+  if (!input.orgId || input.orgId === '*' || (ctx && !ctx.bypassTenantGuard && ctx.orgId !== input.orgId)) {
+    throw new Error('Status transition tenant mismatch');
+  }
   const now = input.at ?? new Date();
 
   try {
-    await tenantTransaction(async (tx) => {
+    await withTenant(input.orgId, () => tenantTransaction(async (tx) => {
+      const account = await tx.zaloAccount.findUnique({
+        where: { id: input.accountId, orgId: input.orgId }, select: { id: true },
+      });
+      if (!account) throw new Error('Status transition account unavailable');
       const open = await tx.zaloAccountStatusLog.findFirst({
-        where: { accountId: input.accountId, endedAt: null },
+        where: { orgId: input.orgId, accountId: input.accountId, endedAt: null },
         select: { id: true, status: true, startedAt: true },
       });
 
@@ -55,7 +64,7 @@ export async function writeTransition(input: {
         // Close old record. Defensive: endedAt phải >= startedAt (clamp nếu clock drift).
         const endedAt = now < open.startedAt ? open.startedAt : now;
         await tx.zaloAccountStatusLog.update({
-          where: { id: open.id },
+          where: { id: open.id, orgId: input.orgId },
           data: { endedAt },
         });
       }
@@ -70,7 +79,7 @@ export async function writeTransition(input: {
           reason: input.reason,
         },
       });
-    });
+    }));
   } catch (err) {
     // Partial unique violation = race condition. Log warn nhưng không throw —
     // caller (zaloPool emit) không nên fail vì status log lỗi.

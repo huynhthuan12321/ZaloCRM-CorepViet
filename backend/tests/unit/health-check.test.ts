@@ -75,3 +75,18 @@ describe('bounded Redis readiness', () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+describe('RC4 end-to-end readiness deadline', () => {
+  it('starts Redis while DB is pending and bounds the entire response', async () => {
+    vi.useFakeTimers();
+    try {
+      const redis = vi.fn(async () => true);
+      const pending = buildReadyHealth({ checkDb: () => new Promise<void>(() => {}), checkRedis: redis });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(redis).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await pending).toMatchObject({ statusCode: 503, body: { db: 'disconnected', redis: 'connected' } });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+});

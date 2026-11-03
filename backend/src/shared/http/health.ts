@@ -24,25 +24,21 @@ export async function buildReadyHealth(input: {
   timestamp?: string;
   messenger?: ReadyHealth['messenger'];
 }): Promise<{ statusCode: 200 | 503; body: ReadyHealth }> {
-  let db: ReadyHealth['db'] = 'connected';
-  let redis: ReadyHealth['redis'] = 'connected';
-  try {
-    await input.checkDb();
-  } catch {
-    db = 'disconnected';
-  }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const healthy = await Promise.race([
-      Promise.resolve().then(input.checkRedis),
-      new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2000); }),
-    ]);
-    if (!healthy) redis = 'disconnected';
-  } catch {
-    redis = 'disconnected';
-  } finally {
-    clearTimeout(timer);
-  }
+  // Start both dependencies together. Runtime probes own bounded, cancellable
+  // connections; this deadline also protects the HTTP contract if a check stalls.
+  const bounded = async (check: () => unknown | Promise<unknown>): Promise<boolean> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(check).then(value => value !== false),
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2000); }),
+      ]);
+    } catch { return false; }
+    finally { clearTimeout(timer); }
+  };
+  const [dbOk, redisOk] = await Promise.all([bounded(input.checkDb), bounded(input.checkRedis)]);
+  const db: ReadyHealth['db'] = dbOk ? 'connected' : 'disconnected';
+  const redis: ReadyHealth['redis'] = redisOk ? 'connected' : 'disconnected';
   const ok = db === 'connected' && redis === 'connected';
   return {
     statusCode: ok ? 200 : 503,

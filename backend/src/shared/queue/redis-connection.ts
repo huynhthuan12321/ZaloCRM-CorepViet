@@ -13,6 +13,7 @@
 // (docker-compose.yml). Verify POC spike 5/5 PASS 2026-06-01.
 
 import { Redis } from 'ioredis';
+import { resolveProbeHost } from '../http/probe-host.js';
 import { logger } from '../utils/logger.js';
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://redis:6379';
@@ -63,31 +64,35 @@ export function getBullMQRedis(): Redis {
   return connectionInstance;
 }
 
-// Readiness probe: KHÔNG chỉ đọc connectionInstance?.status (có thể null nếu chưa module nào
-// gọi getBullMQRedis(), hoặc status "nói dối" khi Redis chết giữa chừng). Chủ động:
-//  1) getBullMQRedis() → tự tạo + kết nối (lazyConnect:false) nếu chưa có.
-//  2) ping() → xác nhận Redis thực sự phản hồi.
-// A health probe must not queue commands on the worker connection (which has
-// unlimited retries). Share one bounded, disposable probe across concurrent requests.
+// Share a disposable, bounded readiness connection. Never queue PING on workers.
 let readinessProbe: Promise<boolean> | null = null;
 export function isBullMQRedisHealthy(): Promise<boolean> {
   if (readinessProbe) return readinessProbe;
   readinessProbe = (async () => {
-    const probe = new Redis(REDIS_URL, {
-      lazyConnect: true, enableOfflineQueue: false,
-      maxRetriesPerRequest: 0, retryStrategy: () => null,
-      connectTimeout: 1000, commandTimeout: 1000,
-    });
-    probe.on('error', () => {}); // Readiness exposes status only, never credentials.
-    const deadline = setTimeout(() => probe.disconnect(), 1500);
+    const controller = new AbortController();
+    let probe: Redis | undefined;
+    const deadline = setTimeout(() => { controller.abort(); probe?.disconnect(); }, 1500);
     try {
+      const url = new URL(REDIS_URL);
+      const host = url.hostname.replace(/^\[|\]$/g, '');
+      const address = await resolveProbeHost(host, controller.signal);
+      controller.signal.throwIfAborted();
+      // Preserve URL auth/DB and TLS verification hostname; only TCP uses the address.
+      url.hostname = address.includes(':') ? '[' + address + ']' : address;
+      probe = new Redis(url.toString(), {
+        ...(url.protocol === 'rediss:' ? { tls: { servername: host } } : {}),
+        lazyConnect: true, enableOfflineQueue: false,
+        maxRetriesPerRequest: 0, retryStrategy: () => null,
+        connectTimeout: 1000, commandTimeout: 1000, disconnectTimeout: 0,
+      });
+      probe.on('error', () => {});
       await probe.connect();
       return await probe.ping() === 'PONG';
-    } catch {
-      return false;
-    } finally {
+    } catch { return false; }
+    finally {
       clearTimeout(deadline);
-      probe.disconnect();
+      controller.abort();
+      probe?.disconnect();
     }
   })().finally(() => { readinessProbe = null; });
   return readinessProbe;

@@ -1,3 +1,4 @@
+import { checkDatabaseReadiness } from './shared/database/readiness.js';
 import { forEachOrganization } from './shared/tenant/for-each-organization.js';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Nguyễn Tiến Lộc
@@ -404,7 +405,7 @@ async function bootstrap() {
 
   app.get('/health/ready', async (_request, reply) => {
     const ready = await buildReadyHealth({
-      checkDb: async () => { await prisma.$queryRaw`SELECT 1`; },
+      checkDb: checkDatabaseReadiness,
       checkRedis: isBullMQRedisHealthy,
       messenger: messengerHealthSummary(messengerConfig),
     });

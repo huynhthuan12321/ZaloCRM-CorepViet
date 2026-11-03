@@ -12,7 +12,7 @@ import { createRequire } from 'module';
 import type { Server } from 'socket.io';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../shared/database/prisma-client.js';
-import { runSystemQuery } from '../../shared/tenant/tenant-context.js';
+import { getTenantContext, requireTenantContext, withTenant, runSystemQuery } from '../../shared/tenant/tenant-context.js';
 import { logger } from '../../shared/utils/logger.js';
 import { attachZaloListener, type UserInfoCacheEntry } from './zalo-listener-factory.js';
 import { emitWebhook } from '../api/webhook-service.js';
@@ -121,12 +121,16 @@ class ZaloAccountPool {
    * `.to(account:)` từ trước — đây gom connected/error/reconnect-failed cho nhất quán.)
    */
   private async emitAccountEventToOrg(accountId: string, event: string, payload: Record<string, unknown>): Promise<void> {
+    await this.withAccountTenant(accountId, orgId => this.emitAccountEventToOrgInTenant(orgId, accountId, event, payload));
+  }
+
+  private async emitAccountEventToOrgInTenant(orgId: string, accountId: string, event: string, payload: Record<string, unknown>): Promise<void> {
     if (!this.io) return;
     try {
       const inst = this.instances.get(accountId);
       let orgId = inst?.orgId;
       if (!orgId) {
-        const rec = await prisma.zaloAccount.findUnique({ where: { id: accountId }, select: { orgId: true } });
+        const rec = await prisma.zaloAccount.findUnique({ where: { id: accountId, orgId }, select: { orgId: true } });
         orgId = rec?.orgId;
         if (orgId && inst) inst.orgId = orgId; // cache cho lần sau
       }
@@ -161,7 +165,28 @@ class ZaloAccountPool {
   }
 
   // Initiate QR-based login; emits QR events to frontend via Socket.IO
+  /** Resolve only identity outside a tenant; all account work is scoped and reread.
+   * Existing HTTP tenant context is authoritative: never switch it to a foreign ID. */
+  private async withAccountTenant<T>(accountId: string, work: (orgId: string) => Promise<T>): Promise<T | undefined> {
+    const ctx = getTenantContext();
+    if (ctx && !ctx.bypassTenantGuard && (!ctx.orgId || ctx.orgId === '*')) return;
+    const orgId = ctx && !ctx.bypassTenantGuard && ctx.orgId !== '*'
+      ? ctx.orgId
+      : (await runSystemQuery(() => prisma.zaloAccount.findUnique({
+          where: { id: accountId }, select: { orgId: true },
+        })))?.orgId;
+    if (!orgId || orgId === '*') return;
+    return withTenant(orgId, async () => {
+      const account = await prisma.zaloAccount.findUnique({ where: { id: accountId, orgId }, select: { id: true } });
+      if (account) return work(orgId);
+    }, { userId: ctx?.userId, role: ctx?.role });
+  }
+
   async loginQR(accountId: string, proxyUrl?: string | null): Promise<void> {
+    await this.withAccountTenant(accountId, orgId => this.loginQRInTenant(orgId, accountId, proxyUrl));
+  }
+
+  private async loginQRInTenant(orgId: string, accountId: string, proxyUrl?: string | null): Promise<void> {
     // Fix lifecycle 2026-06-10: nick kẹt qr_pending/connecting do logout bên ngoài hoặc
     // breaker chặn. User CHỦ ĐỘNG quét QR lại → phải dọn SẠCH mọi state cũ trước khi tạo
     // instance mới, nếu không QR mới không sinh / bị instance ma ghi đè.
@@ -207,6 +232,7 @@ class ZaloAccountPool {
 
     try {
       const api: any = await withProxy(proxyUrl, () => zalo.loginQR({}, (event: any) => {
+        void withTenant(orgId, async () => {
         if (!isCurrentEpoch()) return; // phiên cũ bị thay → bỏ qua mọi event (FIX #6)
         switch (event.type) {
           case 0: // QRCodeGenerated
@@ -241,6 +267,7 @@ class ZaloAccountPool {
             });
             break;
         }
+        }).catch(err => logger.warn(`[zalo:${accountId}] QR callback failed:`, err));
       }));
 
       // FIX #6 (2026-06-16, code-review): epoch guard KHÔNG chỉ trong callback mà CẢ sau khi
@@ -267,10 +294,10 @@ class ZaloAccountPool {
         const profiles = userInfo?.changed_profiles || {};
         const profile = profiles[ownId] || profiles[`${ownId}_0`];
         if (profile?.avatar) {
-          await runSystemQuery(() => prisma.zaloAccount.update({
-            where: { id: accountId },
+          await prisma.zaloAccount.update({
+            where: { id: accountId, orgId },
             data: { avatarUrl: profile.avatar, displayName: profile.zaloName || profile.zalo_name || profile.displayName || instance.displayName },
-          }));
+          });
         }
       } catch {}
 
@@ -302,7 +329,7 @@ class ZaloAccountPool {
       this.attachListener(accountId, api);
       void this.emitAccountEventToOrg(accountId, 'zalo:connected', { accountId, zaloUid: ownId });
       // Emit webhook (orgId lookup is async, fire-and-forget)
-      prisma.zaloAccount.findUnique({ where: { id: accountId }, select: { orgId: true } })
+      prisma.zaloAccount.findUnique({ where: { id: accountId, orgId }, select: { orgId: true } })
         .then((rec) => rec && emitWebhook(rec.orgId, 'zalo.connected', { accountId }))
         .catch(() => {});
 
@@ -329,6 +356,10 @@ class ZaloAccountPool {
 
   // Reconnect using previously saved session credentials
   async reconnect(accountId: string, credentials: ZaloCredentials, proxyUrl?: string | null): Promise<void> {
+    await this.withAccountTenant(accountId, orgId => this.reconnectInTenant(orgId, accountId, credentials, proxyUrl));
+  }
+
+  private async reconnectInTenant(orgId: string, accountId: string, credentials: ZaloCredentials, proxyUrl?: string | null): Promise<void> {
     // FIX 2 nick-ghost (Anh chốt 2026-06-13): GUARD eligibility GOM 1 CHỖ. Mọi đường
     // reconnect (boot app.ts, health-check cron, route /reconnect tay, autoReconnect
     // timer) đều đi qua đây → đặt điều kiện "thẻ ma KHÔNG reconnect" tại nguồn duy nhất.
@@ -336,12 +367,10 @@ class ZaloAccountPool {
     //   • archivedAt!=null → nick đã xoá mềm/ẩn.
     // Mở WS cho thẻ ma bằng session cũ → 2 WS cùng tài khoản Zalo → KICKOUT_BY_WORKER
     // loop → "login treo". Chặn TỪ GỐC ở đây thay vì vá từng đường (DRY, không sót).
-    const eligibility = await runSystemQuery(() =>
-      prisma.zaloAccount.findUnique({
-        where: { id: accountId },
-        select: { zaloUid: true, archivedAt: true, disconnectReason: true },
-      }),
-    );
+    const eligibility = await prisma.zaloAccount.findUnique({
+      where: { id: accountId, orgId },
+      select: { zaloUid: true, archivedAt: true, disconnectReason: true },
+    });
     if (!eligibility || eligibility.zaloUid === null || eligibility.archivedAt !== null) {
       logger.info(
         `[zalo:${accountId}] reconnect() skip — thẻ ma/đã ẩn (zaloUid=${eligibility?.zaloUid ?? 'missing'}, archived=${eligibility?.archivedAt ? 'yes' : 'no'})`,
@@ -409,17 +438,17 @@ class ZaloAccountPool {
         const profiles = userInfo?.changed_profiles || {};
         const profile = profiles[ownId] || profiles[`${ownId}_0`];
         if (profile?.avatar) {
-          await runSystemQuery(() => prisma.zaloAccount.update({
-            where: { id: accountId },
+          await prisma.zaloAccount.update({
+            where: { id: accountId, orgId },
             data: { avatarUrl: profile.avatar, displayName: profile.zaloName || profile.zalo_name || profile.displayName || instance.displayName },
-          }));
+          });
         }
       } catch {}
 
       this.attachListener(accountId, api);
       await this.updateAccountDB(accountId, 'connected', ownId, 'reconnect_ok');
       void this.emitAccountEventToOrg(accountId, 'zalo:connected', { accountId, zaloUid: ownId });
-      prisma.zaloAccount.findUnique({ where: { id: accountId }, select: { orgId: true } })
+      prisma.zaloAccount.findUnique({ where: { id: accountId, orgId }, select: { orgId: true } })
         .then((rec) => rec && emitWebhook(rec.orgId, 'zalo.connected', { accountId }))
         .catch(() => {});
 
@@ -479,6 +508,7 @@ class ZaloAccountPool {
   private attachListener(accountId: string, api: any): void {
     // Fix flap 2026-06-06: capture epoch của instance HIỆN TẠI tại thời điểm attach.
     // 'closed' event đến từ listener cũ (epoch lỗi thời) sẽ bị bỏ qua trong onDisconnected.
+    const orgId = requireTenantContext().orgId;
     const myEpoch = this.instances.get(accountId)?.epoch ?? this.epochCounter;
     attachZaloListener({
       accountId,
@@ -486,6 +516,8 @@ class ZaloAccountPool {
       io: this.io,
       userInfoCache: this.userInfoCache,
       onDisconnected: (id) => {
+        if (id !== accountId) return;
+        void withTenant(orgId, async () => {
         // Fix flap 2026-06-06: nếu instance hiện tại có epoch khác → listener này đã bị
         // thay thế bởi 1 reconnect mới hơn. Bỏ qua 'closed' của nó để không set
         // disconnected oan + không dồn circuit breaker bằng disconnect ma.
@@ -500,10 +532,10 @@ class ZaloAccountPool {
         // MẤT KẾT NỐI THỤ ĐỘNG (2026-06-16): nick rớt do Zalo/mạng (KHÔNG phải sale bấm Ngắt).
         // Ghi reason='passive' + mốc rớt để FE đếm "đã mất kết nối X phút Y giây" tăng dần.
         // KHÔNG ghi đè nếu đã 'manual' (sale ngắt thủ công rồi nick mới rớt — giữ nguyên manual).
-        void runSystemQuery(() => prisma.zaloAccount.updateMany({
-          where: { id, NOT: { disconnectReason: 'manual' } },
+        void prisma.zaloAccount.updateMany({
+          where: { id, orgId, NOT: { disconnectReason: 'manual' } },
           data: { disconnectReason: 'passive', disconnectedAt: new Date() },
-        })).catch((err) => logger.warn(`[zalo:${id}] set passive disconnect lỗi:`, err));
+        }).catch((err) => logger.warn(`[zalo:${id}] set passive disconnect lỗi:`, err));
         stopMessageSync(id);
         // Emit webhook for disconnect (fire-and-forget)
         prisma.zaloAccount.findUnique({ where: { id }, select: { orgId: true, displayName: true } })
@@ -539,6 +571,7 @@ class ZaloAccountPool {
         // quét QR lại (loginQR bump epoch + tạo instance mới), timer này sẽ tự bỏ qua (xem
         // guard epoch trong autoReconnect) thay vì ghi đè instance QR mới.
         setTimeout(() => this.autoReconnect(id, myEpoch), 30_000);
+        }).catch(err => logger.warn(`[zalo:${id}] disconnect callback failed:`, err));
       },
     });
 
@@ -548,9 +581,8 @@ class ZaloAccountPool {
 
   // Persist session credentials to DB (mã hoá at-rest — xem shared/crypto/session-crypto.ts)
   private saveCredentials(accountId: string, credentials: ZaloCredentials): void {
-    // 2026-06-11: system-context — pool ghi nền (không tenant ctx), tránh RLS chặn.
-    runSystemQuery(() => prisma.zaloAccount
-      .update({ where: { id: accountId }, data: { sessionData: encryptSessionData(credentials) } }))
+    void this.withAccountTenant(accountId, orgId => prisma.zaloAccount
+      .update({ where: { id: accountId, orgId }, data: { sessionData: encryptSessionData(credentials) } }))
       .catch((err) => logger.error(`[zalo:${accountId}] saveCredentials error:`, err));
   }
 
@@ -564,13 +596,22 @@ class ZaloAccountPool {
     zaloUid: string | null,
     reason?: StatusReason,
   ): Promise<void> {
+    await this.withAccountTenant(accountId, orgId => this.updateAccountDBInTenant(orgId, accountId, status, zaloUid, reason));
+  }
+
+  private async updateAccountDBInTenant(orgId: string,
+    accountId: string,
+    status: string,
+    zaloUid: string | null,
+    reason?: StatusReason,
+  ): Promise<void> {
     try {
       // 2026-06-11 FIX (gốc rễ DB status kẹt 'qr_pending' → offline sai khắp nơi: chat
       // picker, labels, sticker, system-notify...). Hai nguyên nhân:
       //  (a) zaloUid UNIQUE collision (P2002): nick re-QR cùng người → nick CŨ (đã archived)
       //      vẫn giữ zaloUid → set lại trên nick mới ném P2002 → status KHÔNG ghi được.
       //      → giải phóng uid khỏi nick ĐÃ ARCHIVED trước (nick đó đã bị xoá/ẩn, nhả uid OK).
-      //  (b) pool chạy NỀN (boot reconnect/cron) không có tenant ctx → bọc runSystemQuery.
+      //  (b) Internal entrypoints resolve account identity, then enter tenant scope.
       //
       // FIX 0 nick-ghost (Anh chốt 2026-06-13): CHỈ nhả uid khỏi nick ĐÃ ARCHIVED.
       // Trước: updateMany xoá uid khỏi MỌI nick khác (kể cả nick đang SỐNG) → quét QR
@@ -578,15 +619,15 @@ class ZaloAccountPool {
       // thẻ ma) thay vì báo trùng. Giờ: nếu nick KHÁC đang sống (archivedAt=null) giữ uid
       // → KHÔNG đụng → prisma.update set uid sẽ ném P2002 → loginQR bắt DUPLICATE_ZALO_UID
       // → emit zalo:duplicate (khôi phục báo trùng). Đây là chống một nguồn đẻ thẻ ma.
-      const updated = await runSystemQuery(async () => {
+      const updated = await (async () => {
         if (zaloUid !== null) {
           await prisma.zaloAccount.updateMany({
-            where: { zaloUid, id: { not: accountId }, archivedAt: { not: null } },
+            where: { orgId, zaloUid, id: { not: accountId }, archivedAt: { not: null } },
             data: { zaloUid: null },
           });
         }
         return prisma.zaloAccount.update({
-          where: { id: accountId },
+          where: { id: accountId, orgId },
           data: {
             status,
             ...(zaloUid !== null ? { zaloUid } : {}),
@@ -600,7 +641,7 @@ class ZaloAccountPool {
           },
           select: { orgId: true, ownerUserId: true },
         });
-      });
+      })();
 
       // FIX CORE nick trùng — tầng 2 (Anh chốt 2026-06-12). Khi nick này connect THẬT
       // (có zaloUid), NGẮT mọi GHOST cũ cùng owner còn lửng lơ (qr_pending, chưa UID) để
@@ -608,36 +649,22 @@ class ZaloAccountPool {
       // tạo TRƯỚC fix route (vd nick "Thanh Vỹ" baee7ba5). Chỉ ngắt ghost CHƯA connect
       // (zaloUid=null) → KHÔNG đụng nick thật thứ 2 của owner. Xoá session_data để pool
       // ngừng auto-reconnect; KHÔNG xoá record (giữ data bạn bè/hội thoại gắn vào — admin
-      // gộp sau). Fire-and-forget, bọc runSystemQuery (chạy nền không tenant ctx).
+      // gộp sau). Fire-and-forget inside the verified account tenant.
       if (status === 'connected' && zaloUid !== null) {
-        void runSystemQuery(() =>
-          prisma.zaloAccount.updateMany({
-            where: {
-              orgId: updated.orgId,
-              ownerUserId: updated.ownerUserId,
-              id: { not: accountId },
-              zaloUid: null,
-              status: 'qr_pending',
-              archivedAt: null,
-            },
-            data: { status: 'disconnected', sessionData: Prisma.JsonNull },
-          }),
-        ).then((r) => {
-          if (r.count > 0) {
-            logger.info(`[zalo:${accountId}] ngắt ${r.count} ghost qr_pending cùng owner (chống tranh chấp session nick trùng)`);
-            // Ngắt khỏi pool nếu ghost đang chạy listener (đá nhau live). Thu thập id
-            // TRƯỚC rồi disconnect (disconnect xoá khỏi this.instances → tránh sửa Map
-            // đang lặp).
-            const ghostIds = [...this.instances]
-              .filter(([id, inst]) => id !== accountId && inst.status === 'qr_pending')
-              .map(([id]) => id);
-            for (const id of ghostIds) {
-              try { this.disconnect(id); } catch { /* best-effort */ }
-            }
+        // Select exact same-org/owner ghost IDs before disconnecting in-memory
+        // instances. A status-only scan of the entire pool could touch other orgs.
+        void (async () => {
+          const where = { orgId, ownerUserId: updated.ownerUserId, id: { not: accountId },
+            zaloUid: null, status: 'qr_pending', archivedAt: null };
+          const ghosts = await prisma.zaloAccount.updateManyAndReturn({
+            where, data: { status: 'disconnected', sessionData: Prisma.JsonNull }, select: { id: true },
+          });
+          for (const ghost of ghosts) {
+            if (this.instances.get(ghost.id)?.status === 'qr_pending') this.disconnect(ghost.id);
           }
-        }).catch((err) => {
-          logger.warn(`[zalo:${accountId}] dọn ghost cùng owner lỗi (bỏ qua): ${String(err)}`);
-        });
+        })().catch(err => logger.warn(
+          `[zalo:${accountId}] dọn ghost cùng owner lỗi (bỏ qua): ${String(err)}`,
+        ));
       }
 
       // Status log: chỉ ghi khi status thuộc enum ZaloStatus. Skip 'connecting' (intermediate).
@@ -645,12 +672,12 @@ class ZaloAccountPool {
       if (logStatus) {
         const logReason: StatusReason = reason ?? defaultReason(logStatus);
         // Fire-and-forget — không block updateAccountDB nếu status log lỗi.
-        void runSystemQuery(() => writeTransition({
+        void writeTransition({
           accountId,
           orgId: updated.orgId,
           status: logStatus,
           reason: logReason,
-        }));
+        });
       }
 
       // FIX 2026-06-08 (Anh chốt): nick vừa chuyển 'connected' → respawn nick-worker NGAY
@@ -670,8 +697,11 @@ class ZaloAccountPool {
       // ở record khác → user quét trùng nick đã có. KHÔNG nuốt im như trước; ném lỗi có
       // cấu trúc để caller (loginQR) báo socket tử tế + dọn record qr_pending rác.
       if ((err as { code?: string })?.code === 'P2002') {
-        const target = (err as { meta?: { target?: string[] } })?.meta?.target ?? [];
-        const onZaloUid = Array.isArray(target) ? target.some((t) => String(t).includes('zalo_uid')) : true;
+        const target = (err as { meta?: { target?: string[] | string } })?.meta?.target;
+        // Prisma 7 adapter may omit target. UID is the only unique value changed here.
+        const onZaloUid = target == null || (Array.isArray(target)
+          ? target.some(t => String(t).includes('zalo_uid')) : String(target).includes('zalo_uid'));
+
         if (onZaloUid) {
           logger.warn(`[zalo:${accountId}] updateAccountDB: zaloUid ${zaloUid} đã tồn tại ở nick khác (P2002)`);
           const dupErr = new Error('zalo_uid_already_exists') as Error & { code: string; zaloUid: string | null };
@@ -730,6 +760,10 @@ class ZaloAccountPool {
   // `expectedEpoch`: epoch của instance lúc lên lịch timer. Nếu instance hiện tại có epoch
   // khác → đã bị thay thế (vd: user quét QR lại) → KHÔNG auto-reconnect đè lên.
   private async autoReconnect(accountId: string, expectedEpoch?: number): Promise<void> {
+    await this.withAccountTenant(accountId, orgId => this.autoReconnectInTenant(orgId, accountId, expectedEpoch));
+  }
+
+  private async autoReconnectInTenant(orgId: string, accountId: string, expectedEpoch?: number): Promise<void> {
     const inst = this.instances.get(accountId);
     // Skip if already reconnected or manually disconnected
     if (inst?.status === 'connected') return;
@@ -746,7 +780,7 @@ class ZaloAccountPool {
 
     try {
       const account = await prisma.zaloAccount.findUnique({
-        where: { id: accountId },
+        where: { id: accountId, orgId },
         select: { sessionData: true, proxyUrl: true, disconnectReason: true },
       });
       // 2026-06-16: NGẮT THỦ CÔNG (manual) → KHÔNG auto-reconnect (ngắt là ngắt thật).
