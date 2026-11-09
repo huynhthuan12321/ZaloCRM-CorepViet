@@ -5,7 +5,7 @@
  * All public routes require X-Api-Key and receive orgId from that API key.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { hashApiKey } from '../../shared/crypto/api-key-hash.js';
+import { apiKeyAuth } from './public-api-auth.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
@@ -35,18 +35,6 @@ function toPublicAiStatus(config: {
     fullAuto: config.aiAutoReplyFullAuto,
     followupEnabled: config.aiFollowupEnabled,
   };
-}
-
-async function apiKeyAuth(request: FastifyRequest, reply: FastifyReply) {
-  const apiKey = request.headers['x-api-key'] as string;
-  if (!apiKey) return reply.status(401).send({ error: 'API key required' });
-
-  const setting = await prisma.appSetting.findFirst({
-    where: { settingKey: 'public_api_key', valueHash: hashApiKey(apiKey) },
-  });
-  if (!setting) return reply.status(401).send({ error: 'Invalid API key' });
-
-  (request as any).orgId = setting.orgId;
 }
 
 export async function publicApiRoutes(app: FastifyInstance): Promise<void> {

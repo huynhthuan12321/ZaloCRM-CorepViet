@@ -10,7 +10,7 @@
  */
 import cron from 'node-cron';
 import { prisma } from '../../shared/database/prisma-client.js';
-import { withTenant } from '../../shared/tenant/tenant-context.js';
+import { getTenantContext, runSystemQuery, withTenant } from '../../shared/tenant/tenant-context.js';
 import { logger } from '../../shared/utils/logger.js';
 import { logActivity } from '../activity/activity-logger.js';
 
@@ -25,7 +25,7 @@ export function startInteractionCron(): void {
     } catch (err) {
       logger.error('[interaction-cron] silent_30d error:', err);
     }
-  });
+  }, { timezone: 'UTC' });
   logger.info('[interaction-cron] Daily silent_30d detection scheduled (19:00 UTC / 02:00 VN)');
 }
 
@@ -40,18 +40,27 @@ export async function runSilentDetection(): Promise<{ logged: number; scanned: n
   const now = Date.now();
   const lowerBound = new Date(now - SILENT_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
   const upperBound = new Date(now - (SILENT_THRESHOLD_DAYS + 1) * 24 * 60 * 60 * 1000);
+  const caller = getTenantContext();
+  const tenantOnly = !!caller && !caller.bypassTenantGuard;
+  if (tenantOnly && (!caller.orgId || caller.orgId === '*')) throw new Error('Interaction detection requires a tenant org');
+  const eligible = {
+    lastInboundAt: { gte: upperBound, lt: lowerBound },
+    ...(tenantOnly ? { orgId: caller!.orgId } : {}),
+  };
+  const inventory = () => prisma.contact.findMany({ where: eligible, select: { id: true, orgId: true } });
 
   // Contacts có lastInboundAt vừa crossing 30d threshold (trong vòng 24h qua)
-  const candidates = await prisma.contact.findMany({
-    where: {
-      lastInboundAt: { gte: upperBound, lt: lowerBound },
-    },
-    select: { id: true, orgId: true, lastInboundAt: true, fullName: true },
-  });
+  const candidates = tenantOnly ? await inventory() : await runSystemQuery(inventory);
 
   let logged = 0;
-  for (const c of candidates) {
-    const didLog = await withTenant(c.orgId, async () => {
+  for (const candidate of candidates) {
+    if (tenantOnly && candidate.orgId !== caller!.orgId) continue;
+    const didLog = await withTenant(candidate.orgId, async () => {
+      const c = await prisma.contact.findFirst({
+        where: { id: candidate.id, orgId: candidate.orgId, lastInboundAt: { gte: upperBound, lt: lowerBound } },
+        select: { id: true, orgId: true, lastInboundAt: true },
+      });
+      if (!c) return false;
       // Dedup: check đã có silent_30d log SAU lastInboundAt chưa
       const existing = await prisma.activityLog.findFirst({
         where: {
@@ -74,7 +83,7 @@ export async function runSilentDetection(): Promise<{ logged: number; scanned: n
         details: { lastInboundAt: c.lastInboundAt, thresholdDays: SILENT_THRESHOLD_DAYS },
       });
       return true;
-    });
+    }, caller ? { userId: caller.userId, role: caller.role } : undefined);
     if (didLog) logged++;
   }
 
