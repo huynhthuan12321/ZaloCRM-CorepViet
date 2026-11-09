@@ -707,6 +707,7 @@ import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import type { Contact } from '@/composables/use-contacts';
 import { formatInOrgTz } from '@/composables/use-org-timezone';
+import { contactDateInput, contactDatePayload } from '@/utils/contact-date-fields';
 import AppointmentEditor from '@/components/appointments/AppointmentEditor.vue';
 import {
   SOURCE_OPTIONS,
@@ -992,19 +993,13 @@ watch(() => props.contact, (c) => {
       email: c.email ?? '',
       source: c.source ?? '',
       status: c.status ?? '',
-      nextAppointmentDate: c.nextAppointment
-        ? new Date(c.nextAppointment).toISOString().split('T')[0]
-        : '',
-      firstContactDate: c.firstContactDate
-        ? new Date(c.firstContactDate).toISOString().split('T')[0]
-        : '',
+      nextAppointmentDate: contactDateInput(c.nextAppointment),
+      firstContactDate: contactDateInput(c.firstContactDate),
       notes: c.notes ?? '',
       tags: c.tags ?? [],
       gender: c.gender ?? '',
       birthYear: c.birthYear ?? null,
-      birthDate: c.birthDate
-        ? new Date(c.birthDate).toISOString().split('T')[0]
-        : '',
+      birthDate: contactDateInput(c.birthDate, 'date'),
       occupation: c.occupation ?? '',
       incomeRange: c.incomeRange ?? '',
       socialFacebook: c.socialFacebook ?? '',
@@ -1092,20 +1087,14 @@ async function onSave() {
     email: form.value.email || null,
     source: form.value.source || null,
     status: form.value.status || null,
-    nextAppointment: form.value.nextAppointmentDate
-      ? new Date(form.value.nextAppointmentDate + 'T00:00:00').toISOString()
-      : null,
-    firstContactDate: form.value.firstContactDate
-      ? new Date(form.value.firstContactDate + 'T00:00:00').toISOString()
-      : null,
+    nextAppointment: contactDatePayload(form.value.nextAppointmentDate, props.contact?.nextAppointment),
+    firstContactDate: contactDatePayload(form.value.firstContactDate, props.contact?.firstContactDate),
     notes: form.value.notes || null,
     tags: form.value.tags,
 
     gender: form.value.gender || null,
     birthYear: form.value.birthYear ?? null,
-    birthDate: form.value.birthDate
-      ? new Date(form.value.birthDate + 'T00:00:00').toISOString()
-      : null,
+    birthDate: contactDatePayload(form.value.birthDate, props.contact?.birthDate, 'date'),
     occupation: form.value.occupation || null,
     incomeRange: form.value.incomeRange || null,
     socialFacebook: form.value.socialFacebook || null,
