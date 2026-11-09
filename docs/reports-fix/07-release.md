@@ -201,3 +201,98 @@ Trước/sau: trước chưa có checkpoint7A/candidate manifest; sau có hồ s
 Tiêu chí hoàn tất7A: hồ sơ đủ các mục, candidate có hash/ownership và giới hạn rõ, bằng chứng B còn khớp, preflight/rollout/backup/rollback/smoke/monitoring có điều kiện và không có hoạt động ngoài scope. **7A COMPLETED_PENDING_VERIFICATION chỉ áp dụng hồ sơ**, chờ7B kiểm độc lập. Tiêu chí phát hành **chưa đạt**: P1/P2/P3 và secure fallback còn BLOCKED; P4–P7 chưa nghiệm thu. **7B vẫn NOT_STARTED**. Kết quả kiểm cuối lượt được lưu trong `final-integrity.json`, `final-doc-checks.json`, `final-scope-proof.json` và `commands.md` của artifact7A; không phải nghiệm thu B hoặc test ứng dụng mới.
 
 Tự kiểm hồ sơ **02/11/2026,23:21 (+07)**: source **975/975** khớp cả đầu7A và snapshot B, HEAD không đổi; **16/16** đối chiếu bằng chứng đã lưu và **19/19** kiểm tài liệu/manifest đạt, không có status change ngoài3tài liệu +artifact7A. Manifest có **163 entry review/context/excluded**, không phải163file production payload. Có5hunk app.ts, chỉ1hunk report được chọn để review và4hunk TikTok được loại. Log và diff chính xác đã lưu; sau thêm mốc này chạy lại generator/checker để hash manifest khớp tài liệu cuối. Không chạy test ứng dụng mới hoặc7B.
+
+<a id="rc-20261103-1023"></a>
+## Lượt A — dựng release candidate sạch (03/11/2026, 10:23–11:10 +07)
+
+**Trạng thái: COMPLETED_PENDING_VERIFICATION** cho bước tạo candidate, build/kiểm image, migration và rollback local. Đây **không** phải 7B PASS và **không** phải sẵn sàng VPS/staging/production. Không push, không deploy, không đổi remote, không merge. Working tree gốc không bị sửa source/test/Prisma/ops: snapshot đầu/cuối **985/985** file khớp hash (aggregate `592b66ab…a0cf`), `git status` không đổi ngoài thư mục artifact và các tài liệu đầu ra. Artifact riêng: [reports-release-candidate-20261103-1023](../../artifacts/reports-release-candidate-20261103-1023/) ([lệnh](../../artifacts/reports-release-candidate-20261103-1023/commands.md)).
+
+### Quyết định và phạm vi
+
+- **TikTok:** theo quyết định người dùng ngày 03/11/2026, TikTok không còn thuộc dự án; toàn bộ việc gỡ theo [TIKTOK-REMOVAL-2026-11-01](../ops/TIKTOK-REMOVAL-2026-11-01.md) nằm trong candidate (53 file tracked bị xóa; gỡ import/route/health/UI/Compose service+volume; chính tài liệu đó). `backend/src/app.ts` lấy nguyên file hiện tại (gồm cả đăng ký `aiReportRoutes`).
+- **Phụ thuộc đưa vào có lý do:** `backend/src/config/mock-channel-config.ts` (+ test) — các file channel sau khi gỡ TikTok import nó thay cho `tiktok-personal-config.ts` đã xóa; thiếu thì không build. `backend/src/modules/contacts/zinstant-proxy-routes.ts` — backend `tsc` lần đầu **FAIL** `zinstant-proxy-routes.ts(109,11): TS2554 Expected 3 arguments, but got 2` vì `authMiddleware` (E-1/O-1) chuyển sang dạng callback; **người dùng đã duyệt** đưa nguyên file (diff 3 dòng) vào commit riêng.
+- **ChatView.vue:** chỉ 3 hunk TikTok (xóa panel, option `tiktok`, import) áp lên blob HEAD; UI rail kênh trong working tree nằm ngoài phạm vi.
+- **Ngoài candidate (đúng manifest/yêu cầu):** AI send/auto-reply policy (`ai-send-policy.ts`, `ai-auto-reply-service.ts` và 2 test), `AiAssistantPage.vue` (link "Xem báo cáo AI"; người dùng chọn giữ ngoài — chênh với bằng chứng 4A/5B), UI rail kênh, tài liệu TikTok lịch sử, thay đổi `backend/scripts/reports-verification/**`, `artifacts/`, `.env*`, README gốc.
+
+| Mục | Giá trị |
+|---|---|
+| Worktree (giữ lại cho B) | `F:\ZaloCRM-candidates\reports-20261103-1023` |
+| Branch cục bộ | `release/reports-20261103-1023` từ `eb1be0bce8f60858436b98370f3c517edcb041b7` |
+| Commit | `de7b1b0` báo cáo + E-1/O-1 + test + docs/reports-fix; `67e2247` gỡ TikTok; `90ca8c4` P2; `b50295c` zinstant (dependency auth) |
+| Tag annotated | **`reports-rc2-20261103`** (object `3740d18742bf…`) → `b50295c0ec2c2d6d12cac411c3d08052a07ba41a`. Tag `reports-rc1-20261103` (→`90ca8c4`) đã xóa trước mọi kiểm tra vì `tsc` FAIL; chưa từng push |
+| Image candidate | `zalo-crm-rc:reports-rc2-20261103`, ID/manifest digest **`sha256:90967793f2c7a351aeb66dffaf6801ca971adc9bb76d8cd62d382db9d748514a`** (local, chưa push nên không có registry RepoDigest) |
+| Image baseline (rollback) | `zalo-crm-rc:baseline-eb1be0b`, `sha256:bcf59b1fbd046609d4ed034274e6a03b51a035a34b6a47737e1f86a02404fb73` |
+
+### Đối chiếu manifest và working tree
+
+`candidate-phase-*.json` ghi SHA256 từng file chép (byte-identical với working tree gốc). So manifest 7A: chỉ `docs/reports-fix/README.md` (7B cập nhật sau 7A), `.dockerignore`, `docker/Dockerfile`, `scripts/ops/deploy.sh` (bản sửa P2 sau 7A) khác hash — đúng dự kiến. So 5 cây nguồn với working tree gốc (`candidate-vs-root.json`): 825 file trùng byte, 153 chỉ khác CRLF/LF (checkout autocrlf), **6 khác nội dung**, đều ngoài phạm vi: `ai-auto-reply-service.ts`, `ai-send-policy.ts`, `ai-send-policy.test.ts`, `ChatView.vue` (rail UI), `AiAssistantPage.vue`, `zinstant-proxy-routes.ts` (so sánh chạy trước khi duyệt; sau commit `b50295c` file này khớp, hash `863d3606…cc4ff`); thiếu 1 file: `ai-auto-reply-full-auto.test.ts`.
+
+Grep `TIKTOK_WEB_SESSION|tiktok-personal|tiktokChannelAccountRoutes|tt04|resolveTikTokPersonalConfig|tiktok-channel|tiktok-connection|tiktok-login` trong backend/src, frontend/src, backend/scripts, docker, Compose: **0 kết quả runtime**; chỉ còn 3 assert phủ định trong test. Chữ "tiktok" còn lại là nguồn lead marketing `tiktok-leadgen`, trường `socialTiktok`, model `TiktokAppConfig/TiktokAdvertiserConnection` trong schema — giữ có chủ đích theo tài liệu gỡ. Còn sót 2 file tracked `workers/tiktok-personal/.gitignore`, `poc/tiktok-personal-qr/.gitignore` (không có trong removal manifest; giữ giống working tree gốc, cần quyết định dọn sau).
+
+### Gate và regression P2
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `bash scripts/ops/check-build-worktree.sh` trên worktree sạch | OK, exit 0 |
+| Thêm file untracked giả `backend/scripts/reports-verification/rc-gate-probe-20261103-1023.txt` | **Bị chặn**, exit 1, liệt kê đúng đường dẫn; xóa đúng file đó → OK exit 0 |
+| Gate trước build image và cuối lượt (có node_modules/dist ignored) | OK |
+| `python scripts/ops/tests/build-worktree.test.py -v` (Python 3.14.7, Git Bash 5.3.15 thật) | **16/16 PASS** (11 gate + 5 packaging); `bash -n` deploy.sh/gate exit 0 |
+
+### Cài đặt, build và test
+
+| Lớp | Kết quả |
+|---|---|
+| `npm ci` backend / frontend | exit 0 / exit 0. **`npm ci` backend chạy được với lock hiện tại** (Dockerfile vẫn dùng `npm install`). npm 11.19 local không chạy install scripts của 13 package (prisma engines, sharp, esbuild…) theo chính sách allowScripts; image dùng npm của Node 22 |
+| Frontend vitest / build | **161/161** (20 file); `vue-tsc -b && vite build` PASS, giữ cảnh báo chunk >500 kB |
+| Backend `tsc` | lần 1 FAIL TS2554 (trên), lần 2 PASS sau `b50295c` |
+| Backend targeted báo cáo/tenant/kênh, **app role** `rc_app` (NOSUPERUSER/NOBYPASSRLS, sở hữu 0 bảng), PG16, RLS_SET_CONFIG=true, guard enforce | **317/317** (32 file = 30 file bộ B + `mock-channel-config` + `health-check`) |
+| `refresh-token-service.test.ts` bằng owner, DB riêng | **10/10** (không phải bằng chứng RLS) |
+| Full backend candidate | 37 file/11 test FAIL, 1108 PASS, 1 skip (164 file) |
+| Full backend baseline `eb1be0b` (cùng deps/schema/config, DB riêng, RLS của chính HEAD = 69 policy) | 35 file/9 test FAIL, 987 PASS, 1 skip (159 file) |
+
+**Test FAIL chỉ có ở candidate (2):**
+
+1. `tests/zinstant-proxy-auth.test.ts > caps batch lookup at 50 unique UIDs even when 200 sent` — timeout 5 s. Mock trong test vẫn là `authMiddleware` async 2 tham số, không gọi `done` của chữ ký callback mới nên request treo. Lỗi ở harness test cũ, không phải route production; cần cập nhật mock trong lượt sửa riêng.
+2. `tests/unit/channel-expand-migration.test.ts:41` — kỳ vọng `ORG_SCOPED_MODELS` **không** có `Message`; E-1/O-1 cố ý thêm `Message` vào guard. Assertion cũ mâu thuẫn quyết định E-1/O-1, cần cập nhật có đối chứng trong lượt riêng.
+
+Không sửa assertion/test trong lượt này. 9 test FAIL còn lại có ở cả hai bên (`logs/full-*-failnames.txt`). Network guard ghi 2 lần chặn kết nối `localhost` không port ở mỗi bên (đối xứng).
+
+### Image thật
+
+Build từ worktree candidate, context gốc của worktree (10.16 MB), `docker/Dockerfile`, exit 0 (374 s). Nội dung (`logs/image-candidate-contents.txt`): Node **v22.23.4**; `/app/scripts` đúng **13 file** đã duyệt (12 script cấp gốc + `channels/backfill-message-org-id.ts`; đây là "13 script" của README-p2), không có `reports-verification`; không có `/app/tests`, `.env*`, `artifacts`, `fixtures`, `*.test.ts/*.spec.ts`, `workers`, `poc`; `/app/dist` không có file/route TikTok; `/app/static` có `index.html` + 210 file bundle (gồm chunk `AiReport`), không có trang tt04/mockup; `prisma/` gồm migrations và `rls/tenant-rls.sql`. `/app/node_modules` 3.1 GB (dependency đầy đủ như trước). Image baseline `eb1be0b` để đối chứng có 20 file scripts gồm 4 file `reports-verification` và `dist/modules/channels/tiktok-*` — xác nhận lỗi P2/TikTok cũ không còn ở candidate. `docker-compose.yml` của candidate chỉ còn service `app, db, redis, minio, minio-init, backup, clamav` và volume `pg_data, file_storage, redis_data, minio_data, clamav_data`.
+
+**Smoke (người dùng cho phép cô lập bằng mạng):** không có cờ sẵn có tắt mọi cron/socket — `app.ts:464–507` khởi động reminder, health check, intelligence, labels/presence/friend/group-info sync, interaction/engagement cron và Socket.IO vô điều kiện. Vì vậy container chạy trên `docker network --internal` (không Internet), NODE_ENV=test (tắt BullMQ/group-scan/scoring/channel processor/broadcast/care/AI follow-up), không Redis, không nick/session/provider key, DB fixture giả, app role + RLS_SET_CONFIG=true + guard enforce, JWT secret ngẫu nhiên; client chạy trong container cùng mạng. Kết quả candidate **22/22**: `/health/live` 200; `/health/ready` không sẵn sàng khi thiếu Redis (xem RC-3); login thật 4 fixture; 11 GET report admin 200; không token 401; member 403; leader bị chặn automation-summary 403; X/Y không thấy user id org kia; `POST /api/v1/channel-accounts/tiktok` **404**.
+
+### Database PostgreSQL 16
+
+- DB rỗng đã chứng minh (0 bảng) trước khi ghi. `prisma migrate deploy` (**không db push**): 129 migration, 0 unfinished/rolled-back, khoảng 4 s mỗi DB; `migrate status` up to date.
+- **Drift có sẵn (không do candidate; schema không đổi so HEAD):** `migrate diff` từ DB sau migration tới `schema.prisma` còn 8 thay đổi (`logs/schema-drift.sql`), đáng chú ý `messages.org_id` chưa NOT NULL, thiếu FK `media_assets.source_zalo_account_id`, khác index/default. Không tự viết migration.
+- `tenant-rls.sql` áp bằng owner `-1 ON_ERROR_STOP`, exit 0 (~1 s). Catalog: 123 bảng, **102/102** bảng có `org_id` ENABLE+FORCE, 103 bảng forced, **103 policy**, không bảng forced thiếu policy; app role NOSUPERUSER/NOBYPASSRLS, sở hữu 0 bảng.
+- Bảng TikTok cũ còn trong schema: `tiktok_advertiser_connections`, `tiktok_app_configs` (lead ads, có RLS FORCE), cùng `channel_accounts/channel_events/channel_account_access` dùng chung; không có enum TikTok. **Không** viết migration xóa.
+- **Oracle trên source candidate** (helper `be1o1-2052-*` sao nguyên văn, hash khớp; chỉ khác cách dựng schema như ghi trong commands): canonical contract **710/710** (lần chạy thiếu bước `6b-prisma-boundary` ra 707/710 — lỗi trình tự của tôi, đã dựng lại DB sạch, log cũ giữ riêng); 6a3 API **129/129**; E-1/O-1 boundaries green4 **524/524**; RLS enforce runtime **14/14**; RLS matrix **88/90** — 2 ca `messages` INSERT chéo org/không tenant nhận `23503` thay vì `42501` vì trigger `messages_org_guard` (chỉ có khi migrate deploy, không có ở schema db push của B) chặn trước RLS: insert vẫn bị từ chối, không lộ dữ liệu, cần cập nhật kỳ vọng helper; runtime cũ 13/14 giữ đúng như diagnostic lịch sử (`CareSession` nay thuộc guard).
+
+### Rollback rehearsal local
+
+Cùng DB `reports_be1o1_verify` (RLS 103 policy): candidate (22/22) → image `eb1be0b` → candidate (22/22). Image cũ dưới guard enforce + RLS mới: **login 500** cho cả 4 fixture, report 401, `reports/ai` 404, route TikTok **xuất hiện lại** (`POST /api/v1/channel-accounts/tiktok` → 401 thay vì 404). Catalog `pg_policies` trước/sau rollback giống hệt (103, md5 `68ca26e7…`): rollback image **không** gỡ RLS/E-1/O-1 ở DB, nhưng app cũ không tương thích với biên đó. Giữ kết luận mục 9: image HEAD **không** phải secure fallback; rollback về nó làm TikTok quay lại và mất đăng nhập dưới cấu hình bảo vệ.
+
+### Phát hiện và rủi ro mới
+
+| ID | Mức | Nội dung |
+|---|---|---|
+| RC-1 | P2 | 2 test cũ chỉ fail ở candidate (mock auth async; assert `Message` ngoài guard). Cần lượt A sửa test có đối chứng, không nới runtime |
+| RC-2 | P1 rollout | Với `TENANT_GUARD_MODE=enforce`, image candidate ghi lỗi tenant-guard ở cron/startup không bọc tenant: `Appointment.updateMany` (overdue auto-flip), `Appointment.findMany` (action-prompt), `ZaloAccount.findMany` (status-log backfill và **boot reconnect Zalo**). Bật enforce/RLS ở môi trường thật sẽ làm các job nền này lỗi hoặc thấy 0 dòng. Phải đánh giá trên staging trước khi bật |
+| RC-3 | P3 | `/health/ready` không trả lời trong 15 s khi Redis không kết nối được (không có timeout); lưu ý với vòng chờ 180 s của deploy |
+| RC-4 | P2 | Drift migration ↔ `schema.prisma` (8 mục, có sẵn) |
+| RC-5 | P3 | Link báo cáo AI ở `AiAssistantPage.vue` không trong candidate; 2 `.gitignore` TikTok còn sót; image 1.16 GB với `node_modules` 3.1 GB |
+| RC-6 | Thông tin | Tài liệu TT11 ghi production từng chạy commit `ce779d2` (không phải tổ tiên của `eb1be0b`); revision production thực tế chưa xác minh, nên `eb1be0b` không phải production base |
+
+### BLOCKED / chưa làm
+
+- Staging/VPS/production: **không thực hiện**. Cần người dùng cấp: đích staging cụ thể, cơ chế secret, owner DB riêng cho SQL RLS, quyết định cấu hình `RLS_SET_CONFIG/TENANT_GUARD_MODE` sau RC-2, backup + restore thật (P5), migration history của đích, registry để có RepoDigest, owner vận hành và thời gian soak, thiết bị iPhone/Safari/PWA (P7).
+- Smoke chỉ ở mức cô lập mạng, không phải full bootstrap có Redis/worker/provider thật (P6).
+
+### Cleanup
+
+Đã dừng và xóa container `rc-pg16-20261103-1023`, `rc-oracle-pg16-20261103-1023`, `rc-app-*`, network `rc-net-20261103-1023`, junction, worktree baseline tạm, thư mục mirror oracle và file bí mật tạm; port 55482/55571–55576 trống. Không đụng `reports-1b-verify-20261101`, `sketchup-api-1`. **Giữ lại** worktree candidate, branch, tag `reports-rc2-20261103`, image `zalo-crm-rc:reports-rc2-20261103` và `zalo-crm-rc:baseline-eb1be0b`, cùng image nền đã pull.
+
+**Bước tiếp:** 7B độc lập trên đúng tag `reports-rc2-20261103` (`b50295c`) và image `sha256:90967793…514a`; quyết định RC-1/RC-2 trước khi chuẩn bị staging. Không tự ghi 7B PASS.
