@@ -523,7 +523,7 @@ export async function chatRoutes(app: FastifyInstance) {
       ];
     }
     if (statusId) contactWhere.statusId = statusId;
-    if (assignedUserId) contactWhere.assignedUserId = assignedUserId;
+    if (assignedUserId) contactWhere.assignedUserId = assignedUserId === 'unassigned' ? null : assignedUserId;
     if (hasZalo === 'true') contactWhere.hasZalo = true;
     else if (hasZalo === 'false') contactWhere.hasZalo = false;
     else if (hasZalo === 'unknown') contactWhere.hasZalo = null;
