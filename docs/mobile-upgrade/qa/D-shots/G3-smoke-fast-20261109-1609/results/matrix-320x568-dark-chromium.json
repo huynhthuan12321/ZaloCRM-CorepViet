@@ -1,0 +1,116 @@
+{
+  "viewport": "320x568",
+  "theme": "dark",
+  "browserName": "chromium",
+  "touch": {
+    "coarse": true,
+    "hoverNone": true
+  },
+  "issues": [
+    {
+      "screen": "nhachen-editor",
+      "kind": "touch<44",
+      "detail": [
+        {
+          "sel": "input.title-input",
+          "w": 228,
+          "h": 26
+        },
+        {
+          "sel": "select.sale-select[— Chưa gán —QA Quản trị ]",
+          "w": 78.2,
+          "h": 40
+        },
+        {
+          "sel": "input.location-input",
+          "w": 230,
+          "h": 26
+        }
+      ]
+    },
+    {
+      "screen": "nhachen-editor",
+      "kind": "contrast-thấp",
+      "detail": [
+        {
+          "sel": "span.av",
+          "text": "GA",
+          "ratio": 2.25,
+          "fg": "rgb(255, 255, 255)",
+          "bg": "rgb(217,164,65)"
+        }
+      ]
+    },
+    {
+      "screen": "tongquan-pham-vi",
+      "kind": "không-dựng-được",
+      "detail": "locator.boundingBox: Timeout 15000ms exceeded."
+    },
+    {
+      "screen": "caidat-2-taikhoan",
+      "kind": "touch<44",
+      "detail": [
+        {
+          "sel": "button.avatar-edit[Đổi ảnh đại diện]",
+          "w": 30,
+          "h": 30
+        }
+      ]
+    },
+    {
+      "screen": "caidat-2-tochuc",
+      "kind": "tràn-khỏi-viewport",
+      "detail": [
+        {
+          "sel": "div.brand-glow",
+          "left": 108,
+          "right": 388
+        }
+      ]
+    },
+    {
+      "screen": "caidat-2-tochuc",
+      "kind": "touch<44",
+      "detail": [
+        {
+          "sel": "input.v-field__input",
+          "w": 262,
+          "h": 40
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 202,
+          "h": 40
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 262,
+          "h": 40
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 262,
+          "h": 40
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 262,
+          "h": 40
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 228,
+          "h": 40
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 228,
+          "h": 40
+        }
+      ]
+    }
+  ],
+  "pageErrors": [
+    "console.error: TypeError: Cannot read properties of undefined (reading 'filter')\n    at un.fn (http://localhost:4178/assets/DashboardView-B6vbMdZY.js:1:54392)\n    at He (http://localhost:4178/assets/runtime-core.esm-bundler-VZGyXo76.js:1:6575)\n    at get value (http://localhost:4178/assets/runtime-core.esm-bundler-VZGyXo76.js:1:18480)\n    at http://localhost:4178/assets/DashboardView-B6vbMdZY.js:1:55184\n    at r (http://localhost:4178/assets/runtime-core.esm-bundler-VZGyXo76.js:1:22326)\n    at ni (http://localhost:4178/assets/runtime-core.esm-bundler-VZGyXo76.js:1:33879)\n    at http://localhost:4178/assets/MobileSheet-B_WTfwl5.js:1:1554\n    at Object.r [as default] (http://localhost:4178/assets/runtime-core.esm-bundler-VZGyXo76.js:1:22326)\n    at default (http://localhost:4178/assets/index-D_027A92.js:5:85769)\n    at http://localhost:4178/assets/runtime-core.esm-bundler-VZGyXo76.js:1:45891"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "viewport": "390x844",
+  "theme": "dark",
+  "browserName": "webkit",
+  "touch": {
+    "coarse": true,
+    "hoverNone": true
+  },
+  "issues": [
+    {
+      "screen": "caidat-2-tochuc",
+      "kind": "touch<44",
+      "detail": [
+        {
+          "sel": "button.v-btn.v-theme--hsLight[Chọn từ kho]",
+          "w": 119.5,
+          "h": 36
+        },
+        {
+          "sel": "button.v-btn.v-btn--disabled[Lưu]",
+          "w": 64,
+          "h": 36
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 326,
+          "h": 40
+        },
+        {
+          "sel": "input.v-field__input",
+          "w": 326,
+          "h": 40
+        }
+      ]
+    }
+  ],
+  "pageErrors": []
+}

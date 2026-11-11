@@ -1,0 +1,14 @@
+description: "Technical eval: sentiment JSON contract"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "sentiment", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSystemPromptLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertValidJson"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertSentimentSchema"
+tests: "file://../../datasets/technical/sentiment.json"

@@ -1,0 +1,114 @@
+{
+  "capturedAt": "2026-11-11T04:01:57.882168+00:00",
+  "imageIdentityBefore": {
+    "containerId": "ae0d0b625466ad3823aba974089bca924e136eee9dcc07a2bfc52bff66289c42",
+    "image": "sha256:85c6a6bafd06eb85a7eed25c5daaa047c19494a46ba5df7e0030c86ec064b573",
+    "running": true,
+    "startedAt": "2026-11-09T15:36:32.767850648Z"
+  },
+  "imageIdentityAfter": {
+    "containerId": "ae0d0b625466ad3823aba974089bca924e136eee9dcc07a2bfc52bff66289c42",
+    "image": "sha256:85c6a6bafd06eb85a7eed25c5daaa047c19494a46ba5df7e0030c86ec064b573",
+    "running": true,
+    "startedAt": "2026-11-09T15:36:32.767850648Z"
+  },
+  "reviewedRunnerSha256": "6a9321bab629894bf34cc5e071106f9a51228ea99f13affeda0f2d57feea332c",
+  "reviewedHelperSha256": "e0d123717f3fa4ad2456514cde418185ec43fd60343a0bce45e9c8c0deeeac84",
+  "readOnlyOperations": [
+    "docker inspect (only Id/Image/Running/StartedAt emitted)",
+    "read reviewed helper bytes for SHA256",
+    "docker exec node fs.readFileSync dist/*.js and public static files; no application imports"
+  ],
+  "rawReceiptSha256": "20363f5c5d5349803d3b460658e207f637cafe5dfd41369415a48f0a75e33813",
+  "totalExtractedFiles": 527,
+  "totalBytes": 12912801,
+  "frontendPublicFiles": 211,
+  "frontendMatchesGitC4a3e4eBuildBytes": true,
+  "runtimeComparison": {
+    "method": "TypeScript printer removeComments=true; original-byte receipt retained",
+    "same": 314,
+    "executableDiff": [
+      "app.js",
+      "modules\\chat\\chat-routes.js"
+    ]
+  },
+  "keyModules": [
+    {
+      "file": "modules/ai/ai-send-policy.js",
+      "imageSha256": "980d0dd6cbcacc1f567df51f16d50397027545e0a279bd46d460766bf0f80744",
+      "releaseSha256": "85c8a234a7e69ff91690bcd39f67d6a9cc077e1ef7ee6caf419138ccd44fc785",
+      "equalBytes": false,
+      "equalIgnoringCRLF": false
+    },
+    {
+      "file": "modules/ai/ai-auto-reply-service.js",
+      "imageSha256": "51674aa774458a17b323d9019a80ce751e31a52ac633c0e74e4c319bf21c9374",
+      "releaseSha256": "51674aa774458a17b323d9019a80ce751e31a52ac633c0e74e4c319bf21c9374",
+      "equalBytes": true,
+      "equalIgnoringCRLF": true
+    },
+    {
+      "file": "modules/zalo/sdk-limit-service.js",
+      "imageSha256": "2e6718ca20ce12b83c2e06f8d5f62fa4e806ed455beb4afd9af5c7af9fc218f0",
+      "releaseSha256": "2e6718ca20ce12b83c2e06f8d5f62fa4e806ed455beb4afd9af5c7af9fc218f0",
+      "equalBytes": true,
+      "equalIgnoringCRLF": true
+    },
+    {
+      "file": "shared/database/prisma-client.js",
+      "imageSha256": "3a3a751e6989e44012266b56aa9a3a55fe2a369f3ea362aaa20ebb7f6cd6d0c7",
+      "releaseSha256": "3a3a751e6989e44012266b56aa9a3a55fe2a369f3ea362aaa20ebb7f6cd6d0c7",
+      "equalBytes": true,
+      "equalIgnoringCRLF": true
+    },
+    {
+      "file": "modules/scoring/auto-tag.js",
+      "imageSha256": "439cbe9a124141c83e7ae59b55d91fec146415b4756f18d475c48153cc342d3a",
+      "releaseSha256": "439cbe9a124141c83e7ae59b55d91fec146415b4756f18d475c48153cc342d3a",
+      "equalBytes": true,
+      "equalIgnoringCRLF": true
+    },
+    {
+      "file": "modules/scoring/backfill-cron.js",
+      "imageSha256": "f9daa1eefa142c7a0cb32659c209b36c6a121f48e355a67590aa5c3796ee3bc4",
+      "releaseSha256": "f9daa1eefa142c7a0cb32659c209b36c6a121f48e355a67590aa5c3796ee3bc4",
+      "equalBytes": true,
+      "equalIgnoringCRLF": true
+    },
+    {
+      "file": "modules/scoring/stuck-detection.js",
+      "imageSha256": "81d72911574b3d4c0fc532d6980e3b13694d9bd87b15afd33848fbe40ccc5135",
+      "releaseSha256": "81d72911574b3d4c0fc532d6980e3b13694d9bd87b15afd33848fbe40ccc5135",
+      "equalBytes": true,
+      "equalIgnoringCRLF": true
+    },
+    {
+      "file": "modules/ai/ai-followup-service.js",
+      "imageSha256": "73398dc16bb51d6f5383caaefb339207f192c753569a061ac99938df0975bdbb",
+      "releaseSha256": "73398dc16bb51d6f5383caaefb339207f192c753569a061ac99938df0975bdbb",
+      "equalBytes": true,
+      "equalIgnoringCRLF": true
+    },
+    {
+      "file": "app.js",
+      "imageSha256": "91b0a072278ea3cd48d40ca79186fcf35ec16a68c90ff83be9cf67ac184773b9",
+      "releaseSha256": "7eb114abdb5eb2881cd4f316ef801eb04c7dddde6c26e125cb479a2f5d3493c3",
+      "equalBytes": false,
+      "equalIgnoringCRLF": false
+    },
+    {
+      "file": "modules/chat/chat-routes.js",
+      "imageSha256": "b787107f7b477cd5f2befc46650c67019cda7afe8a79fcf7cec2a3c912f730b9",
+      "releaseSha256": "b3d59db24f16da597b2ce479fc59f1deb3518f43eda91397b633bdcac4afceff",
+      "equalBytes": false,
+      "equalIgnoringCRLF": false
+    }
+  ],
+  "localEvidenceRoot": "F:\\ZaloCRM-wt\\release-mobile-qa\\image-audit-20261111",
+  "notes": [
+    "Raw files and complete file hashes are outside Git. No env, customer data or database queries extracted.",
+    "TypeScript comparison normalizes CRLF and removes comments; raw SHA256 retained.",
+    "FullAuto policy differs only in two comments. App differs only in PWA headers/fallback; chat differs only in approved unassigned null mapping.",
+    "Release also emits pre-existing unimported zalo-profile-capture.test.js (source predates mobile); not a new application runtime module."
+  ]
+}

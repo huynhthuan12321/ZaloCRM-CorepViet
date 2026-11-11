@@ -1,0 +1,135 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) 2026 Nguyễn Tiến Lộc */
+/*
+ * Token mobile --m-* (CONTRACT-A §7). Import từ MobileLayout.vue, KHÔNG import ở main.ts.
+ * Cùng tên token cho Sáng/Tối, chỉ đổi giá trị dưới data-theme="dark".
+ * Tối khai báo thêm `html[data-theme="dark"] .crm-mobile` để overlay Vuetify teleport ra ngoài
+ * root (MobileSheet truyền content-class="crm-mobile") cũng nhận token tối.
+ * Không đưa --m-device-* / --m-keyboard-* (chrome mô phỏng của preview) vào production.
+ * --m-app-height / --m-keyboard-inset / --m-vv-offset-top do useMobileViewport ghi, không khai báo cứng.
+ */
+/* Overlay Vuetify (menu/popover) và hộp xác nhận teleport ra body, nằm NGOÀI .crm-mobile: cấp token cho chúng khi shell mobile chạy
+   (body.m-toast-host do MobileLayout đặt). Không dùng cho desktop. */
+body.m-toast-host .v-overlay-container,
+body.m-toast-host .cam-overlay,
+.crm-mobile {
+  color-scheme: light only;
+  --m-brand: #1786be;
+  --m-brand-strong: #0b5880;
+  --m-bg: #f7f9fc;
+  --m-surface: #fff;
+  --m-surface-inset: #edf2f7;
+  --m-text: #152838;
+  --m-muted: #526576;
+  --m-line: #d5dce5;
+  --m-success: #157347;
+  --m-danger: #b42318;
+  --m-warning: #8a4b08;
+  --m-warning-soft: #fff3e3;
+  --m-brand-soft: #e7f3fa;
+  --m-focus: #0b5880;
+  --m-bubble-in: #fff;
+  --m-bubble-out: #e2f1fa;
+  --m-shadow: 0 6px 24px rgb(20 26 36 / .10);
+  --m-shadow-rest: 0 1px 4px rgb(0 0 0 / .12);
+  --m-tap-highlight: rgb(23 134 190 / .12);
+  --m-scrim: #15283866;
+  /* Chữ/icon đặt trên nền --m-brand-strong và --m-danger (tối: nền sáng nên chữ phải tối). */
+  --m-on-action: #fff;
+  --m-on-danger: #fff;
+
+  --m-space-1: 4px;
+  --m-space-2: 8px;
+  --m-space-3: 12px;
+  --m-space-4: 16px;
+  --m-space-5: 20px;
+  --m-space-6: 24px;
+  --m-space-8: 32px;
+  --m-radius-sm: 8px;
+  --m-radius-md: 12px;
+  --m-radius-lg: 20px;
+  --m-radius-card: 16px;
+  --m-radius-sheet: 24px;
+
+  --m-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --m-font-body: 16px;
+  --m-font-meta: 13px;
+  --m-font-section: 17px;
+  --m-font-title: 28px;
+
+  --m-gutter: 16px;
+  --m-header: 56px;
+  --m-tabbar: 64px; /* thanh chính, CHƯA gồm safe-area-bottom (cộng đúng 1 lần ở nav) */
+  --m-touch: 44px;
+  --m-fab-size: 60px;
+  --m-fab-lift: 22px; /* độ nhô của nút Hội thoại khỏi mép trên thanh tab */
+
+  --m-safe-top: env(safe-area-inset-top, 0px);
+  --m-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --m-safe-left: env(safe-area-inset-left, 0px);
+  --m-safe-right: env(safe-area-inset-right, 0px);
+
+  --m-z-header: 20;
+  --m-z-nav: 30;
+  --m-z-toast: 130;
+}
+
+.crm-mobile[data-theme="dark"],
+html[data-theme="dark"] .crm-mobile,
+html[data-theme="dark"] body.m-toast-host .v-overlay-container,
+html[data-theme="dark"] body.m-toast-host .cam-overlay {
+  color-scheme: dark;
+  --m-brand: #3fa9e0;
+  --m-brand-strong: #6cc4f2;
+  --m-bg: #0f1720;
+  --m-surface: #18222d;
+  --m-surface-inset: #1f2b38;
+  --m-text: #e7eef5;
+  --m-muted: #a3b3c3;
+  --m-line: #2c3a48;
+  --m-success: #5fd39b;
+  --m-danger: #ff8a80;
+  --m-warning: #f2b866;
+  --m-warning-soft: #3a2b14;
+  --m-brand-soft: #15344a;
+  --m-focus: #6cc4f2;
+  --m-bubble-in: #1f2b38;
+  --m-bubble-out: #164260;
+  --m-shadow: 0 6px 24px rgb(0 0 0 / .45);
+  --m-shadow-rest: 0 1px 4px rgb(0 0 0 / .4);
+  --m-tap-highlight: rgb(108 196 242 / .16);
+  --m-scrim: #000a;
+  --m-on-action: #0f1720;
+  --m-on-danger: #0f1720;
+}
+
+/* Màn hẹp nhất (<=359px): gutter 12px. */
+/* ConfirmHost được nạp trước các route: phải hoạt động cả khi vào thẳng Cài đặt,
+   không phụ thuộc CSS lazy của Chat. Cao hơn sheet nhân viên (3000/12000). */
+body.m-toast-host .cam-overlay { z-index: 13000; }
+body.m-toast-host .cam-modal {
+  --surface: var(--m-surface);
+  --surface-3: var(--m-surface-inset);
+  --line: var(--m-line);
+  --ink: var(--m-text);
+  --ink-2: var(--m-text);
+  --ink-3: var(--m-muted);
+  --ink-4: var(--m-muted);
+}
+body.m-toast-host .cam-modal .cam-x { min-width: 44px; min-height: 44px; }
+body.m-toast-host .cam-modal .cam-btn { min-height: 44px; }
+body.m-toast-host .cam-modal :is(.cam-input, .cam-textarea) { font-size: 16px; }
+
+@media (max-width: 359px) {
+  .crm-mobile {
+    --m-gutter: 12px;
+    --m-fab-size: 56px;
+  }
+}
+
+/* Hotfix 09/11: điện thoại ngang (cao ≤ 500px) — chrome gọn hơn để còn chỗ cho nội dung.
+   Điều kiện = SHORT_LANDSCAPE_MEDIA_QUERY (use-mobile.ts, NGUYÊN VĂN, có test). */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* nút giữa 48px (vẫn ≥ 44px chạm): đáy nút = 48 − 16 = 32px = đỉnh nhãn ((52 − 40)/2 + 26) -> không đè nhãn "Hội thoại" */
+  .crm-mobile { --m-header: 44px; --m-tabbar: 52px; --m-fab-lift: 16px; --m-fab-size: 48px; }
+}

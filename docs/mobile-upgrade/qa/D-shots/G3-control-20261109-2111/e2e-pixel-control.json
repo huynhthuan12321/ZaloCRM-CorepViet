@@ -1,0 +1,196 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "F:\\ZaloCRM-wt\\crm\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "e2e/desktop-regression-d.spec.ts",
+      "--project=webkit",
+      "--grep",
+      "768x1024 tongquan",
+      "--workers=1",
+      "--reporter=line,json"
+    ],
+    "configFile": "F:\\ZaloCRM-wt\\crm\\frontend\\playwright.config.ts",
+    "rootDir": "F:/ZaloCRM-wt/crm/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "F:/ZaloCRM-wt/crm/frontend/test-results/G3-control-20261109-2111",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "F:/ZaloCRM-wt/crm/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "F:/ZaloCRM-wt/crm/frontend/test-results/G3-control-20261109-2111",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "F:/ZaloCRM-wt/crm/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "F:\\ZaloCRM-wt\\crm\\frontend\\test-results\\G3-control-20261109-2111",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "webkit",
+        "testDir": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e",
+        "snapshotDir": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4186",
+          "trace": "off",
+          "locale": "vi-VN",
+          "timezoneId": "Asia/Ho_Chi_Minh",
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+          "viewport": {
+            "width": 1280,
+            "height": 720
+          },
+          "screen": {
+            "width": 1792,
+            "height": 1120
+          },
+          "deviceScaleFactor": 2,
+          "isMobile": false,
+          "hasTouch": false,
+          "defaultBrowserType": "webkit"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "webkit"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.65.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "desktop-regression-d.spec.ts",
+      "file": "desktop-regression-d.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Desktop/iPad không đổi so với base e290e2d (đợt D)",
+          "file": "desktop-regression-d.spec.ts",
+          "line": 33,
+          "column": 6,
+          "specs": [
+            {
+              "title": "768x1024 tongquan (/)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7578,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:07:39.056Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-3ccfed26339006f01f44",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-09T14:07:34.898Z",
+    "duration": 12287.463,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "file": "01-overview-inbox-chat.jpg",
+    "mime": "image/jpeg",
+    "width": 1380,
+    "height": 1080,
+    "bytes": 135927
+  },
+  {
+    "file": "02-customers-profile-agenda.jpg",
+    "mime": "image/jpeg",
+    "width": 1380,
+    "height": 1080,
+    "bytes": 126966
+  },
+  {
+    "file": "03-desktop-continuity.jpg",
+    "mime": "image/jpeg",
+    "width": 1424,
+    "height": 1088,
+    "bytes": 104729
+  },
+  {
+    "file": "agenda.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 31877
+  },
+  {
+    "file": "ai.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 43247
+  },
+  {
+    "file": "contacts.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 33419
+  },
+  {
+    "file": "inbox.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 36498
+  },
+  {
+    "file": "more.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 26689
+  },
+  {
+    "file": "overview.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 35692
+  },
+  {
+    "file": "profile.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 32429
+  },
+  {
+    "file": "thread.jpg",
+    "mime": "image/jpeg",
+    "width": 390,
+    "height": 844,
+    "bytes": 35006
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "viewport": "430x932",
+  "theme": "light",
+  "browserName": "chromium",
+  "touch": {
+    "coarse": true,
+    "hoverNone": true
+  },
+  "issues": [],
+  "pageErrors": []
+}

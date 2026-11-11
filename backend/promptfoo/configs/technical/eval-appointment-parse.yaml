@@ -1,0 +1,13 @@
+description: "Technical eval: appointment_parse JSON contract"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "appointment_parse", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  vars: { maxTokens: "500" }
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertValidJson"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertAppointmentSchema"
+tests: "file://../../datasets/technical/appointment-parse.json"

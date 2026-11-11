@@ -1,0 +1,17 @@
+{
+  "viewport": "320x568",
+  "theme": "light",
+  "browserName": "chromium",
+  "touch": {
+    "coarse": true,
+    "hoverNone": true
+  },
+  "issues": [
+    {
+      "screen": "caidat-2-tochuc",
+      "kind": "không-dựng-được",
+      "detail": "VTextField delegated hit area stays >=44"
+    }
+  ],
+  "pageErrors": []
+}

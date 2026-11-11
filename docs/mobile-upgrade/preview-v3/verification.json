@@ -1,0 +1,896 @@
+{
+  "browser": {
+    "protocolVersion": "1.3",
+    "product": "Chrome/156.0.8078.80",
+    "revision": "@fb096c0011f9d50f0a264a9376420cdea9c421e3",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "jsVersion": "15.6.75.27"
+  },
+  "scope": "Desktop Chrome only; fictional fixtures; no iPhone/Safari/PWA verification",
+  "checks": [
+    {
+      "screen": "overview",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "composer",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 796
+    },
+    {
+      "screen": "contacts",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "profile",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "agenda",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "more",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 844,
+      "height": 390,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 342
+    },
+    {
+      "screen": "sheet-ai",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-contact-filter",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-appointment",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-attachment",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-ai",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-contact-filter",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-appointment",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-attachment",
+      "width": 390,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-ai",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-contact-filter",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-appointment",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "sheet-attachment",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 390,
+      "height": 844,
+      "state": "loading",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 390,
+      "height": 844,
+      "state": "empty",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 390,
+      "height": 844,
+      "state": "error",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 390,
+      "height": 844,
+      "state": "offline",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 390,
+      "height": 844,
+      "state": "loading",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 390,
+      "height": 844,
+      "state": "empty",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 390,
+      "height": 844,
+      "state": "error",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 390,
+      "height": 844,
+      "state": "offline",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 390,
+      "height": 844,
+      "state": "loading",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 390,
+      "height": 844,
+      "state": "empty",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 390,
+      "height": 844,
+      "state": "error",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 390,
+      "height": 844,
+      "state": "offline",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "contacts",
+      "width": 390,
+      "height": 844,
+      "state": "loading",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "contacts",
+      "width": 390,
+      "height": 844,
+      "state": "empty",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "contacts",
+      "width": 390,
+      "height": 844,
+      "state": "error",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "contacts",
+      "width": 390,
+      "height": 844,
+      "state": "offline",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "composer",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 796
+    },
+    {
+      "screen": "contacts",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "profile",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "agenda",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "more",
+      "width": 320,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "composer",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 796
+    },
+    {
+      "screen": "contacts",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "profile",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "agenda",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "more",
+      "width": 375,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "composer",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 796
+    },
+    {
+      "screen": "contacts",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "profile",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "agenda",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "more",
+      "width": 393,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "composer",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 796
+    },
+    {
+      "screen": "contacts",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "profile",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "agenda",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "more",
+      "width": 430,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "overview",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "inbox",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "thread",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "composer",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 796
+    },
+    {
+      "screen": "contacts",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "profile",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "agenda",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    },
+    {
+      "screen": "more",
+      "width": 768,
+      "height": 844,
+      "state": "ready",
+      "documentOverflow": false,
+      "phoneOverflow": false,
+      "smallTargets": [],
+      "shellHeight": 772
+    }
+  ],
+  "behavior": [
+    {
+      "case": "search to empty",
+      "pass": true
+    },
+    {
+      "case": "select second conversation → matching profile → matching thread",
+      "pass": true
+    },
+    {
+      "case": "AI applies to draft without sending",
+      "pass": true
+    },
+    {
+      "case": "draft isolation per conversation",
+      "pass": true
+    },
+    {
+      "case": "offline disables send, retains draft",
+      "pass": true
+    },
+    {
+      "case": "filter applies only on Apply; Escape closes dialog with focus return",
+      "pass": true
+    },
+    {
+      "case": "create appointment adds local agenda item",
+      "pass": true
+    },
+    {
+      "case": "composer directly above simulated keyboard",
+      "pass": true
+    },
+    {
+      "case": "actual Escape key closes native dialog",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "manifest": [
+    "overview-390.png",
+    "inbox-390.png",
+    "thread-390.png",
+    "composer-390.png",
+    "contacts-390.png",
+    "profile-390.png",
+    "agenda-390.png",
+    "more-390.png",
+    "inbox-320.png",
+    "thread-320.png",
+    "inbox-430.png",
+    "thread-430.png",
+    "thread-landscape-844x390.png",
+    "ai-sheet-390.png",
+    "contact-filter-390.png",
+    "appointment-390.png",
+    "overview-loading-390.png",
+    "overview-empty-390.png",
+    "overview-error-390.png",
+    "overview-offline-390.png",
+    "inbox-loading-390.png",
+    "inbox-empty-390.png",
+    "inbox-error-390.png",
+    "inbox-offline-390.png",
+    "thread-loading-390.png",
+    "thread-empty-390.png",
+    "thread-error-390.png",
+    "thread-offline-390.png",
+    "contacts-loading-390.png",
+    "contacts-empty-390.png",
+    "contacts-error-390.png",
+    "contacts-offline-390.png"
+  ]
+}

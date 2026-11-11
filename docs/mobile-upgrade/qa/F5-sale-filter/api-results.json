@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-10",
+  "guard": "development + exact allowlisted TEST database host + healthy TEST backend",
+  "results": [
+    {
+      "test": "Admin filters sale A",
+      "status": 200,
+      "total": 1,
+      "result": "PASS"
+    },
+    {
+      "test": "Admin filters sale B",
+      "status": 200,
+      "total": 1,
+      "result": "PASS"
+    },
+    {
+      "test": "Sale own assignedUserId",
+      "status": 200,
+      "total": 1,
+      "result": "PASS"
+    },
+    {
+      "test": "Sale assignedUserId outside accessible nick scope",
+      "status": 200,
+      "total": 0,
+      "result": "PASS"
+    },
+    {
+      "test": "Existing unassigned literal behavior",
+      "status": 200,
+      "total": 0,
+      "result": "EXISTING BACKEND LIMITATION: 0 returned although fixture has 1 unassigned customer"
+    }
+  ],
+  "cleaned": true,
+  "remaining": 0
+}

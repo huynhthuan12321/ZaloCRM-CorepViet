@@ -1,0 +1,170 @@
+[
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "overview",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "inbox",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "thread",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "contacts",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "profile",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "agenda",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "ai",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 320,
+    "screen": "more",
+    "smallTargets": [],
+    "viewport": 320
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "overview",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "inbox",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "thread",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "contacts",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "profile",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "agenda",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "ai",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 390,
+    "screen": "more",
+    "smallTargets": [],
+    "viewport": 390
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "overview",
+    "smallTargets": [],
+    "viewport": 430
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "inbox",
+    "smallTargets": [],
+    "viewport": 430
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "thread",
+    "smallTargets": [],
+    "viewport": 430
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "contacts",
+    "smallTargets": [],
+    "viewport": 430
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "profile",
+    "smallTargets": [],
+    "viewport": 430
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "agenda",
+    "smallTargets": [],
+    "viewport": 430
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "ai",
+    "smallTargets": [],
+    "viewport": 430
+  },
+  {
+    "horizontalOverflow": false,
+    "phoneWidth": 430,
+    "screen": "more",
+    "smallTargets": [],
+    "viewport": 430
+  }
+]

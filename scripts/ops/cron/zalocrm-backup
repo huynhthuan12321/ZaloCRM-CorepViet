@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+30 2 * * * root /root/zalocrm-ops/backup-offsite.sh --mode daily >> /var/log/zalocrm-backup.log 2>&1
+30 4 * * 0 root /root/zalocrm-ops/backup-offsite.sh --mode weekly >> /var/log/zalocrm-backup.log 2>&1

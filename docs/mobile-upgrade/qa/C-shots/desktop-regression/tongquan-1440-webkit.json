@@ -1,0 +1,12 @@
+{
+  "route": "/",
+  "browser": "webkit",
+  "width": 1440,
+  "height": 900,
+  "sizeMatch": true,
+  "totalPixels": 1296000,
+  "diffPixels": 0,
+  "diffRatio": 0,
+  "exactDiffPixels": 0,
+  "maxChannelDelta": 0
+}

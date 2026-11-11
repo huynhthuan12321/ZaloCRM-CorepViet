@@ -1,0 +1,27 @@
+{
+  "route": "/chat",
+  "width": 1024,
+  "height": 768,
+  "sizeMatch": true,
+  "totalPixels": 786432,
+  "diffPixels": 0,
+  "diffRatio": 0,
+  "exactDiffPixels": 0,
+  "maxChannelDelta": 0,
+  "info": {
+    "base": {
+      "coarse": true,
+      "hoverNone": true,
+      "desktopLayout": true,
+      "mobileLayout": false,
+      "w": 1024
+    },
+    "hotfix": {
+      "coarse": true,
+      "hoverNone": true,
+      "desktopLayout": true,
+      "mobileLayout": false,
+      "w": 1024
+    }
+  }
+}

@@ -1,0 +1,12 @@
+description: "Technical eval: virtual_chat synthetic assistant"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "virtual_chat", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSystemPromptLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoPiiLeak"
+tests: "file://../../datasets/technical/virtual-chat.json"

@@ -1,0 +1,267 @@
+{
+  "colors": [
+    {
+      "name": "body on white",
+      "foreground": "#152838",
+      "background": "#ffffff",
+      "ratio": 15.08,
+      "passesBodyAA": true
+    },
+    {
+      "name": "secondary on background",
+      "foreground": "#526576",
+      "background": "#f7f9fc",
+      "ratio": 5.72,
+      "passesBodyAA": true
+    },
+    {
+      "name": "primary action",
+      "foreground": "#ffffff",
+      "background": "#0b5880",
+      "ratio": 7.72,
+      "passesBodyAA": true
+    },
+    {
+      "name": "selected chip",
+      "foreground": "#0b5880",
+      "background": "#e7f3fa",
+      "ratio": 6.83,
+      "passesBodyAA": true
+    },
+    {
+      "name": "warning banner",
+      "foreground": "#8a4b08",
+      "background": "#fff3e3",
+      "ratio": 6.21,
+      "passesBodyAA": true
+    },
+    {
+      "name": "message outgoing",
+      "foreground": "#152838",
+      "background": "#e2f1fa",
+      "ratio": 13.07,
+      "passesBodyAA": true
+    },
+    {
+      "name": "success text",
+      "foreground": "#157347",
+      "background": "#f7f9fc",
+      "ratio": 5.57,
+      "passesBodyAA": true
+    }
+  ],
+  "images": [
+    {
+      "name": "overview-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "inbox-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "composer-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "contacts-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "profile-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "agenda-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "more-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "inbox-320.png",
+      "width": 320,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-320.png",
+      "width": 320,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "inbox-430.png",
+      "width": 430,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-430.png",
+      "width": 430,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-landscape-844x390.png",
+      "width": 844,
+      "height": 390,
+      "pass": true
+    },
+    {
+      "name": "ai-sheet-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "contact-filter-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "appointment-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "overview-loading-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "overview-empty-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "overview-error-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "overview-offline-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "inbox-loading-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "inbox-empty-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "inbox-error-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "inbox-offline-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-loading-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-empty-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-error-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "thread-offline-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "contacts-loading-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "contacts-empty-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "contacts-error-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    },
+    {
+      "name": "contacts-offline-390.png",
+      "width": 390,
+      "height": 844,
+      "pass": true
+    }
+  ],
+  "staticChecks": {
+    "zoomEnabled": true,
+    "viewportFitCover": true,
+    "lightOnly": true,
+    "noVHtml": true,
+    "noGlobalTouchCapture": true,
+    "noTransitionAll": true,
+    "noRemoteAppImports": true,
+    "noApplicationApi": true,
+    "noFixed100vh": true,
+    "hasFocusVisible": true,
+    "hasNativeDialog": true,
+    "hasSkipLink": true,
+    "noExternalHttpRequests": true
+  },
+  "notes": [
+    "Contrast samples only; not full accessibility certification.",
+    "Native Chrome date/time icon data URLs are excluded from external HTTP requests.",
+    "Preview only: no application typecheck/test or iPhone device verification."
+  ]
+}

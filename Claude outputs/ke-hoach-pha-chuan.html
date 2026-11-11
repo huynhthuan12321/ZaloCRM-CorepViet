@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pha Chuẩn — Kế hoạch xây dựng</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #FAFAF7;
+  --surface: #FFFFFF;
+  --surface-alt: #F5F0EB;
+  --text: #1A1A1A;
+  --text-secondary: #5A5A5A;
+  --text-muted: #8A8A8A;
+  --border: #E8E0D8;
+  --copper: #C4823A;
+  --copper-light: #F5E6D3;
+  --copper-dark: #A06A2E;
+  --green: #2D6A4F;
+  --green-light: #D8F3DC;
+  --green-dark: #1B4332;
+  --accent-red: #D64545;
+  --accent-blue: #3A7CA5;
+  --accent-purple: #7B5EA7;
+  --phase-1: #C4823A;
+  --phase-2: #3A7CA5;
+  --phase-3: #2D6A4F;
+  --phase-4: #7B5EA7;
+  --phase-5: #D64545;
+  --badge-done-bg: #D8F3DC;
+  --badge-done-text: #1B4332;
+  --badge-doing-bg: #FFF3CD;
+  --badge-doing-text: #856404;
+  --badge-todo-bg: #F0E6D8;
+  --badge-todo-text: #6B4C2A;
+  --font: 'Be Vietnam Pro', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141210;
+    --surface: #1E1C18;
+    --surface-alt: #2A2620;
+    --text: #EDE8E0;
+    --text-secondary: #B0A898;
+    --text-muted: #706860;
+    --border: #3A3530;
+    --copper: #D4924A;
+    --copper-light: #3A2A18;
+    --copper-dark: #E8A860;
+    --green: #52B788;
+    --green-light: #1B3028;
+    --green-dark: #95D5B2;
+    --accent-red: #E87070;
+    --accent-blue: #6AAFCF;
+    --accent-purple: #A088C8;
+    --phase-1: #D4924A;
+    --phase-2: #6AAFCF;
+    --phase-3: #52B788;
+    --phase-4: #A088C8;
+    --phase-5: #E87070;
+    --badge-done-bg: #1B3028;
+    --badge-done-text: #95D5B2;
+    --badge-doing-bg: #3A3018;
+    --badge-doing-text: #E8C860;
+    --badge-todo-bg: #2A2218;
+    --badge-todo-text: #D4A870;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141210;
+  --surface: #1E1C18;
+  --surface-alt: #2A2620;
+  --text: #EDE8E0;
+  --text-secondary: #B0A898;
+  --text-muted: #706860;
+  --border: #3A3530;
+  --copper: #D4924A;
+  --copper-light: #3A2A18;
+  --copper-dark: #E8A860;
+  --green: #52B788;
+  --green-light: #1B3028;
+  --green-dark: #95D5B2;
+  --accent-red: #E87070;
+  --accent-blue: #6AAFCF;
+  --accent-purple: #A088C8;
+  --phase-1: #D4924A;
+  --phase-2: #6AAFCF;
+  --phase-3: #52B788;
+  --phase-4: #A088C8;
+  --phase-5: #E87070;
+  --badge-done-bg: #1B3028;
+  --badge-done-text: #95D5B2;
+  --badge-doing-bg: #3A3018;
+  --badge-doing-text: #E8C860;
+  --badge-todo-bg: #2A2218;
+  --badge-todo-text: #D4A870;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 0 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 40px 0 80px;
+}
+
+/* ── Hero ── */
+.hero {
+  text-align: center;
+  padding: 48px 24px 40px;
+  margin-bottom: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--copper), var(--green), var(--copper));
+}
+.hero-brand {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--copper);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+}
+.hero h1 {
+  font-size: clamp(28px, 5vw, 40px);
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.15;
+  margin-bottom: 8px;
+}
+.hero h1 span { color: var(--copper); }
+.hero-tagline {
+  font-size: 18px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 20px;
+}
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+.hero-meta span { white-space: nowrap; }
+
+/* ── Summary Cards ── */
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 40px;
+}
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+.summary-card .num {
+  font-size: 32px;
+  font-weight: 800;
+  font-family: var(--mono);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.summary-card .label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.summary-card.sc-phases .num { color: var(--copper); }
+.summary-card.sc-items .num { color: var(--green); }
+.summary-card.sc-time .num { color: var(--accent-blue); }
+.summary-card.sc-budget .num { color: var(--accent-purple); }
+
+/* ── Vision ── */
+.vision {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 40px;
+}
+.vision h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--copper);
+  margin-bottom: 12px;
+}
+.vision p {
+  color: var(--text-secondary);
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+.vision p:last-child { margin-bottom: 0; }
+.vision .funnel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.funnel-step {
+  background: var(--copper-light);
+  color: var(--copper);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.funnel-arrow {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ── Timeline ── */
+.timeline-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 28px;
+  margin-bottom: 40px;
+  overflow-x: auto;
+}
+.timeline-bar h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+.tl-track {
+  display: flex;
+  gap: 0;
+  min-width: 600px;
+}
+.tl-phase {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 8px;
+  position: relative;
+}
+.tl-phase:not(:last-child)::after {
+  content: '→';
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 14px;
+  z-index: 1;
+}
+.tl-phase .tl-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.8;
+}
+.tl-phase .tl-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.tl-phase .tl-time {
+  font-size: 12px;
+  font-family: var(--mono);
+  margin-top: 4px;
+  opacity: 0.7;
+}
+.tl-p1 { background: color-mix(in srgb, var(--phase-1) 15%, var(--surface)); color: var(--phase-1); }
+.tl-p2 { background: color-mix(in srgb, var(--phase-2) 15%, var(--surface)); color: var(--phase-2); }
+.tl-p3 { background: color-mix(in srgb, var(--phase-3) 15%, var(--surface)); color: var(--phase-3); }
+.tl-p4 { background: color-mix(in srgb, var(--phase-4) 15%, var(--surface)); color: var(--phase-4); }
+.tl-p5 { background: color-mix(in srgb, var(--phase-5) 15%, var(--surface)); color: var(--phase-5); }
+
+/* ── Phase Sections ── */
+.phase {
+  margin-bottom: 32px;
+}
+.phase-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border);
+}
+.phase-num {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  font-family: var(--mono);
+  flex-shrink: 0;
+}
+.p1 .phase-num { background: color-mix(in srgb, var(--phase-1) 15%, var(--surface)); color: var(--phase-1); }
+.p2 .phase-num { background: color-mix(in srgb, var(--phase-2) 15%, var(--surface)); color: var(--phase-2); }
+.p3 .phase-num { background: color-mix(in srgb, var(--phase-3) 15%, var(--surface)); color: var(--phase-3); }
+.p4 .phase-num { background: color-mix(in srgb, var(--phase-4) 15%, var(--surface)); color: var(--phase-4); }
+.p5 .phase-num { background: color-mix(in srgb, var(--phase-5) 15%, var(--surface)); color: var(--phase-5); }
+.phase-info h2 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.phase-info .phase-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.group {
+  margin-bottom: 20px;
+}
+.group-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  padding-left: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  transition: border-color 0.15s;
+}
+.item:hover { border-color: var(--copper); }
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+.dot-done { background: var(--green); }
+.dot-doing { background: #F0AD4E; }
+.dot-todo { background: var(--border); }
+.dot-important { background: var(--accent-red); }
+
+.item-body { flex: 1; min-width: 0; }
+.item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: block;
+}
+.item-detail {
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: block;
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+.item-meta {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.badge-done { background: var(--badge-done-bg); color: var(--badge-done-text); }
+.badge-doing { background: var(--badge-doing-bg); color: var(--badge-doing-text); }
+.badge-todo { background: var(--badge-todo-bg); color: var(--badge-todo-text); }
+.badge-owner {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+/* ── Deliverables Table ── */
+.deliverables {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 32px;
+  overflow-x: auto;
+}
+.deliverables h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.del-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 500px;
+}
+.del-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+}
+.del-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.del-table tr:last-child td { border-bottom: none; }
+.del-table .dep {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── KPI ── */
+.kpi-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 32px;
+}
+.kpi-section h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.kpi-card {
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+.kpi-card .kpi-val {
+  font-size: 22px;
+  font-weight: 800;
+  font-family: var(--mono);
+  color: var(--copper);
+}
+.kpi-card .kpi-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.kpi-card .kpi-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  margin-top: 4px;
+}
+
+/* ── Budget ── */
+.budget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 32px;
+  overflow-x: auto;
+}
+.budget h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.budget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 480px;
+}
+.budget-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+}
+.budget-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.budget-table tr:last-child td { border-bottom: none; }
+.budget-table .total-row td {
+  font-weight: 700;
+  color: var(--copper);
+  border-top: 2px solid var(--border);
+}
+.budget-table .num { text-align: right; font-family: var(--mono); }
+
+/* ── Footer ── */
+.footer {
+  text-align: center;
+  padding: 32px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.footer strong { color: var(--copper); font-weight: 600; }
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .hero { padding: 32px 16px 28px; }
+  .summary-row { grid-template-columns: 1fr 1fr; }
+  .item { flex-direction: column; gap: 6px; }
+  .item-meta { flex-direction: row; align-items: center; }
+  .phase-header { gap: 10px; }
+  .phase-info h2 { font-size: 17px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-brand">Kế hoạch triển khai</div>
+  <h1><span>Pha Chuẩn</span> — by Vối Coffee</h1>
+  <div class="hero-tagline">Chuẩn máy, chuẩn vị</div>
+  <div class="hero-meta">
+    <span>Phiên bản 1.0</span>
+    <span>·</span>
+    <span>09/2026</span>
+    <span>·</span>
+    <span>5 Phase · 23 hạng mục</span>
+  </div>
+</div>
+
+<!-- Summary -->
+<div class="summary-row">
+  <div class="summary-card sc-phases">
+    <div class="num">5</div>
+    <div class="label">Giai đoạn</div>
+  </div>
+  <div class="summary-card sc-items">
+    <div class="num">23</div>
+    <div class="label">Hạng mục</div>
+  </div>
+  <div class="summary-card sc-time">
+    <div class="num">8–10</div>
+    <div class="label">Tuần triển khai</div>
+  </div>
+  <div class="summary-card sc-budget">
+    <div class="num">~15tr</div>
+    <div class="label">Ngân sách tháng đầu</div>
+  </div>
+</div>
+
+<!-- Vision -->
+<div class="vision">
+  <h2>Tầm nhìn & Chiến lược</h2>
+  <p><strong>Pha Chuẩn</strong> là thương hiệu dịch vụ sửa chữa & bảo trì máy pha cà phê chuyên nghiệp tại TP.HCM, hoạt động dưới hệ sinh thái Vối Coffee. Mục tiêu: tạo kênh tiếp cận khách hàng B2B (chủ quán cà phê) qua dịch vụ thiết thực, sau đó chuyển đổi sang khách hàng cà phê hạt GU169 định kỳ.</p>
+  <p>Chơi chữ kép: <strong>"pha"</strong> = pha cà phê + <strong>"chuẩn"</strong> = hiệu chuẩn máy. Thương hiệu liên kết ngược: "Pha Chuẩn — by Vối Coffee" để xây uy tín cho cả hai.</p>
+  <div class="funnel">
+    <span class="funnel-step">Quảng cáo sửa máy</span>
+    <span class="funnel-arrow">→</span>
+    <span class="funnel-step">KTV đến sửa</span>
+    <span class="funnel-arrow">→</span>
+    <span class="funnel-step">Demo pha GU169</span>
+    <span class="funnel-arrow">→</span>
+    <span class="funnel-step">Tặng 500g dùng thử</span>
+    <span class="funnel-arrow">→</span>
+    <span class="funnel-step">Follow-up Zalo</span>
+    <span class="funnel-arrow">→</span>
+    <span class="funnel-step">Đặt cà phê định kỳ</span>
+  </div>
+</div>
+
+<!-- Timeline -->
+<div class="timeline-bar">
+  <h2>Lộ trình tổng quan</h2>
+  <div class="tl-track">
+    <div class="tl-phase tl-p1">
+      <div class="tl-label">Phase 1</div>
+      <div class="tl-name">Thương hiệu</div>
+      <div class="tl-time">Tuần 1–2</div>
+    </div>
+    <div class="tl-phase tl-p2">
+      <div class="tl-label">Phase 2</div>
+      <div class="tl-name">Fanpage</div>
+      <div class="tl-time">Tuần 2–3</div>
+    </div>
+    <div class="tl-phase tl-p3">
+      <div class="tl-label">Phase 3</div>
+      <div class="tl-name">Website</div>
+      <div class="tl-time">Tuần 3–5</div>
+    </div>
+    <div class="tl-phase tl-p4">
+      <div class="tl-label">Phase 4</div>
+      <div class="tl-name">Vận hành</div>
+      <div class="tl-time">Tuần 4–7</div>
+    </div>
+    <div class="tl-phase tl-p5">
+      <div class="tl-label">Phase 5</div>
+      <div class="tl-name">Marketing</div>
+      <div class="tl-time">Tuần 6–10</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- PHASE 1 -->
+<!-- ========================================= -->
+<div class="phase p1">
+  <div class="phase-header">
+    <div class="phase-num">1</div>
+    <div class="phase-info">
+      <h2>Thương hiệu & Nhận diện</h2>
+      <div class="phase-sub">Tuần 1–2 · 5 hạng mục</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">1A · Tên & Nghiên cứu thị trường</div>
+    <div class="item">
+      <span class="dot dot-done"></span>
+      <div class="item-body">
+        <span class="item-name">Nghiên cứu tên thương hiệu → chọn "Pha Chuẩn"</span>
+        <span class="item-detail">Phân tích 8 đối thủ TP.HCM, đánh giá 6 phương án. Chơi chữ kép: pha cà phê + hiệu chuẩn máy. Tagline: "Chuẩn máy, chuẩn vị". Liên kết: "Pha Chuẩn — by Vối Coffee"</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-done">Hoàn thành</span>
+        <span class="badge-owner">GU169 team</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">1B · Domain & Hạ tầng số</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Đăng ký domain phachuan.vn</span>
+        <span class="item-detail">Domain chính cho thương hiệu sửa máy. Ban đầu redirect → voicoffee.vn/sua-may-pha, sau chuyển sang hosting riêng khi traffic đủ lớn</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">1–2 ngày</span>
+        <span class="badge-owner">Vối Coffee</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Tạo email info@phachuan.vn & Zalo OA Pha Chuẩn</span>
+        <span class="item-detail">Email dùng cho liên hệ đối tác, KTV. Zalo OA để chăm sóc khách sau sửa, gửi reminder bảo trì định kỳ, upsell cà phê</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">1 ngày</span>
+        <span class="badge-owner">Vối Coffee</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">1C · Nhận diện thương hiệu</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Thiết kế logo & bộ nhận diện Pha Chuẩn</span>
+        <span class="item-detail">Logo kết hợp biểu tượng máy pha + ly cà phê. Bảng màu: xanh Vối (#2D6A4F) + đồng (#C4823A). Áp dụng lên: avatar fanpage, ảnh bìa, landing page, name card KTV, nhãn gói 500g dùng thử, kit demo</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">5–7 ngày</span>
+        <span class="badge-owner">Designer</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Bộ template nội dung (Canva/Figma)</span>
+        <span class="item-detail">5 template: (1) Tips bảo trì — layout video kèm text, (2) Before/After — chia đôi ảnh, (3) Kiến thức máy pha — infographic, (4) Bảng giá dịch vụ, (5) Quote/review khách hàng. Dùng chung cho fanpage + web</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">3–5 ngày</span>
+        <span class="badge-owner">Designer</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- PHASE 2 -->
+<!-- ========================================= -->
+<div class="phase p2">
+  <div class="phase-header">
+    <div class="phase-num">2</div>
+    <div class="phase-info">
+      <h2>Fanpage & Nội dung</h2>
+      <div class="phase-sub">Tuần 2–3 · 6 hạng mục</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">2A · Tạo & Thiết lập Fanpage</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Tạo Facebook Page "Pha Chuẩn — by Vối Coffee"</span>
+        <span class="item-detail">Page riêng cho mảng sửa máy, TÁCH khỏi page Vối Coffee & GU169 để không lẫn tệp khách hàng. Username: @phachuan.vn. Liên kết cross-page với Vối Coffee. Danh mục: Dịch vụ sửa chữa</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">1–2 ngày</span>
+        <span class="badge-owner">Vối Coffee</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Thiết kế bộ nhận diện fanpage</span>
+        <span class="item-detail">Ảnh bìa (hình KTV đang sửa máy + tagline "Chuẩn máy, chuẩn vị"), avatar logo Pha Chuẩn, mô tả page, nút CTA "Nhắn tin" / "Gọi ngay", tab Dịch vụ với 3 gói giá, pinned post giới thiệu dịch vụ</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">2–3 ngày</span>
+        <span class="badge-owner">Designer + Vối</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">2B · Chiến lược nội dung</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Kế hoạch content 4 trụ cột × 30 ngày đầu</span>
+        <span class="item-detail"><strong>Trụ 1:</strong> Tips bảo trì máy pha — video ngắn 30–60s, 2 bài/tuần. <strong>Trụ 2:</strong> Before/After sửa máy — ảnh thực tế + mô tả lỗi, 2 bài/tuần. <strong>Trụ 3:</strong> Kiến thức máy pha — so sánh hãng, dấu hiệu hỏng, 1 bài/tuần. <strong>Trụ 4:</strong> Upsell GU169 — KTV pha thử sau sửa, review vị, 1 bài/tuần. Tổng ~6 bài/tuần</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">3–5 ngày</span>
+        <span class="badge-owner">Content team</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Sản xuất 10 bài đầu tiên (backlog nội dung)</span>
+        <span class="item-detail">Viết sẵn 10 bài + thiết kế hình trước khi launch fanpage. Gồm: 3 tips bảo trì, 2 before/after (dùng ảnh từ KTV hiện tại hoặc stock), 2 kiến thức, 2 giới thiệu dịch vụ, 1 review GU169. Đảm bảo page có nội dung ngay khi công khai</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">5–7 ngày</span>
+        <span class="badge-owner">Content team</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">2C · Automation nội dung</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Tích hợp Lark + n8n auto-post cho fanpage Pha Chuẩn</span>
+        <span class="item-detail">Tái sử dụng workflow B1 (tự đăng bài), thêm token/credential page Pha Chuẩn. Lark GD_Content thêm tài khoản "PHA_CHUAN" để quản lý lịch đăng bài riêng. Auto-comment link phachuan.vn dưới mỗi bài</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">3–5 ngày</span>
+        <span class="badge-owner">Dev (n8n)</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Setup Messenger chatbot tư vấn tự động</span>
+        <span class="item-detail">Khi khách nhắn tin qua fanpage → chatbot hỏi loại máy, mô tả lỗi, khu vực → chuyển lead vào Lark GD_Lead + thông báo Telegram cho KTV. Kịch bản: chào → hỏi info → xác nhận lịch → gửi báo giá sơ bộ</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">3–5 ngày</span>
+        <span class="badge-owner">Dev (n8n)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- PHASE 3 -->
+<!-- ========================================= -->
+<div class="phase p3">
+  <div class="phase-header">
+    <div class="phase-num">3</div>
+    <div class="phase-info">
+      <h2>Website & Landing Page</h2>
+      <div class="phase-sub">Tuần 3–5 · 5 hạng mục</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">3A · Landing page chuyển đổi</div>
+    <div class="item">
+      <span class="dot dot-doing"></span>
+      <div class="item-body">
+        <span class="item-name">Landing page sửa máy pha cà phê TP.HCM</span>
+        <span class="item-detail">voicoffee.vn/sua-may-pha (redirect từ phachuan.vn). 3 gói giá: Sửa Nhanh 300–800k / An Tâm 800k/th / Đối Tác 1.5tr/th. Form lead, FAQ, social proof, testimonial. Đã build xong, chờ deploy</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-doing">Build xong</span>
+        <span class="badge-owner">Dev team</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Deploy landing page lên hosting Vối Coffee</span>
+        <span class="item-detail">Upload lên subdirectory voicoffee.vn/sua-may-pha. Cài SSL, kiểm tra responsive, tốc độ tải (target < 3s). Setup Google Analytics + Facebook Pixel. Redirect phachuan.vn → landing page</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">1–2 ngày</span>
+        <span class="badge-owner">Dev team</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">3B · Form lead & Automation</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Setup form lead → Lark CRM + n8n automation</span>
+        <span class="item-detail">Form trên LP → webhook n8n → ghi Lark GD_Lead (nguồn: "sửa máy — LP") + Telegram thông báo KTV + auto-reply Zalo/email xác nhận. Trường: tên quán, SĐT, loại máy, mô tả lỗi, quận/huyện</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">3–5 ngày</span>
+        <span class="badge-owner">Dev (n8n)</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Trang blog kiến thức máy pha (SEO)</span>
+        <span class="item-detail">Mục /blog trên phachuan.vn hoặc voicoffee.vn/blog/may-pha. 5 bài SEO ban đầu: "Cách bảo trì máy pha espresso", "Top 5 lỗi máy pha thường gặp", "Khi nào nên gọi KTV?", "So sánh giá sửa máy TP.HCM", "Checklist bảo trì máy hàng tháng". Mỗi bài gắn CTA → form lead</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">7–10 ngày</span>
+        <span class="badge-owner">Content + SEO</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Google Business Profile "Pha Chuẩn"</span>
+        <span class="item-detail">Đăng ký Google Maps tại địa chỉ Vối Coffee. Danh mục: "Dịch vụ sửa chữa máy pha cà phê". Đăng ảnh, giờ hoạt động, số điện thoại, link website. Thu thập review 5⭐ từ khách đầu tiên</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">2–3 ngày</span>
+        <span class="badge-owner">Vối Coffee</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- PHASE 4 -->
+<!-- ========================================= -->
+<div class="phase p4">
+  <div class="phase-header">
+    <div class="phase-num">4</div>
+    <div class="phase-info">
+      <h2>Vận hành dịch vụ</h2>
+      <div class="phase-sub">Tuần 4–7 · 4 hạng mục</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">4A · Quy trình & Nhân sự</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Bảng giá chi tiết & quy trình sửa chữa nội bộ</span>
+        <span class="item-detail">Pricing matrix theo loại lỗi × hãng máy (Breville, DeLonghi, Saeco, La Marzocco…). Checklist KTV khi đến quán: kiểm tra → báo giá → sửa → test → demo pha GU169 → bàn giao + tặng 500g</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">3–5 ngày</span>
+        <span class="badge-owner">Vối Coffee</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Tìm & đào tạo kỹ thuật viên cộng tác</span>
+        <span class="item-detail">Tuyển 1–2 KTV TP.HCM (freelance hoặc part-time). Đào tạo: quy trình Pha Chuẩn, demo pha GU169 sau sửa, script tư vấn upsell cà phê. Trang bị: name card, áo thương hiệu, kit demo</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">7–14 ngày</span>
+        <span class="badge-owner">Vối Coffee</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">4B · Kit & Công cụ</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Chuẩn bị kit demo: 500g GU169 sample × 20 bộ</span>
+        <span class="item-detail">Gói 500g dùng thử, nhãn riêng "Dùng thử miễn phí — Pha Chuẩn by Vối Coffee", tặng kèm sau mỗi lần sửa. Kèm card hướng dẫn pha + QR code link Zalo OA</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">3–5 ngày</span>
+        <span class="badge-owner">Vối Coffee</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Lark Base: module quản lý đơn sửa chữa</span>
+        <span class="item-detail">Bảng GD_Repair trong Lark: tên quán, SĐT, loại máy, lỗi, KTV phụ trách, trạng thái (mới → đã liên hệ → đã sửa → follow-up → upsell). View Kanban theo trạng thái. Liên kết GD_Lead để track nguồn</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">2–3 ngày</span>
+        <span class="badge-owner">Dev (Lark)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- PHASE 5 -->
+<!-- ========================================= -->
+<div class="phase p5">
+  <div class="phase-header">
+    <div class="phase-num">5</div>
+    <div class="phase-info">
+      <h2>Marketing & Chuyển đổi</h2>
+      <div class="phase-sub">Tuần 6–10 · 3 hạng mục</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">5A · Quảng cáo trả phí</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Facebook Ads — chạy test 2tr/tuần</span>
+        <span class="item-detail">Target: chủ quán cà phê TP.HCM, 25–45 tuổi, quan tâm F&B/thiết bị quán. Content: video tips bảo trì (reach) + bảng giá minh bạch (conversion). Chạy 2 tuần test → đánh giá CPL → scale nếu CPL ≤ 50k</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">Sau khi deploy LP</span>
+        <span class="badge-owner">Marketing</span>
+      </div>
+    </div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Zalo OA — tin nhắn chăm sóc tự động</span>
+        <span class="item-detail">Workflow: lead vào → auto-add Zalo OA → gửi tin "Cảm ơn bạn đã liên hệ Pha Chuẩn" + bảng giá. Sau sửa: reminder bảo trì 30/60/90 ngày. Upsell: "Đặt GU169 5kg giảm 20% — combo sửa máy"</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">Song song Ads</span>
+        <span class="badge-owner">Dev (n8n)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">5B · Phễu chuyển đổi cà phê</div>
+    <div class="item">
+      <span class="dot dot-todo"></span>
+      <div class="item-body">
+        <span class="item-name">Quy trình upsell: sửa máy → cà phê GU169</span>
+        <span class="item-detail"><strong>Bước 1:</strong> KTV pha thử GU169 ngay sau sửa máy, cho khách thử vị. <strong>Bước 2:</strong> Tặng gói 500g dùng thử miễn phí. <strong>Bước 3:</strong> Follow-up Zalo sau 3–5 ngày: "Anh/chị thấy GU169 thế nào?". <strong>Bước 4:</strong> Chốt đơn 5kg định kỳ, combo sửa + 5kg = giảm 20%. Target: 20–30% khách sửa máy chuyển sang mua cà phê</span>
+      </div>
+      <div class="item-meta">
+        <span class="badge badge-todo">Song song KTV</span>
+        <span class="badge-owner">Vối Coffee + KTV</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- Deliverables -->
+<!-- ========================================= -->
+<div class="deliverables">
+  <h2>Bảng nghiệm thu theo Phase</h2>
+  <table class="del-table">
+    <thead>
+      <tr>
+        <th>Phase</th>
+        <th>Sản phẩm bàn giao</th>
+        <th>Thời gian</th>
+        <th>Phụ thuộc</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="color:var(--phase-1);font-weight:600">1</td>
+        <td>Logo, bộ nhận diện, domain, email, Zalo OA, 5 template content</td>
+        <td>Tuần 2</td>
+        <td class="dep">—</td>
+      </tr>
+      <tr>
+        <td style="color:var(--phase-2);font-weight:600">2</td>
+        <td>Fanpage live, 10 bài sẵn, auto-post n8n, chatbot Messenger</td>
+        <td>Tuần 3</td>
+        <td class="dep">Phase 1 (logo, template)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--phase-3);font-weight:600">3</td>
+        <td>Landing page deployed, form lead hoạt động, Google Business, 5 bài SEO</td>
+        <td>Tuần 5</td>
+        <td class="dep">Phase 1 (domain), Phase 2 (content)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--phase-4);font-weight:600">4</td>
+        <td>Bảng giá nội bộ, 1–2 KTV đào tạo xong, 20 kit demo, Lark GD_Repair</td>
+        <td>Tuần 7</td>
+        <td class="dep">Phase 1 (nhận diện), Phase 3 (LP live)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--phase-5);font-weight:600">5</td>
+        <td>Ads chạy 2 tuần, CPL report, Zalo OA automation, quy trình upsell</td>
+        <td>Tuần 10</td>
+        <td class="dep">Phase 3 (LP) + Phase 4 (KTV)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ========================================= -->
+<!-- KPI -->
+<!-- ========================================= -->
+<div class="kpi-section">
+  <h2>KPI 90 ngày đầu</h2>
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-val">500+</div>
+      <div class="kpi-label">Follower fanpage</div>
+      <div class="kpi-note">Organic + Ads tháng đầu</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val">50–80</div>
+      <div class="kpi-label">Lead sửa máy / tháng</div>
+      <div class="kpi-note">CPL target ≤ 50.000đ</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val">15–20</div>
+      <div class="kpi-label">Đơn sửa máy / tháng</div>
+      <div class="kpi-note">Tỷ lệ chốt ~25–30%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val">20–30%</div>
+      <div class="kpi-label">Tỷ lệ upsell GU169</div>
+      <div class="kpi-note">Khách sửa → mua cà phê</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val">24</div>
+      <div class="kpi-label">Bài content / tháng</div>
+      <div class="kpi-note">~6 bài/tuần × 4 tuần</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val">3–5%</div>
+      <div class="kpi-label">Engagement rate</div>
+      <div class="kpi-note">Tương tác trung bình</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================= -->
+<!-- Budget -->
+<!-- ========================================= -->
+<div class="budget">
+  <h2>Ước tính ngân sách tháng đầu</h2>
+  <table class="budget-table">
+    <thead>
+      <tr>
+        <th>Hạng mục</th>
+        <th>Chi tiết</th>
+        <th class="num">Chi phí (VNĐ)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Domain phachuan.vn</td>
+        <td>Đăng ký 1 năm</td>
+        <td class="num">350.000</td>
+      </tr>
+      <tr>
+        <td>Thiết kế logo + nhận diện</td>
+        <td>Freelancer hoặc in-house</td>
+        <td class="num">2.000.000 – 5.000.000</td>
+      </tr>
+      <tr>
+        <td>Template nội dung (Canva Pro)</td>
+        <td>1 tài khoản/năm</td>
+        <td class="num">~250.000/tháng</td>
+      </tr>
+      <tr>
+        <td>Facebook Ads</td>
+        <td>2tr/tuần × 4 tuần</td>
+        <td class="num">8.000.000</td>
+      </tr>
+      <tr>
+        <td>Kit demo GU169 (20 bộ)</td>
+        <td>500g × 20, nhãn riêng</td>
+        <td class="num">~2.000.000</td>
+      </tr>
+      <tr>
+        <td>Name card + áo KTV</td>
+        <td>100 card + 2 áo</td>
+        <td class="num">~500.000</td>
+      </tr>
+      <tr>
+        <td>n8n / Automation</td>
+        <td>Self-hosted (đã có)</td>
+        <td class="num">0</td>
+      </tr>
+      <tr>
+        <td>Lark Base</td>
+        <td>Free plan (đã có)</td>
+        <td class="num">0</td>
+      </tr>
+      <tr class="total-row">
+        <td colspan="2">Tổng ước tính</td>
+        <td class="num">~13 – 16 triệu</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ========================================= -->
+<!-- Phân công trách nhiệm -->
+<!-- ========================================= -->
+<div class="vision">
+  <h2>Phân công trách nhiệm</h2>
+  <p><strong>Vối Coffee:</strong> Cung cấp hình ảnh/video thực tế (KTV sửa máy, before/after), duyệt nội dung, xử lý lead, tuyển KTV, cung cấp GU169 sample, quản lý Zalo OA, chốt khách.</p>
+  <p><strong>Bên triển khai:</strong> Xây dựng hệ thống (fanpage, website, automation), thiết kế nội dung, setup n8n + Lark, chạy ads, tracking, báo cáo tuần/tháng.</p>
+  <p><strong>Designer:</strong> Logo, bộ nhận diện, template content, ảnh bìa fanpage, nhãn gói dùng thử.</p>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <strong>Pha Chuẩn — by Vối Coffee</strong> · Kế hoạch xây dựng thương hiệu v1.0 · 09/2026
+</div>
+
+</div>
+</body>
+</html>

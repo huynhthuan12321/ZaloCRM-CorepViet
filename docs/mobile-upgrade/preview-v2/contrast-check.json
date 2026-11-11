@@ -1,0 +1,30 @@
+[
+  {
+    "role": "primary text",
+    "foreground": "#152838",
+    "background": "#ffffff",
+    "contrast": 15.08,
+    "passes_4_5": true
+  },
+  {
+    "role": "muted text",
+    "foreground": "#526576",
+    "background": "#ffffff",
+    "contrast": 6.03,
+    "passes_4_5": true
+  },
+  {
+    "role": "primary button",
+    "foreground": "#ffffff",
+    "background": "#0b5880",
+    "contrast": 7.72,
+    "passes_4_5": true
+  },
+  {
+    "role": "selected chip",
+    "foreground": "#0b5880",
+    "background": "#e9f4fb",
+    "contrast": 6.91,
+    "passes_4_5": true
+  }
+]

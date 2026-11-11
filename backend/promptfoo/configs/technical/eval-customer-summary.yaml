@@ -1,0 +1,14 @@
+description: "Technical eval: customer_summary JSON contract"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "customer_summary", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertValidJson"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertCustomerSummarySchema"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSystemPromptLeak"
+tests: "file://../../datasets/technical/customer-summary.json"

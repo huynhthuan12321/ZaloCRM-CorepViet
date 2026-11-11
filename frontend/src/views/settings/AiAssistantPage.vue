@@ -1,0 +1,777 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Nguyễn Tiến Lộc -->
+<template>
+  <!-- M53 2026-05-30: Trang cài đặt Trợ Lý AI cho Virtual Chat (KH no-Zalo).
+       Admin edit prompt template, toggle on/off, đổi regex skip noise. -->
+  <div class="ai-page">
+    <header class="ai-page-header">
+      <div>
+        <h1 class="ai-page-title">🤖 Trợ lý AI cho Chat nội bộ</h1>
+        <p class="ai-page-sub">
+          Cấu hình prompt và quy tắc cho trợ lý gợi ý sale khai thác thông tin + tự động trích xuất dữ liệu KH.
+        </p>
+      </div>
+      <div v-if="loading" class="loading-pill">⏳ Đang tải...</div>
+    </header>
+
+    <div v-if="config" class="ai-page-body">
+      <!-- Toggle bật/tắt -->
+      <div class="toggle-card">
+        <label class="toggle-row">
+          <input type="checkbox" v-model="config.aiAssistantEnabled" />
+          <div>
+            <div class="toggle-label">Bật trợ lý AI</div>
+            <div class="toggle-hint">
+              Khi tắt: virtual chat vẫn lưu nhật ký bình thường, nhưng AI sẽ không gợi ý + extract thông tin nữa.
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <!-- Provider info -->
+      <div class="info-card">
+        <div class="info-row">
+          <span class="info-label">Nhà cung cấp AI (Tư vấn)</span>
+          <span class="info-value">{{ aiConfig.provider }} — {{ aiConfig.model }}</span>
+          <button class="btn-config-inline" @click="showAiConfigDialog = true">Cấu hình</button>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Quota hôm nay</span>
+          <span class="info-value">{{ usage?.usedToday ?? 0 }} / {{ config.maxDaily }} lượt</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Còn lại</span>
+          <span class="info-value" :class="{ 'low-quota': lowQuota }">
+            {{ usage?.remaining ?? config.maxDaily }} lượt
+          </span>
+        </div>
+      </div>
+
+      <AiConfigDialog
+        v-model="showAiConfigDialog"
+        :loading="aiConfigSaving"
+        :config="aiConfig"
+        @save="saveAiMainConfig"
+      />
+
+      <!-- Prompt editor -->
+      <div class="field-group">
+        <label class="field-label">
+          Prompt mẫu cho trợ lý AI
+          <span class="field-meta">(anh edit để thay đổi cách AI nói chuyện với sale)</span>
+        </label>
+        <textarea
+          v-model="config.aiAssistantPromptTemplate"
+          class="prompt-editor"
+          rows="20"
+          spellcheck="false"
+        />
+        <div class="field-hint">
+          Dùng markdown. Lưu thay đổi sẽ áp dụng ngay cho mọi sale trong tổ chức.
+        </div>
+      </div>
+
+      <!-- Skip noise regex -->
+      <div class="field-group">
+        <label class="field-label">
+          Quy tắc bỏ qua tin nhắn ngắn (regex)
+          <span class="field-meta">(tiết kiệm token — AI không trả lời tin "ok", "ờ", "uhm"...)</span>
+        </label>
+        <input
+          v-model="config.aiAssistantSkipNoisePattern"
+          class="regex-input"
+          spellcheck="false"
+        />
+        <div class="field-hint">
+          Tin nhắn matching regex này sẽ KHÔNG kích hoạt AI. Mặc định bỏ qua "ok", "ờ", "uhm"...
+        </div>
+      </div>
+
+      <!-- ── Auto-tư vấn Mức A (2026-07-25) ── -->
+      <div class="auto-section">
+        <h2 class="auto-title">⚡ Tự động tư vấn theo phạm vi</h2>
+        <p class="auto-desc">
+          Chọn phạm vi khách mà trợ lý được tự phản hồi dựa trên Kho tài liệu. Mặc định, nội dung
+          <b>giá / cọc / chốt đơn / thanh toán</b> vẫn chuyển cho sale duyệt; chỉ gửi thẳng khi bật chế độ trọn.
+        </p>
+
+        <div class="toggle-card">
+          <label class="toggle-row">
+            <input type="checkbox" v-model="config.aiAutoReplyGlobalEnabled" />
+            <div>
+              <div class="toggle-label">Bật công tắc tổng auto-tư vấn</div>
+              <div class="toggle-hint">
+                Tắt = không hội thoại nào tự trả lời, kể cả đã bật riêng. Mặc định TẮT.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="ai-auto-reply-scope">Trợ lý tự động phản hồi cho</label>
+          <select id="ai-auto-reply-scope" v-model="config.aiAutoReplyScope" class="regex-input scope-select">
+            <option value="manual">Chỉ khách tôi bật thủ công</option>
+            <option value="new_customers">Khách mới</option>
+            <option value="all">Mọi khách</option>
+          </select>
+          <div class="field-hint">
+            “Khách mới” là hội thoại chưa từng có nhân viên trả lời. Công tắc bật riêng từng hội thoại luôn được ưu tiên.
+          </div>
+        </div>
+
+        <div class="toggle-card" :class="{ 'toggle-card--active': config.aiAutoReplyInboundStrangerEnabled }">
+          <label class="toggle-row">
+            <input type="checkbox" v-model="config.aiAutoReplyInboundStrangerEnabled" />
+            <div>
+              <div class="toggle-label">Tự tư vấn khách chủ động nhắn nhưng chưa kết bạn</div>
+              <div class="toggle-hint">
+                Khi bật, tin nhắn 1–1 do khách gửi vào từ hộp Người lạ vẫn được AI tiếp nhận, kể cả hội thoại từng có nhân viên trả lời. Không áp dụng cho nhóm.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="toggle-card" :class="{ 'toggle-card--warning': config.aiAutoReplyFullAuto }">
+          <label class="toggle-row">
+            <input type="checkbox" v-model="config.aiAutoReplyFullAuto" />
+            <div>
+              <div class="toggle-label">Chế độ trọn (trả lời cả giá &amp; đơn hàng)</div>
+              <div class="toggle-hint warning-hint">
+                Khi bật, trợ lý gửi luôn cả phần giá/đơn hàng. Hãy giám sát và thu hồi nếu có tin sai.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            Từ khóa nhạy cảm (regex)
+            <span class="field-meta">(khớp = chuyển nháp cho sale duyệt khi chế độ trọn đang tắt)</span>
+          </label>
+          <textarea
+            v-model="config.aiAutoReplySensitivePattern"
+            class="prompt-editor"
+            rows="4"
+            spellcheck="false"
+            :placeholder="config.defaultSensitivePattern"
+          />
+          <div class="field-hint">
+            Để trống = dùng bộ mặc định trong code (giá, cọc, chốt đơn, chuyển khoản, ship, hoá đơn...).
+          </div>
+        </div>
+
+        <div class="auto-grid">
+          <div class="field-group">
+            <label class="field-label">Giờ bắt đầu <span class="field-meta">(giờ VN)</span></label>
+            <input v-model.number="config.aiAutoReplyStartHour" type="number" min="0" max="23" class="regex-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Giờ kết thúc <span class="field-meta">(giờ VN, không bao gồm)</span></label>
+            <input v-model.number="config.aiAutoReplyEndHour" type="number" min="0" max="23" class="regex-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Số tin AI liên tiếp tối đa</label>
+            <input v-model.number="config.aiAutoReplyMaxConsecutive" type="number" min="1" max="20" class="regex-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Ngưỡng tin cậy <span class="field-meta">(0..1)</span></label>
+            <input v-model.number="config.aiAutoReplyMinConfidence" type="number" min="0" max="1" step="0.05" class="regex-input" />
+          </div>
+        </div>
+
+        <div class="followup-section">
+          <h3 class="followup-title">💬 Tự nhắc lại khi khách im lặng</h3>
+          <p class="auto-desc">Chỉ gửi tin nhắc nhẹ để khơi gợi khách, không báo giá/chốt đơn.</p>
+
+          <div class="toggle-card">
+            <label class="toggle-row">
+              <input type="checkbox" v-model="config.aiFollowupEnabled" />
+              <div>
+                <div class="toggle-label">Bật tự nhắc lại</div>
+                <div class="toggle-hint">
+                  Chỉ hoạt động khi công tắc tổng auto-tư vấn đang bật. Mặc định TẮT.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div class="auto-grid">
+            <div class="field-group">
+              <label class="field-label">Số giờ im lặng</label>
+              <input v-model.number="config.aiFollowupSilenceHours" type="number" min="1" max="72" class="regex-input" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Số lần nhắc tối đa</label>
+              <input v-model.number="config.aiFollowupMax" type="number" min="1" max="3" class="regex-input" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Cách nhau (giờ)</label>
+              <input v-model.number="config.aiFollowupCooldownHours" type="number" min="1" max="720" class="regex-input" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button class="btn-danger-ghost" @click="restoreDefault" :disabled="saving">
+          ↺ Khôi phục prompt mặc định
+        </button>
+        <button class="btn-secondary" @click="testPromptOpen = true" :disabled="saving">
+          🧪 Test prompt với tin nhắn mẫu
+        </button>
+        <button class="btn-primary" @click="save" :disabled="saving">
+          {{ saving ? '⏳ Đang lưu...' : '💾 Lưu cài đặt' }}
+        </button>
+      </div>
+
+      <div v-if="saveMessage" class="save-msg" :class="saveOk ? 'ok' : 'err'">{{ saveMessage }}</div>
+
+      <!-- ── Knowledge base (RAG) — AI Tra tài liệu ── -->
+      <div class="kb-section">
+        <h2 class="kb-title">📚 Knowledge base</h2>
+        <p class="kb-desc">Tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...) để Trợ lý AI trả lời bám dữ liệu công ty — dùng ở tab <b>AI</b> trong màn Chat. Cấu hình embedding <b>tách riêng</b> với AI tư vấn.</p>
+
+        <!-- Cấu hình embedding -->
+        <div class="field-group">
+          <label class="field-label">Model embedding <span class="field-meta">(để tìm đoạn tài liệu liên quan)</span></label>
+          <div class="kb-embed-row">
+            <select v-model="kbProvider" class="regex-input kb-embed-sel" @change="onKbProviderChange">
+              <option value="">— chọn provider —</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="qwen">Qwen</option>
+            </select>
+            <input v-model="kbModel" class="regex-input" placeholder="vd: gemini-embedding-001 / text-embedding-3-small" />
+            <button class="btn-primary" :disabled="kbSaving" @click="saveKbConfig">Lưu</button>
+          </div>
+          <div class="field-hint">Gemini: <code>gemini-embedding-001</code> · OpenAI: <code>text-embedding-3-small</code> · Qwen: <code>text-embedding-v3</code>. Provider phải đã nhập API key ở Cấu hình AI.</div>
+        </div>
+
+        <!-- Thêm tài liệu -->
+        <div class="field-group">
+          <label class="field-label">Thêm tài liệu (dán nội dung)</label>
+          <input v-model="kbDocTitle" class="regex-input" placeholder="Tên tài liệu (vd: Bảng giá Cờ Rếp Việt T7/2026)" />
+          <textarea v-model="kbDocText" class="prompt-editor kb-doc-text" rows="8" placeholder="Dán nội dung tài liệu (bảng giá, chính sách bán hàng, thông tin sản phẩm...)"></textarea>
+          <div class="kb-add-row">
+            <span class="field-hint">Nội dung sẽ được cắt nhỏ + tạo embedding để AI tra cứu.</span>
+            <button class="btn-primary" :disabled="kbSaving || !kbDocText.trim()" @click="addKbDoc">{{ kbSaving ? 'Đang xử lý…' : '+ Thêm tài liệu' }}</button>
+          </div>
+        </div>
+
+        <!-- Danh sách tài liệu -->
+        <div class="field-group">
+          <label class="field-label">Tài liệu đã có ({{ kbDocs.length }})</label>
+          <div v-if="kbDocs.length === 0" class="field-hint">Chưa có tài liệu nào.</div>
+          <div v-for="d in kbDocs" :key="d.id" class="kb-doc">
+            <div class="kb-doc-main">
+              <div class="kb-doc-title">{{ d.title }}</div>
+              <div class="kb-doc-meta">{{ d.chunkCount }} đoạn · {{ d.charCount.toLocaleString('vi-VN') }} ký tự · {{ fmtDate(d.createdAt) }}</div>
+            </div>
+            <button class="kb-doc-del" @click="removeKbDoc(d)">Xoá</button>
+          </div>
+        </div>
+
+        <div v-if="kbMsg" class="save-msg" :class="kbOk ? 'ok' : 'err'">{{ kbMsg }}</div>
+      </div>
+    </div>
+
+    <!-- Test prompt modal -->
+    <div v-if="testPromptOpen" class="modal-overlay" @click.self="testPromptOpen = false">
+      <div class="modal-body">
+        <header class="modal-header">
+          <h3>🧪 Test prompt</h3>
+          <button class="modal-close" @click="testPromptOpen = false">✕</button>
+        </header>
+        <div class="modal-content">
+          <p class="modal-hint">
+            Chức năng test prompt với tin nhắn mẫu sẽ ra mắt phiên bản kế tiếp.
+            Hiện tại anh có thể test trực tiếp bằng cách mở 1 virtual chat (KH no-Zalo)
+            và gửi tin để xem AI phản hồi.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue';
+import { api } from '@/api/index';
+import { useAiKnowledge } from '@/composables/use-ai-knowledge';
+import AiConfigDialog from '@/components/ai/ai-config-dialog.vue';
+
+interface AiAssistantConfig {
+  aiAssistantEnabled: boolean;
+  aiAssistantPromptTemplate: string | null;
+  aiAssistantSkipNoisePattern: string;
+  defaultPrompt: string;
+  provider: string;
+  model: string;
+  maxDaily: number;
+  enabled: boolean;
+  // Auto-tư vấn Mức A (2026-07-25)
+  aiAutoReplyGlobalEnabled: boolean;
+  aiAutoReplyScope: 'manual' | 'new_customers' | 'all';
+  aiAutoReplyInboundStrangerEnabled: boolean;
+  aiAutoReplyFullAuto: boolean;
+  aiAutoReplySensitivePattern: string | null;
+  aiAutoReplyStartHour: number;
+  aiAutoReplyEndHour: number;
+  aiAutoReplyMaxConsecutive: number;
+  aiAutoReplyMinConfidence: number;
+  aiFollowupEnabled: boolean;
+  aiFollowupSilenceHours: number;
+  aiFollowupMax: number;
+  aiFollowupCooldownHours: number;
+  defaultSensitivePattern: string;
+}
+
+interface AiUsage {
+  usedToday: number;
+  maxDaily: number;
+  remaining: number;
+  enabled: boolean;
+}
+
+const loading = ref(true);
+const saving = ref(false);
+const config = ref<AiAssistantConfig | null>(null);
+const usage = ref<AiUsage | null>(null);
+const saveMessage = ref('');
+const saveOk = ref(false);
+const testPromptOpen = ref(false);
+
+// AI Config dialog (provider/model/key cho Tư vấn)
+const showAiConfigDialog = ref(false);
+const aiConfigSaving = ref(false);
+const aiConfig = ref({ provider: 'gemini', model: 'gemini-2.5-flash', maxDaily: 500, enabled: true });
+
+async function loadAiConfig() {
+  try {
+    const res = await api.get('/ai/config');
+    aiConfig.value = {
+      provider: res.data.provider,
+      model: res.data.model,
+      maxDaily: res.data.maxDaily,
+      enabled: res.data.enabled,
+    };
+  } catch {
+    // fallback giữ nguyên giá trị mặc định
+  }
+}
+
+async function saveAiMainConfig(value: { provider: string; model: string; maxDaily: number; enabled: boolean }) {
+  aiConfigSaving.value = true;
+  try {
+    const res = await api.put('/ai/config', value);
+    aiConfig.value = {
+      provider: res.data.provider,
+      model: res.data.model,
+      maxDaily: res.data.maxDaily,
+      enabled: res.data.enabled,
+    };
+    showAiConfigDialog.value = false;
+    saveMessage.value = '✓ Đã lưu cấu hình AI tư vấn';
+    saveOk.value = true;
+    setTimeout(() => (saveMessage.value = ''), 3000);
+  } catch (e: any) {
+    saveMessage.value = e?.response?.data?.error || 'Lỗi lưu cấu hình AI';
+    saveOk.value = false;
+  } finally {
+    aiConfigSaving.value = false;
+  }
+}
+
+const lowQuota = computed(() => {
+  if (!usage.value || !config.value) return false;
+  return usage.value.remaining < config.value.maxDaily * 0.2;
+});
+
+function normalizeInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+async function load() {
+  loading.value = true;
+  try {
+    const [cfgRes, usageRes] = await Promise.all([
+      api.get<AiAssistantConfig>('/ai/assistant-config'),
+      api.get<AiUsage>('/ai/usage'),
+    ]);
+    const cfg = cfgRes.data;
+    config.value = {
+      ...cfg,
+      aiAutoReplyScope: ['manual', 'new_customers', 'all'].includes(cfg.aiAutoReplyScope)
+        ? cfg.aiAutoReplyScope
+        : 'manual',
+      aiAutoReplyInboundStrangerEnabled: cfg.aiAutoReplyInboundStrangerEnabled === true,
+      aiAutoReplyFullAuto: cfg.aiAutoReplyFullAuto === true,
+      aiFollowupEnabled: cfg.aiFollowupEnabled === true,
+      aiFollowupSilenceHours: normalizeInteger(cfg.aiFollowupSilenceHours, 1, 72, 1),
+      aiFollowupMax: normalizeInteger(cfg.aiFollowupMax, 1, 3, 1),
+      aiFollowupCooldownHours: normalizeInteger(cfg.aiFollowupCooldownHours, 1, 720, 24),
+    };
+    usage.value = usageRes.data;
+  } catch (e: any) {
+    saveMessage.value = e?.response?.data?.error || e?.message || 'Lỗi tải cài đặt';
+    saveOk.value = false;
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function save() {
+  if (!config.value || saving.value) return;
+  saving.value = true;
+  saveMessage.value = '';
+  try {
+    // Validate regex client-side
+    try {
+      new RegExp(config.value.aiAssistantSkipNoisePattern);
+    } catch {
+      saveMessage.value = 'Regex không hợp lệ';
+      saveOk.value = false;
+      saving.value = false;
+      return;
+    }
+    // Mức A: regex nhạy cảm (rỗng = dùng bộ mặc định trong code)
+    const sensitive = (config.value.aiAutoReplySensitivePattern ?? '').trim();
+    if (sensitive) {
+      try {
+        new RegExp(sensitive);
+      } catch {
+        saveMessage.value = 'Regex từ khóa nhạy cảm không hợp lệ';
+        saveOk.value = false;
+        saving.value = false;
+        return;
+      }
+    }
+    await api.put('/ai/assistant-config', {
+      aiAssistantEnabled: config.value.aiAssistantEnabled,
+      aiAssistantPromptTemplate: config.value.aiAssistantPromptTemplate,
+      aiAssistantSkipNoisePattern: config.value.aiAssistantSkipNoisePattern,
+      aiAutoReplyGlobalEnabled: config.value.aiAutoReplyGlobalEnabled,
+      aiAutoReplyScope: config.value.aiAutoReplyScope,
+      aiAutoReplyInboundStrangerEnabled: config.value.aiAutoReplyInboundStrangerEnabled,
+      aiAutoReplyFullAuto: config.value.aiAutoReplyFullAuto,
+      aiAutoReplySensitivePattern: sensitive,
+      aiAutoReplyStartHour: Number(config.value.aiAutoReplyStartHour),
+      aiAutoReplyEndHour: Number(config.value.aiAutoReplyEndHour),
+      aiAutoReplyMaxConsecutive: Number(config.value.aiAutoReplyMaxConsecutive),
+      aiAutoReplyMinConfidence: Number(config.value.aiAutoReplyMinConfidence),
+      aiFollowupEnabled: config.value.aiFollowupEnabled,
+      aiFollowupSilenceHours: Number(config.value.aiFollowupSilenceHours),
+      aiFollowupMax: Number(config.value.aiFollowupMax),
+      aiFollowupCooldownHours: Number(config.value.aiFollowupCooldownHours),
+    });
+    saveMessage.value = '✓ Đã lưu cài đặt';
+    saveOk.value = true;
+    setTimeout(() => (saveMessage.value = ''), 3000);
+  } catch (e: any) {
+    saveMessage.value = e?.response?.data?.error || e?.message || 'Lỗi lưu cài đặt';
+    saveOk.value = false;
+  } finally {
+    saving.value = false;
+  }
+}
+
+function restoreDefault() {
+  if (!config.value) return;
+  if (!confirm('Khôi phục prompt mặc định? Prompt đã edit sẽ bị thay thế.')) return;
+  config.value.aiAssistantPromptTemplate = config.value.defaultPrompt;
+}
+
+// ── Knowledge base Cờ Rếp Việt (RAG) ──────────────────────────────────────
+const { docs: kbDocs, config: kbCfg, saving: kbSaving, fetchDocs, fetchConfig, saveConfig, addDoc, removeDoc } = useAiKnowledge();
+const kbProvider = ref('');
+const kbModel = ref('');
+const kbDocTitle = ref('');
+const kbDocText = ref('');
+const kbMsg = ref('');
+const kbOk = ref(false);
+const kbDefaultModels: Record<string, string> = {
+  gemini: 'gemini-embedding-001',
+  openai: 'text-embedding-3-small',
+  qwen: 'text-embedding-v3',
+};
+
+function normalizeKbModel(provider: string, model: string | null | undefined): string {
+  const clean = (model ?? '').trim().replace(/^models\//, '');
+  if (provider === 'gemini' && (!clean || clean === 'text' || clean === 'embedding' || clean === 'text-embedding')) {
+    return kbDefaultModels.gemini;
+  }
+  return clean || kbDefaultModels[provider] || '';
+}
+
+async function loadKb() {
+  await Promise.all([fetchConfig().catch(() => {}), fetchDocs().catch(() => {})]);
+  kbProvider.value = kbCfg.value.embedProvider ?? '';
+  kbModel.value = normalizeKbModel(kbProvider.value, kbCfg.value.embedModel);
+}
+async function saveKbConfig() {
+  kbMsg.value = '';
+  try {
+    kbModel.value = normalizeKbModel(kbProvider.value, kbModel.value);
+    await saveConfig({ embedProvider: kbProvider.value || null, embedModel: kbModel.value || null });
+    kbMsg.value = '✓ Đã lưu cấu hình embedding'; kbOk.value = true;
+    setTimeout(() => (kbMsg.value = ''), 3000);
+  } catch (e: any) { kbMsg.value = e?.response?.data?.error || 'Lỗi lưu cấu hình'; kbOk.value = false; }
+}
+function onKbProviderChange() {
+  kbModel.value = kbDefaultModels[kbProvider.value] ?? '';
+}
+async function addKbDoc() {
+  if (!kbDocText.value.trim()) return;
+  kbMsg.value = '';
+  try {
+    const r = await addDoc(kbDocTitle.value || 'Tài liệu', kbDocText.value);
+    kbMsg.value = `✓ Đã thêm tài liệu (${r.chunkCount} đoạn)`; kbOk.value = true;
+    kbDocTitle.value = ''; kbDocText.value = '';
+    setTimeout(() => (kbMsg.value = ''), 3000);
+  } catch (e: any) { kbMsg.value = e?.response?.data?.error || 'Lỗi thêm tài liệu'; kbOk.value = false; }
+}
+async function removeKbDoc(d: { id: string; title: string }) {
+  if (!confirm(`Xoá tài liệu "${d.title}"? Không thể hoàn tác.`)) return;
+  await removeDoc(d.id);
+}
+function fmtDate(s: string) { return new Date(s).toLocaleDateString('vi-VN'); }
+
+onMounted(() => { load(); loadAiConfig(); loadKb(); });
+</script>
+
+<style scoped>
+.ai-page {
+  max-width: 960px;
+  padding: 20px;
+}
+.ai-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ai-page-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+.ai-page-sub {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+.loading-pill {
+  padding: 4px 10px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+.ai-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.toggle-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+}
+.toggle-card--active { border-color: #22c55e; background: #f0fdf4; }
+.toggle-card--warning { border-color: #f59e0b; background: #fffbeb; }
+.warning-hint { color: #b45309; }
+.scope-select { font-family: inherit; }
+.toggle-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.toggle-row input { margin-top: 2px; }
+.toggle-label { font-weight: 600; font-size: 13px; }
+.toggle-hint { font-size: 11px; color: #64748b; margin-top: 2px; }
+.info-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.info-label { color: #64748b; }
+.info-value { font-weight: 500; }
+.info-value.low-quota { color: #b91c1c; }
+.btn-config-inline {
+  font-size: 11px;
+  padding: 2px 10px;
+  border: 1px solid #3b82f6;
+  color: #3b82f6;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+.btn-config-inline:hover {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.field-group {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+}
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #1f2937;
+}
+.field-meta {
+  color: #64748b;
+  font-weight: 400;
+  font-size: 11px;
+}
+.field-hint {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 4px;
+}
+.prompt-editor {
+  width: 100%;
+  min-height: 380px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #fafbfc;
+  color: #1e3a8a;
+  resize: vertical;
+}
+.regex-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 16px 0;
+  border-top: 1px solid #e2e8f0;
+}
+.btn-primary {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-secondary {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-danger-ghost {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #b91c1c;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 13px;
+}
+.save-msg {
+  text-align: right;
+  font-size: 12px;
+  padding: 6px;
+}
+.save-msg.ok { color: #166534; }
+.save-msg.err { color: #b91c1c; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-body {
+  background: #fff;
+  border-radius: 8px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow: auto;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.modal-header h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #64748b;
+}
+.modal-content { padding: 16px; }
+.modal-hint { font-size: 13px; color: #64748b; line-height: 1.6; }
+
+/* ── Knowledge base section ── */
+/* Auto-tư vấn Mức A (2026-07-25) */
+.auto-section { border-top: 2px solid #e2e8f0; padding-top: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 12px; }
+.auto-title { font-size: 15px; font-weight: 700; margin: 0; }
+.auto-desc { font-size: 12.5px; color: #64748b; margin: 0; line-height: 1.5; }
+.auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.followup-section { border-top: 1px solid #e2e8f0; padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.followup-title { margin: 0; font-size: 14px; font-weight: 700; color: #1f2937; }
+.kb-section { border-top: 2px solid #e2e8f0; padding-top: 18px; margin-top: 6px; display: flex; flex-direction: column; gap: 12px; }.kb-title { font-size: 15px; font-weight: 700; margin: 0; }
+.kb-desc { font-size: 12.5px; color: #64748b; margin: 0; line-height: 1.5; }
+.kb-desc code, .field-hint code { background: #f1f5f9; padding: 0 5px; border-radius: 4px; font-size: 11px; }
+.kb-embed-row { display: flex; gap: 8px; align-items: center; }
+.kb-embed-sel { max-width: 200px; flex: 0 0 auto; }
+.kb-embed-row .regex-input { flex: 1; }
+.kb-doc-text { min-height: 160px; color: #1f2937; font-family: inherit; }
+.kb-add-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 12px; }
+.kb-doc { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 6px; }
+.kb-doc-main { min-width: 0; }
+.kb-doc-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-doc-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
+.kb-doc-del { flex: 0 0 auto; padding: 5px 12px; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.kb-doc-del:hover { background: #fef2f2; }
+</style>

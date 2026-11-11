@@ -1,0 +1,794 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Nguyen Tien Loc
+/**
+ * Community fallback routes for the Follow-up tab.
+ *
+ * The full automation engine lives in the optional extension bundle. These
+ * routes keep the chat follow-up UI usable in Community builds by backing
+ * manual watch / manual sequence attachment with the core CareSession table.
+ */
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { prisma } from '../../shared/database/prisma-client.js';
+import { authMiddleware } from '../auth/auth-middleware.js';
+import { assertContactVisible } from '../contacts/contact-scope.js';
+import { logger } from '../../shared/utils/logger.js';
+import { normalizeSequenceSteps, type SequenceDraftStep } from './sequence-snapshot.js';
+import { buildFollowupHistory } from './care-session-timeline.js';
+import { config } from '../../config/index.js';
+import { getOwnerScope, applyOwnerScope } from '../rbac/owner-scope.js';
+import {
+  careSessionToListItem,
+  summarizeSessions,
+  stateFilterToWhere,
+  type CareSessionRow,
+} from './care-session-list-helpers.js';
+import { processCareSessionStep } from './process-care-session-step.js';
+import {
+  STAGE_FOLLOWUP_SETTING_KEY,
+  STAGE_FOLLOWUP_ALLOWED_STAGES,
+  parseStageFollowupConfig,
+} from './stage-followup-cron.js';
+
+type UserCtx = { id: string; orgId: string; role: string };
+
+function plusDays(days: number): Date {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+}
+
+function plusHours(hours: number): Date {
+  return new Date(Date.now() + hours * 60 * 60 * 1000);
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Phase 3 (2026-07-13) — resolve step ghép từ Khối nội dung: step nào có blockId sẽ được
+ * điền `text` từ ContentBlock (org-scoped). Nếu step đã có text riêng thì GIỮ NGUYÊN
+ * (cho phép sửa tay sau khi ghép). Block bị xoá/khác org → bỏ blockId, giữ text sẵn có.
+ * Worker gửi vẫn đọc `text` → không phá dry-run.
+ */
+async function resolveStepBlocks(steps: SequenceDraftStep[], orgId: string): Promise<SequenceDraftStep[]> {
+  const blockIds = [...new Set(steps.map((s) => s.blockId).filter((id): id is string => !!id))];
+  if (!blockIds.length) return steps;
+  const blocks = await prisma.contentBlock.findMany({
+    where: { id: { in: blockIds }, orgId },
+    select: { id: true, messageText: true, imageUrl: true },
+  });
+  const map = new Map(blocks.map((b) => [b.id, b]));
+  return steps.map((s) => {
+    if (!s.blockId) return s;
+    const block = map.get(s.blockId);
+    if (!block) return { ...s, blockId: null }; // block không còn → giữ text sẵn
+    // Freeze lúc lưu: text (giữ text sửa tay nếu có) + imageUrl từ khối. Backend tự lấy theo
+    // blockId → không phụ thuộc frontend có gửi imageUrl hay không.
+    return { ...s, text: s.text.trim() || block.messageText, imageUrl: block.imageUrl ?? null };
+  });
+}
+
+// normalizeSequenceSteps chuyển sang ./sequence-snapshot.ts (2026-07-12) — dùng chung
+// với care-session-cron (worker gửi bước) + care-session-listener (enroll bám đuổi).
+
+function textFromUnknown(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  const row = value as Record<string, unknown>;
+  return String(row.text ?? row.content ?? row.messageText ?? row.message ?? '');
+}
+
+function stepText(step: unknown): string {
+  const text = textFromUnknown(step).trim();
+  return text || '(buoc nay chua co noi dung)';
+}
+
+function sequenceDto(sequence: {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  steps: unknown;
+  runtimeRules: unknown;
+  createdAt?: Date;
+  updatedAt?: Date;
+  sequenceSteps?: unknown[];
+}) {
+  const steps = asArray(sequence.steps);
+  return {
+    id: sequence.id,
+    name: sequence.name,
+    description: sequence.description,
+    enabled: sequence.enabled,
+    steps,
+    runtimeRules: sequence.runtimeRules ?? {},
+    stepCount: stepCountOf(sequence),
+    createdAt: sequence.createdAt?.toISOString(),
+    updatedAt: sequence.updatedAt?.toISOString(),
+  };
+}
+
+function stepCountOf(sequence: { steps: unknown; sequenceSteps?: unknown[] }): number {
+  const relational = Array.isArray(sequence.sequenceSteps) ? sequence.sequenceSteps.length : 0;
+  return relational || asArray(sequence.steps).length;
+}
+
+function stateOf(session: { state: string; closedAt: Date | null; closedReason: string | null; pausedUntil: Date | null }): 'active' | 'paused' | 'completed' | 'stopped' {
+  if (session.state === 'closed') {
+    return session.closedReason === 'completed' || session.closedReason === 'source_done' ? 'completed' : 'stopped';
+  }
+  if (session.pausedUntil && session.pausedUntil.getTime() > Date.now()) return 'paused';
+  return 'active';
+}
+
+async function requireVisibleContact(user: UserCtx, contactId: string, reply: FastifyReply): Promise<boolean> {
+  const visible = await assertContactVisible({
+    userId: user.id,
+    orgId: user.orgId,
+    legacyRole: user.role,
+    contactId,
+  });
+  if (!visible) {
+    reply.status(404).send({ error: 'Contact not found' });
+    return false;
+  }
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, orgId: user.orgId }, select: { id: true } });
+  if (!contact) {
+    reply.status(404).send({ error: 'Contact not found' });
+    return false;
+  }
+  return true;
+}
+
+async function requireOrgNick(user: UserCtx, nickId: string, reply: FastifyReply) {
+  const nick = await prisma.zaloAccount.findFirst({
+    where: { id: nickId, orgId: user.orgId, archivedAt: null },
+    select: { id: true, ownerUserId: true, displayName: true },
+  });
+  if (!nick) {
+    reply.status(404).send({ error: 'Nick not found' });
+    return null;
+  }
+  return nick;
+}
+
+export async function communityAutomationRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('preHandler', authMiddleware);
+
+  app.get('/api/v1/automation/sequences', async (request: FastifyRequest<{ Querystring: { enabled?: string } }>) => {
+    const user = request.user as UserCtx;
+    const enabled = request.query.enabled === 'true' ? true : undefined;
+    const sequences = await prisma.automationSequence.findMany({
+      where: { orgId: user.orgId, ...(enabled === undefined ? {} : { enabled }) },
+      orderBy: { createdAt: 'desc' },
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    return {
+      sequences: sequences.map(sequenceDto),
+    };
+  });
+
+  app.post('/api/v1/automation/sequences', async (
+    request: FastifyRequest<{ Body: { name?: string; description?: string; enabled?: boolean; steps?: unknown; messageText?: string; runtimeRules?: unknown } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const name = (request.body.name ?? '').trim();
+    if (!name) return reply.status(400).send({ error: 'name is required' });
+    const steps = await resolveStepBlocks(
+      normalizeSequenceSteps(request.body.steps, request.body.messageText ?? ''),
+      user.orgId,
+    );
+    const created = await prisma.automationSequence.create({
+      data: {
+        orgId: user.orgId,
+        name,
+        description: (request.body.description ?? '').trim() || null,
+        enabled: request.body.enabled !== false,
+        createdById: user.id,
+        steps,
+        runtimeRules: request.body.runtimeRules && typeof request.body.runtimeRules === 'object'
+          ? request.body.runtimeRules as object
+          : { allowedHourRange: [8, 21], sendGap: { value: 30, unit: 'minute' } },
+      },
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    return { sequence: sequenceDto(created) };
+  });
+
+  app.patch('/api/v1/automation/sequences/:id', async (
+    request: FastifyRequest<{ Params: { id: string }; Body: { name?: string; description?: string | null; enabled?: boolean; steps?: unknown; messageText?: string; runtimeRules?: unknown } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const existing = await prisma.automationSequence.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: 'Sequence not found' });
+
+    const data: Record<string, unknown> = {};
+    if (typeof request.body.name === 'string') {
+      const name = request.body.name.trim();
+      if (!name) return reply.status(400).send({ error: 'name is required' });
+      data.name = name;
+    }
+    if ('description' in request.body) data.description = (request.body.description ?? '').trim() || null;
+    if (typeof request.body.enabled === 'boolean') data.enabled = request.body.enabled;
+    if ('steps' in request.body || typeof request.body.messageText === 'string') {
+      data.steps = await resolveStepBlocks(
+        normalizeSequenceSteps(request.body.steps, request.body.messageText ?? ''),
+        user.orgId,
+      );
+    }
+    if (request.body.runtimeRules && typeof request.body.runtimeRules === 'object') data.runtimeRules = request.body.runtimeRules as object;
+
+    const updated = await prisma.automationSequence.update({
+      where: { id: request.params.id },
+      data,
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    return { sequence: sequenceDto(updated) };
+  });
+
+  app.delete('/api/v1/automation/sequences/:id', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const existing = await prisma.automationSequence.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: 'Sequence not found' });
+    const activeSessions = await prisma.careSession.count({ where: { orgId: user.orgId, sourceSequenceId: request.params.id, state: 'active' } });
+    if (activeSessions > 0) {
+      await prisma.automationSequence.update({ where: { id: request.params.id }, data: { enabled: false } });
+      return { ok: true, disabled: true, reason: 'sequence_has_active_sessions' };
+    }
+    await prisma.automationSequence.delete({ where: { id: request.params.id } });
+    return { ok: true };
+  });
+
+  app.post('/api/v1/automation/sequences/:id/preview', async (
+    request: FastifyRequest<{ Params: { id: string }; Body: { contactIds?: string[]; nickId?: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const sequence = await prisma.automationSequence.findFirst({
+      where: { id: request.params.id, orgId: user.orgId },
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    if (!sequence) return reply.status(404).send({ error: 'Sequence not found' });
+
+    const contactIds = asArray(request.body.contactIds).map(String).slice(0, 2);
+    const contacts = contactIds.length
+      ? await prisma.contact.findMany({
+          where: { orgId: user.orgId, id: { in: contactIds } },
+          select: { id: true, fullName: true, crmName: true, zaloUsername: true, phone: true },
+        })
+      : [];
+    const contactMap = new Map(contacts.map((c) => [c.id, c]));
+    const now = Date.now();
+    const steps = normalizeSequenceSteps(sequence.steps);
+
+    return {
+      sequence: {
+        id: sequence.id,
+        name: sequence.name,
+        totalSteps: steps.length,
+        windowLabel: '08:00-21:00',
+        gapLabel: 'theo thoi gian tung buoc',
+      },
+      contacts: contactIds
+        .filter((id) => contactMap.has(id))
+        .map((id) => {
+          const contact = contactMap.get(id)!;
+          let offsetMinutes = 0;
+          const previewSteps = steps.map((step, idx) => {
+            offsetMinutes += idx === 0 ? 0 : step.delayMinutes;
+            return {
+              stepIdx: idx,
+              delayMinutes: step.delayMinutes,
+              sendAt: new Date(now + offsetMinutes * 60 * 1000).toISOString(),
+              blockName: null,
+              bubbles: [{ type: 'text', text: stepText(step), styles: step.styles }],
+            };
+          });
+          return {
+            contactId: id,
+            name: contact.crmName ?? contact.fullName ?? contact.zaloUsername ?? contact.phone ?? 'Khach hang',
+            steps: previewSteps,
+            etaCompleteAt: previewSteps.at(-1)?.sendAt ?? null,
+          };
+        }),
+    };
+  });
+
+  app.get('/api/v1/contacts/:contactId/automation-status', async (
+    request: FastifyRequest<{ Params: { contactId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const { contactId } = request.params;
+    if (!(await requireVisibleContact(user, contactId, reply))) return reply;
+
+    const sessions = await prisma.careSession.findMany({
+      where: { orgId: user.orgId, contactId },
+      orderBy: { openedAt: 'desc' },
+      take: 50,
+    });
+    const sequenceIds = [...new Set(sessions.map((s) => s.sourceSequenceId).filter(Boolean) as string[])];
+    const sequences = sequenceIds.length
+      ? await prisma.automationSequence.findMany({
+          where: { orgId: user.orgId, id: { in: sequenceIds } },
+          include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+        })
+      : [];
+    const seqMap = new Map(sequences.map((s) => [s.id, s]));
+
+    // Đếm step_sent + step_simulated theo phiên (tránh N+1).
+    const sessionIds = sessions.map((s) => s.id);
+    const [sentGroups, simulatedGroups] = await Promise.all([
+      sessionIds.length
+        ? prisma.careSessionEvent.groupBy({
+            by: ['sessionId'],
+            where: { sessionId: { in: sessionIds }, eventType: 'step_sent' },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ sessionId: string; _count: { _all: number } }>),
+      sessionIds.length
+        ? prisma.careSessionEvent.groupBy({
+            by: ['sessionId'],
+            where: { sessionId: { in: sessionIds }, eventType: 'step_simulated' },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ sessionId: string; _count: { _all: number } }>),
+    ]);
+    const sentMap = new Map(sentGroups.map((g) => [g.sessionId, g._count._all]));
+    const simMap = new Map(simulatedGroups.map((g) => [g.sessionId, g._count._all]));
+
+    return {
+      contactId,
+      dryRun: config.marketingDryRun,
+      triggers: sessions
+        .filter((s) => s.sourceType === 'sequence_manual' || s.sourceSequenceId)
+        .map((s) => {
+          const seq = s.sourceSequenceId ? seqMap.get(s.sourceSequenceId) : null;
+          // Ưu tiên stepsSnapshot của phiên (worker gửi theo snapshot) — fallback định nghĩa live.
+          const snapshotSteps = asArray(s.stepsSnapshot);
+          const totalSteps = snapshotSteps.length || (seq ? stepCountOf(seq) : null);
+          const state = stateOf(s);
+          const stepsSent = sentMap.get(s.id) ?? 0;
+          const stepsSimulated = simMap.get(s.id) ?? 0;
+          const stepsProcessed = stepsSent + stepsSimulated;
+          return {
+            triggerId: s.id,
+            triggerName: seq?.name ?? 'Theo dõi thủ công',
+            sequenceId: s.sourceSequenceId,
+            sequenceName: seq?.name ?? 'Luồng bám đuổi',
+            enrollmentId: s.id,
+            enrollSeq: s.enrollEpoch ?? 1,
+            currentStep: state === 'completed' && totalSteps ? totalSteps : (s.currentStepIdx ?? 0),
+            totalSteps,
+            stepsSent,
+            stepsSimulated,
+            stepsProcessed,
+            latestEvent: s.closedReason
+              ?? (s.lastReplyAt ? 'customer_reply' : s.lastSentAt ? 'step_sent' : 'manual_enroll'),
+            latestAt: (s.closedAt ?? s.lastReplyAt ?? s.lastSentAt ?? s.openedAt).toISOString(),
+            enrolledAt: s.openedAt.toISOString(),
+            lastSentAt: s.lastSentAt?.toISOString() ?? null,
+            nextRunAt: state === 'active' ? s.nextRunAt?.toISOString() ?? null : null,
+            pausedUntilMs: s.pausedUntil ? Math.max(0, s.pausedUntil.getTime() - Date.now()) : 0,
+            pausedUntil: s.pausedUntil?.toISOString() ?? null,
+            stopped: state === 'stopped',
+            derivedState: state,
+            etaCompleteAt: null,
+            holdReason: state === 'paused' ? 'waiting_reply' : state,
+            allowedHourRange: null,
+            lastError: s.lastError ?? null,
+            dryRun: config.marketingDryRun && state === 'active',
+          };
+        }),
+    };
+  });
+
+  // GET /contacts/:contactId/followup-history — timeline Phiên chăm sóc (Phase 4).
+  // Trước 2026-07-12 endpoint này EE-only → FollowUpHistoryDialog chết 404 ở Community.
+  // triggerId = CareSession.id (khớp automation-status ở trên trả về triggerId: s.id).
+  app.get('/api/v1/contacts/:contactId/followup-history', async (
+    request: FastifyRequest<{ Params: { contactId: string }; Querystring: { triggerId?: string; sequenceId?: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const { contactId } = request.params;
+    if (!(await requireVisibleContact(user, contactId, reply))) return reply;
+
+    const { triggerId, sequenceId } = request.query;
+    // Neo phiên theo triggerId (=CareSession.id). Fallback: phiên mới nhất của
+    // contact (+ theo sequenceId nếu có) để không vỡ khi thiếu triggerId.
+    const session = triggerId
+      ? await prisma.careSession.findFirst({
+          where: { id: triggerId, orgId: user.orgId, contactId },
+          select: { id: true },
+        })
+      : await prisma.careSession.findFirst({
+          where: { orgId: user.orgId, contactId, ...(sequenceId ? { sourceSequenceId: sequenceId } : {}) },
+          orderBy: { openedAt: 'desc' },
+          select: { id: true },
+        });
+
+    if (!session) return { flow: { stepsSent: 0 }, timeline: [] };
+
+    const events = await prisma.careSessionEvent.findMany({
+      where: { sessionId: session.id },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+      select: { eventType: true, payload: true, createdAt: true },
+    });
+    return buildFollowupHistory(events);
+  });
+
+  // ── Phase 4.1 (2026-07-13): LIST tổng phiên chăm sóc / bám đuổi thủ công ──
+  // Nguồn dữ liệu cho 2 trang standalone (CareSessionsView + ManualFollowupView).
+  // CHỈ READ — không gửi Zalo, không đụng dry-run. RBAC theo owner-scope (sale chỉ
+  // xem phiên của nick mình phụ trách; leader/admin xem rộng hơn).
+  app.get('/api/v1/automation/care-sessions', async (
+    request: FastifyRequest<{ Querystring: { state?: string; q?: string; sourceType?: string; limit?: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    const now = new Date();
+    const { state, q, sourceType } = request.query;
+    const limit = Math.min(500, Math.max(1, Number(request.query.limit ?? 200) || 200));
+
+    // RBAC: giới hạn theo ownerUserId (sale phụ trách nick). Admin/owner/leader xem rộng.
+    const scope = await getOwnerScope({ userId: user.id, orgId: user.orgId, legacyRole: user.role });
+
+    // Chỉ phiên bám đuổi (gắn luồng) — loại 'manual_listen' (chỉ nghe, không phải chăm sóc chuỗi).
+    const allowedSources = sourceType && ['sequence_manual', 'target_followup', 'stage_followup'].includes(sourceType)
+      ? [sourceType]
+      : ['sequence_manual', 'target_followup', 'stage_followup'];
+
+    const stateWhere = stateFilterToWhere(state, now);
+    const where = {
+      orgId: user.orgId,
+      sourceType: { in: allowedSources },
+      ...applyOwnerScope(scope, 'ownerUserId'),
+      ...(stateWhere ?? {}),
+    };
+
+    const rows = await prisma.careSession.findMany({
+      where,
+      orderBy: [{ openedAt: 'desc' }],
+      take: limit,
+      select: {
+        id: true, contactId: true, nickId: true, sourceType: true, sourceSequenceId: true,
+        state: true, closedReason: true, pausedUntil: true, lastReplyAt: true,
+        currentStepIdx: true, stepsSnapshot: true, nextRunAt: true, lastSentAt: true,
+        lastError: true, openedAt: true, closedAt: true,
+      },
+    });
+
+    // Join tay (không FK relation trực tiếp trong query): contact, sequence, nick + đếm bước đã gửi.
+    const contactIds = [...new Set(rows.map((r) => r.contactId))];
+    const seqIds = [...new Set(rows.map((r) => r.sourceSequenceId).filter(Boolean) as string[])];
+    const nickIds = [...new Set(rows.map((r) => r.nickId))];
+    const sessionIds = rows.map((r) => r.id);
+
+    const [contacts, sequences, nicks, sentGroups] = await Promise.all([
+      contactIds.length
+        ? prisma.contact.findMany({
+            where: { id: { in: contactIds }, orgId: user.orgId },
+            select: { id: true, crmName: true, fullName: true, zaloUsername: true, phone: true },
+          })
+        : Promise.resolve([]),
+      seqIds.length
+        ? prisma.automationSequence.findMany({
+            where: { id: { in: seqIds }, orgId: user.orgId }, select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      nickIds.length
+        ? prisma.zaloAccount.findMany({
+            where: { id: { in: nickIds }, orgId: user.orgId }, select: { id: true, displayName: true, phone: true },
+          })
+        : Promise.resolve([]),
+      // Đếm step_sent theo phiên trong 1 query (không N+1).
+      sessionIds.length
+        ? prisma.careSessionEvent.groupBy({
+            by: ['sessionId'],
+            where: { sessionId: { in: sessionIds }, eventType: 'step_sent' },
+            _count: { _all: true },
+          })
+        : Promise.resolve([] as Array<{ sessionId: string; _count: { _all: number } }>),
+    ]);
+
+    const contactMap = new Map(contacts.map((c) => [c.id, c]));
+    const seqMap = new Map(sequences.map((s) => [s.id, s.name]));
+    const nickMap = new Map(nicks.map((n) => [n.id, n]));
+    const sentMap = new Map(sentGroups.map((g) => [g.sessionId, g._count._all]));
+
+    let items = rows.map((row) => {
+      const c = contactMap.get(row.contactId);
+      const nick = nickMap.get(row.nickId);
+      return careSessionToListItem(row as CareSessionRow, {
+        contactName: c?.crmName ?? c?.fullName ?? c?.zaloUsername ?? c?.phone ?? 'Khách hàng',
+        contactPhone: c?.phone ?? null,
+        sequenceName: row.sourceSequenceId ? seqMap.get(row.sourceSequenceId) ?? 'Luồng đã xoá' : 'Bám đuổi thủ công',
+        nickName: nick?.displayName ?? nick?.phone ?? 'Nick',
+        stepsSent: sentMap.get(row.id) ?? 0,
+        dryRun: config.marketingDryRun,
+        now,
+      });
+    });
+
+    // Tìm theo tên KH / SĐT (lọc sau khi map — dữ liệu nhỏ, đã giới hạn limit).
+    if (q?.trim()) {
+      const term = q.trim().toLowerCase();
+      items = items.filter(
+        (it) => it.contactName.toLowerCase().includes(term) || (it.contactPhone ?? '').toLowerCase().includes(term),
+      );
+    }
+
+    return { sessions: items, summary: summarizeSessions(items), dryRun: config.marketingDryRun };
+  });
+
+  app.get('/api/v1/automation/care-sessions/listen-status', async (
+    request: FastifyRequest<{ Querystring: { contactId?: string; nickId?: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    const contactId = request.query.contactId ?? '';
+    const nickId = request.query.nickId ?? '';
+    if (!contactId || !nickId) return { listening: false, isManualWatch: false };
+
+    const session = await prisma.careSession.findFirst({
+      where: { orgId: user.orgId, contactId, nickId, state: 'active' },
+      select: { id: true, sourceType: true },
+      orderBy: { openedAt: 'desc' },
+    });
+    return {
+      listening: !!session,
+      isManualWatch: session?.sourceType === 'manual_listen',
+    };
+  });
+
+  app.get('/api/v1/automation/care-sessions/listening-pairs', async (request: FastifyRequest) => {
+    const user = request.user as UserCtx;
+    const sessions = await prisma.careSession.findMany({
+      where: { orgId: user.orgId, state: 'active' },
+      select: { contactId: true, nickId: true },
+      take: 5000,
+    });
+    return { pairs: sessions.map((s) => `${s.contactId}|${s.nickId}`) };
+  });
+
+  app.post('/api/v1/automation/care-sessions/listen', async (
+    request: FastifyRequest<{ Body: { contactId?: string; nickId?: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const contactId = request.body.contactId ?? '';
+    const nickId = request.body.nickId ?? '';
+    if (!contactId || !nickId) return reply.status(400).send({ error: 'contactId and nickId are required' });
+    if (!(await requireVisibleContact(user, contactId, reply))) return reply;
+    const nick = await requireOrgNick(user, nickId, reply);
+    if (!nick) return reply;
+
+    const existing = await prisma.careSession.findFirst({
+      where: { orgId: user.orgId, contactId, nickId, state: 'active', sourceType: 'manual_listen' },
+      select: { id: true },
+    });
+    if (existing) return { ok: true, id: existing.id };
+
+    const created = await prisma.careSession.create({
+      data: {
+        orgId: user.orgId,
+        contactId,
+        nickId,
+        ownerUserId: nick.ownerUserId,
+        enrolledByUserId: user.id,
+        sourceType: 'manual_listen',
+        state: 'active',
+        interestWindowUntil: plusDays(30),
+      },
+      select: { id: true },
+    });
+    return { ok: true, id: created.id };
+  });
+
+  app.delete('/api/v1/automation/care-sessions/listen', async (
+    request: FastifyRequest<{ Body: { contactId?: string; nickId?: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    const contactId = request.body.contactId ?? '';
+    const nickId = request.body.nickId ?? '';
+    if (!contactId || !nickId) return { ok: false, closed: 0 };
+    const res = await prisma.careSession.updateMany({
+      where: { orgId: user.orgId, contactId, nickId, state: 'active', sourceType: 'manual_listen' },
+      data: { state: 'closed', closedReason: 'sale_resolved', closedAt: new Date() },
+    });
+    return { ok: true, closed: res.count };
+  });
+
+  app.post('/api/v1/chat/contacts/:contactId/manual-enroll', async (
+    request: FastifyRequest<{ Params: { contactId: string }; Body: { sequenceId?: string; nickId?: string; reason?: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const { contactId } = request.params;
+    const sequenceId = request.body.sequenceId ?? '';
+    const nickId = request.body.nickId ?? '';
+    const reason = (request.body.reason ?? '').trim();
+    if (!sequenceId || !nickId || !reason) {
+      return reply.status(400).send({ error: 'sequenceId, nickId and reason are required' });
+    }
+    if (!(await requireVisibleContact(user, contactId, reply))) return reply;
+    const nick = await requireOrgNick(user, nickId, reply);
+    if (!nick) return reply;
+
+    const sequence = await prisma.automationSequence.findFirst({
+      where: { id: sequenceId, orgId: user.orgId, enabled: true },
+      include: { sequenceSteps: { select: { id: true }, orderBy: { stepOrder: 'asc' } } },
+    });
+    if (!sequence) return reply.status(404).send({ error: 'Sequence not found or disabled' });
+
+    const previous = await prisma.careSession.count({
+      where: { orgId: user.orgId, contactId, sourceSequenceId: sequenceId },
+    });
+    // Snapshot steps LÚC ENROLL (Phase 3 fix): sửa luồng sau đó KHÔNG đổi nội dung
+    // phiên đang chạy. nextRunAt = now → care-session-cron gửi bước 1 trong khung giờ.
+    const stepsSnapshot = normalizeSequenceSteps(sequence.steps);
+    const created = await prisma.careSession.create({
+      data: {
+        orgId: user.orgId,
+        contactId,
+        nickId,
+        ownerUserId: nick.ownerUserId,
+        enrolledByUserId: user.id,
+        sourceType: 'sequence_manual',
+        sourceSequenceId: sequenceId,
+        state: 'active',
+        interestWindowUntil: plusDays(30),
+        enrollEpoch: previous + 1,
+        rulesSnapshot: sequence.runtimeRules ?? {},
+        stepsSnapshot,
+        currentStepIdx: 0,
+        nextRunAt: new Date(),
+        closeConditions: { reason },
+      },
+      select: { id: true },
+    });
+    await prisma.automationSequence.update({
+      where: { id: sequenceId },
+      data: { enrolledCount: { increment: 1 } },
+    }).catch((err) => logger.warn('[community-automation] bump enrolledCount failed:', err));
+
+    await prisma.careSessionEvent.create({
+      data: {
+        sessionId: created.id,
+        eventId: `manual-enroll:${created.id}`,
+        eventType: 'opened',
+        payload: { sequenceId, reason, byUserId: user.id },
+      },
+    }).catch((err) => logger.warn('[community-automation] create enroll event failed:', err));
+
+    return { ok: true, enrollmentId: created.id, sequenceId, sequenceName: sequence.name, stepCount: stepCountOf(sequence) };
+  });
+
+  // ── Giai đoạn 3 (2026-07-28) — Cấu hình auto bám đuổi theo giai đoạn KH ──────
+  // Lưu AppSetting(orgId, 'stage_followup_config') dạng JSON plain. Cron
+  // stage-followup-cron đọc mỗi tick — đổi cấu hình có hiệu lực ngay tick sau.
+  app.get('/api/v1/automation/stage-followup-config', async (request: FastifyRequest) => {
+    const user = request.user as UserCtx;
+    const row = await prisma.appSetting.findUnique({
+      where: { orgId_settingKey: { orgId: user.orgId, settingKey: STAGE_FOLLOWUP_SETTING_KEY } },
+      select: { valuePlain: true },
+    });
+    let parsed: unknown = {};
+    try { parsed = JSON.parse(row?.valuePlain ?? '{}'); } catch { parsed = {}; }
+    return { config: parseStageFollowupConfig(parsed) };
+  });
+
+  app.put('/api/v1/automation/stage-followup-config', async (
+    request: FastifyRequest<{ Body: { enabled?: boolean; silenceHours?: number; cooldownDays?: number; sequenceByStage?: Record<string, string> } }>,
+    reply: FastifyReply,
+  ) => {
+    const user = request.user as UserCtx;
+    const config = parseStageFollowupConfig(request.body ?? {});
+
+    // Sequence được map phải thuộc org + đang bật — chặn map nhầm id org khác.
+    const ids = [...new Set(Object.values(config.sequenceByStage))];
+    if (ids.length) {
+      const found = await prisma.automationSequence.count({ where: { id: { in: ids }, orgId: user.orgId } });
+      if (found !== ids.length) return reply.status(400).send({ error: 'Sequence not found in this organization' });
+    }
+    if (config.enabled && !ids.length) {
+      return reply.status(400).send({ error: 'Chọn ít nhất 1 luồng kịch bản cho 1 giai đoạn trước khi bật' });
+    }
+
+    const valuePlain = JSON.stringify(config);
+    await prisma.appSetting.upsert({
+      where: { orgId_settingKey: { orgId: user.orgId, settingKey: STAGE_FOLLOWUP_SETTING_KEY } },
+      create: { orgId: user.orgId, settingKey: STAGE_FOLLOWUP_SETTING_KEY, valuePlain },
+      update: { valuePlain },
+    });
+    logger.info(`[community-automation] stage-followup-config updated org=${user.orgId} by=${user.id} enabled=${config.enabled} stages=${Object.keys(config.sequenceByStage).join(',') || '-'}`);
+    return { ok: true, config, allowedStages: STAGE_FOLLOWUP_ALLOWED_STAGES };
+  });
+
+  app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/pause', async (
+    request: FastifyRequest<{ Params: { triggerId: string; contactId: string }; Body: { hours?: number } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    const hours = Math.max(1, Math.min(168, Number(request.body.hours ?? 24) || 24));
+    await prisma.careSession.updateMany({
+      where: { id: request.params.triggerId, orgId: user.orgId, contactId: request.params.contactId, state: 'active' },
+      data: { pausedUntil: plusHours(hours) },
+    });
+    return { ok: true };
+  });
+
+  app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/resume', async (
+    request: FastifyRequest<{ Params: { triggerId: string; contactId: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    await prisma.careSession.updateMany({
+      where: { id: request.params.triggerId, orgId: user.orgId, contactId: request.params.contactId, state: 'active' },
+      data: { pausedUntil: null },
+    });
+    return { ok: true };
+  });
+
+  app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/stop', async (
+    request: FastifyRequest<{ Params: { triggerId: string; contactId: string }; Body: { reason?: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    await prisma.careSession.updateMany({
+      where: { id: request.params.triggerId, orgId: user.orgId, contactId: request.params.contactId },
+      data: { state: 'closed', closedReason: request.body.reason || 'sale_resolved', closedAt: new Date(), nextRunAt: null },
+    });
+    return { ok: true };
+  });
+
+  // "Gửi bước tiếp theo ngay" — gọi processCareSessionStep trực tiếp (không chờ cron).
+  // Vẫn tôn trọng rate limit (KHÔNG bypass). Bỏ pause trước khi xử lý.
+  app.post('/api/v1/automation/triggers/:triggerId/contacts/:contactId/advance', async (
+    request: FastifyRequest<{ Params: { triggerId: string; contactId: string } }>,
+  ) => {
+    const user = request.user as UserCtx;
+    const { triggerId, contactId } = request.params;
+
+    // Bỏ pause (nếu có) để service chung có thể claim.
+    await prisma.careSession.updateMany({
+      where: {
+        id: triggerId,
+        orgId: user.orgId,
+        contactId,
+        state: 'active',
+      },
+      data: { pausedUntil: null },
+    });
+
+    // Gọi service chung — xử lý bước ngay lập tức.
+    const result = await processCareSessionStep({
+      sessionId: triggerId,
+      orgId: user.orgId,
+      trigger: 'manual_run_now',
+      actorUserId: user.id,
+    });
+
+    // Log rõ kết quả bấm "Gửi bước tiếp ngay" — để về sau khỏi phải soi DB tìm lý do.
+    logger.info(
+      `[care-session][advance] session=${triggerId} contact=${contactId} by=${user.id} → ` +
+      `mode=${result.deliveryMode ?? '-'} deferReason=${result.deferReason ?? '-'} error=${result.error ?? '-'} ` +
+      `step=${(result.stepIdx ?? -1) + 1}/${result.totalSteps ?? '?'} completed=${result.completed ?? false}`,
+    );
+
+    return {
+      ok: result.ok,
+      promoted: result.processed ? 1 : 0,
+      actuallySent: result.deliveryMode === 'sent',
+      simulated: result.deliveryMode === 'simulated',
+      deferred: !result.processed && !!result.deferReason,
+      deferReason: result.deferReason ?? null,
+      stepIdx: result.stepIdx ?? null,
+      totalSteps: result.totalSteps ?? null,
+      deliveryMode: result.deliveryMode ?? null,
+      completed: result.completed ?? false,
+      error: result.error ?? null,
+    };
+  });
+}

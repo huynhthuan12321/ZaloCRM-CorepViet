@@ -1,0 +1,24 @@
+{
+  "route": "/appointments",
+  "control": false,
+  "width": 768,
+  "height": 1024,
+  "sizeMatch": true,
+  "totalPixels": 786432,
+  "diffPixels": 0,
+  "diffRatio": 0,
+  "exactDiffPixels": 0,
+  "maxChannelDelta": 0,
+  "info": {
+    "base": {
+      "desktopLayout": true,
+      "mobileShell": false,
+      "w": 768
+    },
+    "dotD": {
+      "desktopLayout": true,
+      "mobileShell": false,
+      "w": 768
+    }
+  }
+}

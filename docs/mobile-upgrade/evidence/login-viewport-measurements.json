@@ -1,0 +1,453 @@
+{
+  "scope": "local login only; Chromium desktop viewport emulation; no auth; no backend",
+  "measurements": [
+    {
+      "bodyWidth": 320,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 256
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 844,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 320,
+      "width": 320
+    },
+    {
+      "bodyWidth": 375,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 311
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 844,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 375,
+      "width": 375
+    },
+    {
+      "bodyWidth": 390,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 326
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 844,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 390,
+      "width": 390
+    },
+    {
+      "bodyWidth": 393,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 329
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 844,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 393,
+      "width": 393
+    },
+    {
+      "bodyWidth": 402,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 338
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 844,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 402,
+      "width": 402
+    },
+    {
+      "bodyWidth": 430,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 366
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 844,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 430,
+      "width": 430
+    },
+    {
+      "bodyWidth": 1100,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 364
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 900,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 768,
+      "width": 768
+    },
+    {
+      "bodyWidth": 1440,
+      "buttons": [
+        {
+          "height": 44,
+          "label": "Đăng nhập",
+          "width": 340
+        },
+        {
+          "height": 0,
+          "label": "",
+          "width": 0
+        },
+        {
+          "height": 22,
+          "label": "",
+          "width": 44
+        }
+      ],
+      "h1": "Cờ Rếp Việt",
+      "height": 900,
+      "inputs": [
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "text"
+        },
+        {
+          "font": "16px",
+          "height": 40,
+          "type": "password"
+        },
+        {
+          "font": "14px",
+          "height": 0,
+          "type": "hidden"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        },
+        {
+          "font": "16px",
+          "height": 36,
+          "type": "search"
+        }
+      ],
+      "scrollWidth": 1440,
+      "width": 1440
+    }
+  ]
+}

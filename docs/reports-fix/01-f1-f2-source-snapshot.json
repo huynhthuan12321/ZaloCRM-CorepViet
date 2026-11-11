@@ -1,0 +1,39 @@
+{
+  "capturedAt": "2026-11-01T19:41:27.682517+07:00",
+  "referenceHead": "1b910e3971841afeec83d53bc0539f3d50167f5d",
+  "stage": "F1/F2 implementation complete; independent 1B re-verification pending",
+  "checks": {
+    "testFiles": 10,
+    "testsPassed": 55,
+    "testStart": "2026-11-01T19:40:37+07:00",
+    "backendTypecheck": 0,
+    "frontendBuild": 0,
+    "database": "PGlite in-memory; Prisma/auth mocks; no external DB"
+  },
+  "files": [
+    {
+      "path": "backend/src/modules/analytics/reports/custom-report.ts",
+      "sha256": "e52f7405faf93ab4cc5db2c6d6da7350b818d50537828f2b9908595bcd89f821"
+    },
+    {
+      "path": "backend/src/modules/analytics/reports/response-time.ts",
+      "sha256": "704411a30a4f5844c19aa821cd91b47ceb9babb8439d59e8efaaacd708c39660"
+    },
+    {
+      "path": "backend/src/modules/dashboard/report-scope.ts",
+      "sha256": "2fa4231b7f6db7110576088de43abaa1914bde239f4ce1d5b2f98f979e8c46ec"
+    },
+    {
+      "path": "frontend/src/composables/use-analytics.ts",
+      "sha256": "e4dae23ea2ec61cf8ade88fb017a0b362e9bf927af94a5b979c99ea198761af5"
+    },
+    {
+      "path": "backend/tests/unit/report-1b-review-evidence.test.ts",
+      "sha256": "0fdc535cdddd48971262e58a96eabd113ecae5fabe8e570c31bb4d06832615eb"
+    },
+    {
+      "path": "backend/tests/unit/response-time-service.test.ts",
+      "sha256": "105911b970844153261a1d77d5802ca430ae676eb53200ff8e04b5e9d5cc17e3"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "route": "/",
+  "control": false,
+  "width": 768,
+  "height": 1024,
+  "sizeMatch": true,
+  "totalPixels": 786432,
+  "diffPixels": 2,
+  "diffRatio": 0.0000025431315104166665,
+  "exactDiffPixels": 2,
+  "maxChannelDelta": 15,
+  "info": {
+    "base": {
+      "desktopLayout": true,
+      "mobileShell": false,
+      "w": 768
+    },
+    "dotD": {
+      "desktopLayout": true,
+      "mobileShell": false,
+      "w": 768
+    }
+  }
+}

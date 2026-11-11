@@ -1,0 +1,10 @@
+{
+  "scope": "local login only, Chromium desktop viewport override, no backend or authentication",
+  "viewport": { "width": 768, "height": 900 },
+  "appRect": { "x": 0, "y": 0, "width": 1100, "height": 900 },
+  "bodyRect": { "x": 0, "y": 0, "width": 768, "height": 900 },
+  "computedBodyOverflow": "hidden",
+  "finding": "app wider than viewport; screenshot shows login offset right; document scrollWidth alone does not detect clipping",
+  "screenshot": "login-768.png",
+  "limitations": ["not WebKit", "not real iPhone", "browser extension overlay visible; exclude from app defect assessment"]
+}

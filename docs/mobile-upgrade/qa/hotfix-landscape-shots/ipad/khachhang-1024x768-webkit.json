@@ -1,0 +1,27 @@
+{
+  "route": "/contacts",
+  "width": 1024,
+  "height": 768,
+  "sizeMatch": true,
+  "totalPixels": 786432,
+  "diffPixels": 8,
+  "diffRatio": 0.000010172526041666666,
+  "exactDiffPixels": 8,
+  "maxChannelDelta": 13,
+  "info": {
+    "base": {
+      "coarse": true,
+      "hoverNone": true,
+      "desktopLayout": true,
+      "mobileLayout": false,
+      "w": 1024
+    },
+    "hotfix": {
+      "coarse": true,
+      "hoverNone": true,
+      "desktopLayout": true,
+      "mobileLayout": false,
+      "w": 1024
+    }
+  }
+}

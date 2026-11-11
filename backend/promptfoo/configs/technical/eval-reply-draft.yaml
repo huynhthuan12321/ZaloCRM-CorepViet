@@ -1,0 +1,16 @@
+description: "Technical eval: reply_draft synthetic contract"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "reply_draft", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSystemPromptLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSecretLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoPiiLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertPriceGrounded"
+tests: "file://../../datasets/technical/reply-draft.json"

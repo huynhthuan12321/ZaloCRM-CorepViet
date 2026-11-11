@@ -1,0 +1,56 @@
+[
+  {
+    "overflow": false,
+    "page": "settings",
+    "smallControls": 0,
+    "width": 320
+  },
+  {
+    "overflow": false,
+    "page": "scope",
+    "smallControls": 0,
+    "width": 320
+  },
+  {
+    "overflow": false,
+    "page": "conversation",
+    "smallControls": 0,
+    "width": 320
+  },
+  {
+    "overflow": false,
+    "page": "settings",
+    "smallControls": 0,
+    "width": 390
+  },
+  {
+    "overflow": false,
+    "page": "scope",
+    "smallControls": 0,
+    "width": 390
+  },
+  {
+    "overflow": false,
+    "page": "conversation",
+    "smallControls": 0,
+    "width": 390
+  },
+  {
+    "overflow": false,
+    "page": "settings",
+    "smallControls": 0,
+    "width": 430
+  },
+  {
+    "overflow": false,
+    "page": "scope",
+    "smallControls": 0,
+    "width": 430
+  },
+  {
+    "overflow": false,
+    "page": "conversation",
+    "smallControls": 0,
+    "width": 430
+  }
+]

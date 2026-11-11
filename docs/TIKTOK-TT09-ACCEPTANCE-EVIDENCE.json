@@ -1,0 +1,193 @@
+{
+  "at": "2026-10-13T11:34:48.049Z",
+  "scope": "synthetic full schema; no production data or real TikTok",
+  "baseline": "bf31cdf",
+  "checks": [
+    {
+      "name": "full-schema legacy fixture from pinned HEAD",
+      "status": "PASS",
+      "ms": 21971
+    },
+    {
+      "name": "pg_dump and pg_restore full fixture + media checksum",
+      "status": "PASS",
+      "ms": 23477
+    },
+    {
+      "name": "B then D1 migrations on restored PostgreSQL 16",
+      "status": "PASS",
+      "ms": 1748
+    },
+    {
+      "name": "bounded lock timeout with real concurrent PostgreSQL connections",
+      "status": "PASS",
+      "ms": 295
+    },
+    {
+      "name": "batch backfill + D2 validates all rows, no content changes",
+      "status": "PASS",
+      "ms": 291
+    },
+    {
+      "name": "restored database matches the final Prisma datamodel",
+      "status": "PASS",
+      "ms": 1037
+    },
+    {
+      "name": "Prisma actual writes/reads with derived message org",
+      "status": "PASS",
+      "ms": 336
+    },
+    {
+      "name": "actual JWT HTTP list/count/history and cross-org/no-grant denial",
+      "status": "PASS",
+      "ms": 243
+    },
+    {
+      "name": "TT05 mock QR and identity confirmation remain owner/admin controlled",
+      "status": "PASS",
+      "ms": 54
+    },
+    {
+      "name": "TT06 outbox is idempotent, single-claim and resolves atomically",
+      "status": "PASS",
+      "ms": 84
+    },
+    {
+      "name": "actual Socket.IO read/control separation and unauthorized joins",
+      "status": "PASS",
+      "ms": 32
+    },
+    {
+      "name": "TT05 signed ingress persists/deduplicates inbound and emits read-room event",
+      "status": "PASS",
+      "ms": 39
+    },
+    {
+      "name": "TT07 signed heartbeat, read-only reconciliation and pilot alerts",
+      "status": "PASS",
+      "ms": 21
+    },
+    {
+      "name": "TT08 isolation and TT09 fleet capacity remain enforced",
+      "status": "PASS",
+      "ms": 75
+    },
+    {
+      "name": "real Vue composable + read-only component over HTTP/socket",
+      "status": "PASS",
+      "ms": 1560
+    },
+    {
+      "name": "TT08 rollback of account A does not affect account B",
+      "status": "PASS",
+      "ms": 34
+    },
+    {
+      "name": "flags OFF retain Zalo data and prevent new channel access",
+      "status": "PASS",
+      "ms": 4
+    }
+  ],
+  "measurements": {
+    "postgresVersion": "postgres (PostgreSQL) 16.15",
+    "legacySchemaSha256": "a1626d86a7386374bd8d72c0d55f4ccb9e5a3dc9918b8a36febf5a783a1c97bf",
+    "tableCount": 116,
+    "before": {
+      "count": 1202,
+      "digest": "fb727fd13fad778e12703092e8d8dd83"
+    },
+    "backupSha256": "1eda185b62ff9b25ef76ae8d052a69302fd0e4a0eeed0dc90c8f54dac4b8f5a4",
+    "prisma/migrations/20261013170000_multichannel_expand/migration.sql": "e0bab75f99e2ac2d0b4a08ccae2b0bda4ac3958751d2e5b0c0f7d8b056aacb5f",
+    "prisma/migrations/20261013180000_multichannel_nullable/migration.sql": "4ffd09744184c7cf13e8b47a62b00a48d6d21b91f6b7a4a9c0b5ea3a335bc065",
+    "validationSha256": "c5115348f192847dd00e1690164065df296fd800ae447df084ed4cf7a21f1c0c",
+    "backfill": {
+      "dry": {
+        "mode": "dry-run",
+        "changed": 0,
+        "remaining": 1202,
+        "invalid": 0
+      },
+      "partial": {
+        "mode": "apply",
+        "changed": 200,
+        "remaining": 1002,
+        "invalid": 0
+      },
+      "resumed": {
+        "mode": "apply",
+        "changed": 1002,
+        "remaining": 0,
+        "invalid": 0
+      },
+      "repeated": {
+        "mode": "apply",
+        "changed": 0,
+        "remaining": 0,
+        "invalid": 0
+      }
+    },
+    "databaseBytes": 17194007,
+    "schemaDiff": "No difference detected.",
+    "finalSchemaSha256": "bf77de6cd4f5335fc22e6ea7e243db98e55e690785a12eef9106200f50cff582",
+    "tt06Outbox": {
+      "idempotent": true,
+      "singleClaim": true,
+      "confirmed": true,
+      "staleBecomesUnknown": true,
+      "noAutomaticRetry": true
+    },
+    "authorizedHttp": true,
+    "authorizedSocket": true,
+    "tt05Ingress": {
+      "signed": true,
+      "deduplicated": true,
+      "realtime": true
+    },
+    "tt07Pilot": {
+      "heartbeat": true,
+      "reconciliationReadOnly": true,
+      "alerts": [
+        "UNKNOWN_DELIVERY_REVIEW"
+      ]
+    },
+    "tt08Isolation": {
+      "accountScopedAcl": true,
+      "concurrentClaims": true,
+      "independentResults": true,
+      "independentHeartbeats": true,
+      "fleetCapacityReached": true,
+      "thirdAccountRejected": true,
+      "thirdWorkerAdmissionRejected": true
+    },
+    "tt09Fleet": {
+      "activeWorkers": 2,
+      "effectiveLimit": 2,
+      "remainingSlots": 0,
+      "alerts": [
+        "WORKER_CAPACITY_REACHED"
+      ],
+      "thirdAccountRejected": true,
+      "thirdWorkerAdmissionRejected": true
+    },
+    "browser": "PASS",
+    "tt08Rollback": {
+      "accountAEpochFenced": true,
+      "accountACommandsPreserved": true,
+      "accountBStillConnected": true,
+      "accountBStillClaimable": true
+    },
+    "finalChecks": [
+      {
+        "conname": "conversations_account_xor",
+        "convalidated": true
+      },
+      {
+        "conname": "messages_org_id_conversation_id_fkey",
+        "convalidated": true
+      }
+    ],
+    "postgresStopped": true
+  },
+  "passed": true
+}

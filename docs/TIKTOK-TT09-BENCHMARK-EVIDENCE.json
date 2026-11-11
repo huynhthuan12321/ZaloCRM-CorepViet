@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-13T11:30:19.703Z",
+  "scope": "two local mock Chromium profiles; no real TikTok or production data",
+  "workers": 2,
+  "iterations": 20,
+  "latencyMs": {
+    "p50": 100.19,
+    "p95": 116.41,
+    "max": 116.41
+  },
+  "chromium": {
+    "processCount": 8,
+    "workingSetBytes": 584343552,
+    "averageWorkingSetPerWorkerBytes": 292171776,
+    "cpuPercentDuringWorkload": 16.18
+  },
+  "node": {
+    "rss": 167829504,
+    "heapTotal": 121282560,
+    "heapUsed": 73337488,
+    "external": 5977670,
+    "arrayBuffers": 1835496
+  }
+}

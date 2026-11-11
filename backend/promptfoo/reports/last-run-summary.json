@@ -1,0 +1,11 @@
+{
+  "generatedAt": "2026-09-15T08:54:53.013Z",
+  "mode": "report-only",
+  "summaries": [
+    {
+      "config": "configs\\golden\\eval-golden.yaml",
+      "status": "FAIL",
+      "exitCode": 100
+    }
+  ]
+}

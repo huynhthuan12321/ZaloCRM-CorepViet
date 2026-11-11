@@ -1,0 +1,11 @@
+{
+  "viewport": "844x390",
+  "theme": "light",
+  "browserName": "webkit",
+  "touch": {
+    "coarse": true,
+    "hoverNone": true
+  },
+  "issues": [],
+  "pageErrors": []
+}

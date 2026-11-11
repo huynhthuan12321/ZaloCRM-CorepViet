@@ -1,0 +1,1603 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "F:\\ZaloCRM-wt\\crm\\frontend\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "e2e/desktop-regression-d.spec.ts",
+      "--workers=1",
+      "--reporter=line,json"
+    ],
+    "configFile": "F:\\ZaloCRM-wt\\crm\\frontend\\playwright.config.ts",
+    "rootDir": "F:/ZaloCRM-wt/crm/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "F:/ZaloCRM-wt/crm/frontend/test-results/G3-final-20261109-2056",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "F:/ZaloCRM-wt/crm/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "F:/ZaloCRM-wt/crm/frontend/test-results/G3-final-20261109-2056",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "F:/ZaloCRM-wt/crm/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "F:\\ZaloCRM-wt\\crm\\frontend\\test-results\\G3-final-20261109-2056",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "chromium",
+        "testDir": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e",
+        "snapshotDir": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4186",
+          "trace": "off",
+          "locale": "vi-VN",
+          "timezoneId": "Asia/Ho_Chi_Minh",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.8127.18 Safari/537.36",
+          "viewport": {
+            "width": 1280,
+            "height": 720
+          },
+          "screen": {
+            "width": 1920,
+            "height": 1080
+          },
+          "deviceScaleFactor": 1,
+          "isMobile": false,
+          "hasTouch": false,
+          "defaultBrowserType": "chromium"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "chromium"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "F:\\ZaloCRM-wt\\crm\\frontend\\test-results\\G3-final-20261109-2056",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "webkit",
+        "testDir": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e",
+        "snapshotDir": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4186",
+          "trace": "off",
+          "locale": "vi-VN",
+          "timezoneId": "Asia/Ho_Chi_Minh",
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+          "viewport": {
+            "width": 1280,
+            "height": 720
+          },
+          "screen": {
+            "width": 1792,
+            "height": 1120
+          },
+          "deviceScaleFactor": 2,
+          "isMobile": false,
+          "hasTouch": false,
+          "defaultBrowserType": "webkit"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "webkit"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.65.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "desktop-regression-d.spec.ts",
+      "file": "desktop-regression-d.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Desktop/iPad không đổi so với base e290e2d (đợt D)",
+          "file": "desktop-regression-d.spec.ts",
+          "line": 33,
+          "column": 6,
+          "specs": [
+            {
+              "title": "1440x900 tongquan (/)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7214,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:05.248Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7695,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:03:13.809Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-a3c2f3adbf92b52c36c4",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1440x900 khachhang (/contacts)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7107,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:12.646Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7827,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:03:24.428Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-b2de626c0906a379ac30",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1440x900 hoso (/contacts/qa-ct-1/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7080,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:19.761Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7591,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:03:32.260Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-d664530611b071ab21a4",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1440x900 lichhen (/appointments)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7125,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:26.845Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7540,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:03:39.856Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-6900865c57715b4f85cf",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1440x900 caidat-tochuc (/settings/org/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7116,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:33.975Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7670,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:03:47.402Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-2881337fd43ae63e5292",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1440x900 caidat-canhan (/settings/personal/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7076,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:41.096Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7697,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:03:55.077Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1440,\"height\":900,\"sizeMatch\":true,\"totalPixels\":1296000,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1440}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-b0204bc35ebda216382f",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1024x768 tongquan (/)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7055,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:48.177Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7496,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:02.779Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-b583d9c22f0a04dcdde0",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1024x768 khachhang (/contacts)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7076,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:01:55.237Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7650,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:10.280Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-95cd7d39cb8a6b774c3a",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1024x768 hoso (/contacts/qa-ct-1/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7066,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:02.318Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7526,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:17.935Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-9a306d3b89b3d85b2070",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1024x768 lichhen (/appointments)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7059,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:09.389Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7524,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:25.467Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-803719a24eb398130899",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1024x768 caidat-tochuc (/settings/org/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7144,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:16.454Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7562,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:32.995Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-7f29219c47ec6dd90adb",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "1024x768 caidat-canhan (/settings/personal/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7081,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:23.606Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7596,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:40.562Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":1024,\"height\":768,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":1024}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-937baff3ea2dec302052",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "768x1024 tongquan (/)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7043,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:30.693Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":2,\"diffRatio\":0.0000025431315104166665,\"exactDiffPixels\":2,\"maxChannelDelta\":15,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 7500,
+                      "error": {
+                        "message": "Error: exact=2 max=15\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m2\u001b[39m",
+                        "stack": "Error: exact=2 max=15\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n    at F:\\ZaloCRM-wt\\crm\\frontend\\e2e\\desktop-regression-d.spec.ts:59:90",
+                        "location": {
+                          "file": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e\\desktop-regression-d.spec.ts",
+                          "column": 90,
+                          "line": 59
+                        },
+                        "snippet": " \u001b[90m 57 |\u001b[39m         test\u001b[33m.\u001b[39minfo()\u001b[33m.\u001b[39mannotations\u001b[33m.\u001b[39mpush({ type\u001b[33m:\u001b[39m \u001b[32m'pixel-diff'\u001b[39m\u001b[33m,\u001b[39m description\u001b[33m:\u001b[39m \u001b[33mJSON\u001b[39m\u001b[33m.\u001b[39mstringify({ \u001b[33m...\u001b[39msummary\u001b[33m,\u001b[39m info }) })\u001b[33m;\u001b[39m\n \u001b[90m 58 |\u001b[39m         expect(r\u001b[33m.\u001b[39msizeMatch\u001b[33m,\u001b[39m \u001b[32m'kích thước ảnh khác nhau'\u001b[39m)\u001b[33m.\u001b[39mtoBe(\u001b[36mtrue\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 59 |\u001b[39m         expect(r\u001b[33m.\u001b[39mexactDiffPixels\u001b[33m,\u001b[39m \u001b[32m`exact=${r.exactDiffPixels} max=${r.maxChannelDelta}`\u001b[39m)\u001b[33m.\u001b[39mtoBe(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                                                                          \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 60 |\u001b[39m       })\u001b[33m;\u001b[39m\n \u001b[90m 61 |\u001b[39m     }\n \u001b[90m 62 |\u001b[39m   }"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e\\desktop-regression-d.spec.ts",
+                            "column": 90,
+                            "line": 59
+                          },
+                          "message": "Error: exact=2 max=15\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  57 |         test.info().annotations.push({ type: 'pixel-diff', description: JSON.stringify({ ...summary, info }) });\n  58 |         expect(r.sizeMatch, 'kích thước ảnh khác nhau').toBe(true);\n> 59 |         expect(r.exactDiffPixels, `exact=${r.exactDiffPixels} max=${r.maxChannelDelta}`).toBe(0);\n     |                                                                                          ^\n  60 |       });\n  61 |     }\n  62 |   }\n    at F:\\ZaloCRM-wt\\crm\\frontend\\e2e\\desktop-regression-d.spec.ts:59:90"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:48.163Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":2,\"diffRatio\":0.0000025431315104166665,\"exactDiffPixels\":2,\"maxChannelDelta\":15,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "F:\\ZaloCRM-wt\\crm\\frontend\\test-results\\G3-final-20261109-2056\\desktop-regression-d-Deskt-0ca6d-2d-đợt-D-768x1024-tongquan--webkit\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "F:\\ZaloCRM-wt\\crm\\frontend\\e2e\\desktop-regression-d.spec.ts",
+                        "column": 90,
+                        "line": 59
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-7c58f43c6d010d8402ae",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "768x1024 khachhang (/contacts)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7059,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:37.740Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7663,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:04:56.050Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-e774fc95c7e8e5af969e",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "768x1024 hoso (/contacts/qa-ct-1/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7059,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:44.806Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7533,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:05:03.818Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-3b6e920a873bdc03fa35",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "768x1024 lichhen (/appointments)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7061,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:51.870Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7509,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:05:11.356Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-76321312be69c6c27437",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "768x1024 caidat-tochuc (/settings/org/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7212,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:02:58.936Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7512,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:05:18.871Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-07823ca9bd9a823ebf6d",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            },
+            {
+              "title": "768x1024 caidat-canhan (/settings/personal/profile)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7137,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:03:06.153Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "pixel-diff",
+                      "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7628,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-09T14:05:26.387Z",
+                      "annotations": [
+                        {
+                          "type": "pixel-diff",
+                          "description": "{\"width\":768,\"height\":1024,\"sizeMatch\":true,\"totalPixels\":786432,\"diffPixels\":0,\"diffRatio\":0,\"exactDiffPixels\":0,\"maxChannelDelta\":0,\"info\":{\"base\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768},\"dotD\":{\"desktopLayout\":true,\"mobileShell\":false,\"w\":768}}}"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "49ef595c021d555e08e6-e6627f7522311694242f",
+              "file": "desktop-regression-d.spec.ts",
+              "line": 37,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-09T14:01:01.031Z",
+    "duration": 273483.664,
+    "expected": 35,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

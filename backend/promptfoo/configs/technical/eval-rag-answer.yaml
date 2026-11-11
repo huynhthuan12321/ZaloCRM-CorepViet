@@ -1,0 +1,12 @@
+description: "Technical eval: rag_answer grounding"
+providers:
+  - id: "file://../../providers/zalocrmProvider.ts"
+    config: { operation: "rag_answer", evalDataSource: "technical" }
+prompts: ["{{prompt}}"]
+defaultTest:
+  assert:
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertNoSystemPromptLeak"
+    - type: "javascript"
+      value: "file://../../assertions/safetyAssertions.ts:assertPriceGrounded"
+tests: "file://../../datasets/technical/rag-answer.json"

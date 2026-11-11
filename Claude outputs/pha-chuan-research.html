@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pha Chuẩn — Nghiên cứu nội dung</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #FAF9F6;
+  --surface: #FFFFFF;
+  --surface-alt: #F5F0EB;
+  --text: #1A1A1A;
+  --text-2: #4A4A4A;
+  --text-3: #8A8A8A;
+  --border: #E8E0D8;
+  --copper: #C4823A;
+  --copper-lt: #FDF3E8;
+  --green: #2D6A4F;
+  --green-lt: #E8F5EE;
+  --red: #D64545;
+  --red-lt: #FDECEC;
+  --blue: #3A7CA5;
+  --blue-lt: #EBF4FA;
+  --purple: #7B5EA7;
+  --purple-lt: #F3EFF8;
+  --font: 'Be Vietnam Pro', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141210;--surface:#1E1C18;--surface-alt:#2A2620;--text:#EDE8E0;--text-2:#B0A898;--text-3:#706860;--border:#3A3530;
+  --copper:#D4924A;--copper-lt:#2A2018;--green:#52B788;--green-lt:#1B2820;--red:#E87070;--red-lt:#2A1818;--blue:#6AAFCF;--blue-lt:#182028;--purple:#A088C8;--purple-lt:#201828;
+}}
+:root[data-theme="dark"]{
+  --bg:#141210;--surface:#1E1C18;--surface-alt:#2A2620;--text:#EDE8E0;--text-2:#B0A898;--text-3:#706860;--border:#3A3530;
+  --copper:#D4924A;--copper-lt:#2A2018;--green:#52B788;--green-lt:#1B2820;--red:#E87070;--red-lt:#2A1818;--blue:#6AAFCF;--blue-lt:#182028;--purple:#A088C8;--purple-lt:#201828;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.65;padding:0 16px;-webkit-font-smoothing:antialiased}
+.c{max-width:800px;margin:0 auto;padding:40px 0 80px}
+
+/* Hero */
+.hero{text-align:center;padding:40px 24px 32px;margin-bottom:36px;background:var(--surface);border:1px solid var(--border);border-radius:14px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--copper),var(--green))}
+.hero-brand{font-size:13px;font-weight:600;color:var(--copper);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px}
+.hero h1{font-size:clamp(24px,4.5vw,34px);font-weight:800;line-height:1.2;margin-bottom:6px}
+.hero h1 span{color:var(--copper)}
+.hero-sub{font-size:15px;color:var(--text-2);margin-bottom:14px}
+.hero-meta{font-size:12px;color:var(--text-3);font-family:var(--mono)}
+
+/* Section */
+.sec{margin-bottom:32px}
+.sec-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid var(--border)}
+.sec-icon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.sec-icon.i-red{background:var(--red-lt);color:var(--red)}
+.sec-icon.i-copper{background:var(--copper-lt);color:var(--copper)}
+.sec-icon.i-green{background:var(--green-lt);color:var(--green)}
+.sec-icon.i-blue{background:var(--blue-lt);color:var(--blue)}
+.sec-icon.i-purple{background:var(--purple-lt);color:var(--purple)}
+.sec h2{font-size:18px;font-weight:700}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:10px}
+.card h3{font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text)}
+.card p,.card li{font-size:14px;color:var(--text-2);line-height:1.6}
+.card ul{padding-left:18px;margin-top:6px}
+.card li{margin-bottom:4px}
+.card .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;font-family:var(--mono);margin-right:4px}
+.tag-red{background:var(--red-lt);color:var(--red)}
+.tag-copper{background:var(--copper-lt);color:var(--copper)}
+.tag-green{background:var(--green-lt);color:var(--green)}
+.tag-blue{background:var(--blue-lt);color:var(--blue)}
+
+/* Table */
+.tbl-wrap{overflow-x:auto;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:480px}
+th{text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-3);padding:8px 10px;border-bottom:2px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.num{text-align:right;font-family:var(--mono);white-space:nowrap}
+
+/* Pain grid */
+.pain-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.pain-card{background:var(--red-lt);border:1px solid color-mix(in srgb,var(--red) 20%,var(--border));border-radius:10px;padding:16px}
+.pain-card h4{font-size:14px;font-weight:700;color:var(--red);margin-bottom:4px}
+.pain-card p{font-size:13px;color:var(--text-2)}
+
+/* Idea grid */
+.idea-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(350px,1fr));gap:10px}
+.idea-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px}
+.idea-card .pillar{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.idea-card h4{font-size:14px;font-weight:600;margin-bottom:6px}
+.idea-card p{font-size:13px;color:var(--text-2)}
+
+.highlight{background:var(--copper-lt);border-left:3px solid var(--copper);border-radius:0 10px 10px 0;padding:16px 20px;margin-bottom:10px}
+.highlight p{font-size:14px;color:var(--text-2)}
+.highlight strong{color:var(--copper)}
+
+.footer{text-align:center;padding:28px 16px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border)}
+.footer strong{color:var(--copper)}
+
+@media(max-width:600px){
+  .pain-grid,.idea-grid{grid-template-columns:1fr}
+  .hero{padding:28px 16px 24px}
+}
+</style>
+</head>
+<body>
+<div class="c">
+
+<div class="hero">
+  <div class="hero-brand">Nghiên cứu nội dung Facebook</div>
+  <h1><span>Pha Chuẩn</span> — Data & Insight</h1>
+  <div class="hero-sub">Tổng hợp thông tin thị trường, nỗi đau khách hàng & ý tưởng content</div>
+  <div class="hero-meta">09/2026 · Dựa trên nghiên cứu từ 15+ nguồn</div>
+</div>
+
+<!-- ===== 1. THỊ TRƯỜNG ===== -->
+<div class="sec">
+  <div class="sec-head">
+    <div class="sec-icon i-blue">📊</div>
+    <h2>1. Bức tranh thị trường</h2>
+  </div>
+
+  <div class="card">
+    <h3>Quy mô thị trường cà phê Việt Nam</h3>
+    <ul>
+      <li><strong>500.000+ quán cà phê</strong> trên toàn quốc (VietnamBiz, 2024)</li>
+      <li>Tốc độ tăng trưởng <strong>CAGR 7,56%/năm</strong> — thị trường đang mở rộng liên tục</li>
+      <li>TP.HCM chiếm tỷ trọng lớn nhất — ước tính <strong>80.000–100.000 quán</strong></li>
+      <li>39% người trẻ ưa thích cà phê máy (espresso, latte, cappuccino)</li>
+      <li>Chi tiêu trung bình: <strong>41.000–70.000đ/lần</strong> tại quán</li>
+    </ul>
+  </div>
+
+  <div class="highlight">
+    <p><strong>Insight cho Pha Chuẩn:</strong> Với 80.000–100.000 quán cà phê tại TP.HCM, phần lớn sử dụng máy pha espresso. Chỉ cần phục vụ 0,02% thị trường = 15–20 khách/tháng — hoàn toàn khả thi cho giai đoạn đầu.</p>
+  </div>
+
+  <div class="card">
+    <h3>Đối thủ dịch vụ sửa máy pha tại TP.HCM</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Đơn vị</th><th>Đặc điểm</th><th class="num">Giá tham khảo</th></tr></thead>
+        <tbody>
+          <tr><td>A Hàng Đức</td><td>24/7, sửa tại nhà, Zalo tư vấn</td><td class="num">350K–4,9tr</td></tr>
+          <tr><td>Sửa Thiết Bị Châu Âu</td><td>HN + HCM, chuyên hàng nhập</td><td class="num">300K–1,6tr</td></tr>
+          <tr><td>True Cafe</td><td>Kho linh kiện sẵn, chuyên thương mại</td><td class="num">Báo giá riêng</td></tr>
+          <tr><td>Sửa Máy Pha Cà Phê .net</td><td>Top 1 SEO, chuyên TP.HCM</td><td class="num">Báo giá riêng</td></tr>
+          <tr><td>Toha Group</td><td>Bán + sửa, đại lý nhiều hãng</td><td class="num">Báo giá riêng</td></tr>
+          <tr><td>Các thợ freelance</td><td>Giá rẻ, không bảo hành rõ ràng</td><td class="num">200K–500K</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:13px;color:var(--text-3);margin-top:8px"><strong>Điểm yếu chung:</strong> Đa số không có fanpage chuyên nghiệp, không có content giáo dục, không có quy trình chăm sóc sau sửa. → Đây là lợi thế cạnh tranh cho Pha Chuẩn.</p>
+  </div>
+</div>
+
+<!-- ===== 2. NỖI ĐAU ===== -->
+<div class="sec">
+  <div class="sec-head">
+    <div class="sec-icon i-red">🔥</div>
+    <h2>2. Nỗi đau của chủ quán cà phê</h2>
+  </div>
+
+  <div class="pain-grid">
+    <div class="pain-card">
+      <h4>😰 Mất doanh thu khi máy hỏng</h4>
+      <p>Mỗi giờ máy ngừng = mất doanh thu + mất khách. Quán bán 50–100 ly/ngày, máy hỏng 1 ngày = mất 2–5 triệu doanh thu. Khách đến thấy "hết cà phê" sẽ không quay lại.</p>
+    </div>
+    <div class="pain-card">
+      <h4>😤 Không biết gọi ai, sợ bị "chặt chém"</h4>
+      <p>Thợ freelance giá rẻ nhưng không bảo hành. Hãng chính hãng giá cao + chờ lâu. Không biết lỗi gì, sợ bị "phán" thay linh kiện không cần thiết.</p>
+    </div>
+    <div class="pain-card">
+      <h4>😣 Chất lượng cà phê giảm dần mà không biết</h4>
+      <p>"Máy vẫn chạy, nhân viên vẫn pha, nhưng ly cà phê không còn ổn định." Crema mỏng, vị đắng gắt, hương nhạt — khách tinh tế rời đi âm thầm mà chủ quán không hay.</p>
+    </div>
+    <div class="pain-card">
+      <h4>😩 Không biết bảo trì — chỉ sửa khi hỏng</h4>
+      <p>Đa số chủ quán không có lịch bảo trì. Máy chạy đến khi hỏng mới gọi thợ. Chi phí đại tu (800K–4,9tr) đắt gấp 3–10 lần bảo trì định kỳ (350K–400K).</p>
+    </div>
+    <div class="pain-card">
+      <h4>😡 Chờ đợi quá lâu</h4>
+      <p>Gọi thợ phải chờ 1–3 ngày. Linh kiện đặt thêm 3–7 ngày. Suốt thời gian đó quán phải bán cà phê "thay thế" hoặc đóng mảng espresso — mất uy tín.</p>
+    </div>
+    <div class="pain-card">
+      <h4>😰 Nước cứng phá máy mà không biết</h4>
+      <p>Nước TP.HCM có hàm lượng khoáng cao. Cặn vôi tích tụ trong boiler, đường ống, van solenoid — gây tắc, rỉ sét, giảm áp. Nhiều chủ quán không lắp bộ lọc nước.</p>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <p><strong>Thống kê đáng chú ý:</strong> Chi phí bảo trì định kỳ máy pha thương mại chỉ <strong>350.000–400.000đ/lần</strong> (mỗi 6 tháng). Trong khi chi phí sửa chữa khi hỏng nặng: <strong>800.000–4.900.000đ</strong> — đắt gấp 3–12 lần. "Bảo trì giống như thay nhớt xe — bỏ qua thì khi hỏng, chi phí sẽ rất lớn."</p>
+  </div>
+</div>
+
+<!-- ===== 3. LỖI MÁY ===== -->
+<div class="sec">
+  <div class="sec-head">
+    <div class="sec-icon i-copper">🔧</div>
+    <h2>3. Top 10 lỗi máy pha cà phê thường gặp</h2>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Lỗi</th><th>Dấu hiệu</th><th>Nguyên nhân</th><th class="num">Chi phí sửa</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>Cà phê chảy quá nhanh</strong></td><td>Nước chảy ào, không crema</td><td>Nén lỏng, cà phê xay thô, head group mòn</td><td class="num">300–500K</td></tr>
+        <tr><td>2</td><td><strong>Cà phê nhỏ giọt / không chảy</strong></td><td>Nước ra rất chậm hoặc tắc</td><td>Xay quá mịn, tắc van solenoid, cặn vôi</td><td class="num">400–600K</td></tr>
+        <tr><td>3</td><td><strong>Vòi nước ra ít / không ra</strong></td><td>Mở vòi nhưng nước rỉ rả</td><td>Dầu cà phê bám đầu group, cặn khoáng, bơm yếu</td><td class="num">300–600K</td></tr>
+        <tr><td>4</td><td><strong>Nước không đủ nóng</strong></td><td>Cà phê ra nhạt, chiết xuất kém</td><td>Áp suất hơi < 0.8 bar, thanh nhiệt hỏng, rơ-le lỗi</td><td class="num">300–600K</td></tr>
+        <tr><td>5</td><td><strong>Cần đánh sữa yếu / tắc</strong></td><td>Hơi yếu, sữa không nổi bọt</td><td>Sữa bám tắc lỗ, van hơi hỏng, thanh nhiệt yếu</td><td class="num">400–800K</td></tr>
+        <tr><td>6</td><td><strong>Rò rỉ nước</strong></td><td>Nước chảy ra từ group head</td><td>Gioăng cao su chai cứng, nứt, cặn bám</td><td class="num">100–200K</td></tr>
+        <tr><td>7</td><td><strong>Máy nóng chậm</strong></td><td>Bật 20–30 phút vẫn chưa sẵn sàng</td><td>Điện yếu, thanh nhiệt cháy, rơ-le áp suất lỗi</td><td class="num">300–600K</td></tr>
+        <tr><td>8</td><td><strong>Máy không bật được</strong></td><td>Nhấn công tắc không phản hồi</td><td>Tiếp điện kém, dây bị chuột cắn, bo mạch cháy</td><td class="num">300K–1,6tr</td></tr>
+        <tr><td>9</td><td><strong>Bơm kêu ồn</strong></td><td>Tiếng ồn lớn bất thường</td><td>Hết nước, bơm mòn hoặc hỏng</td><td class="num">600K–1,5tr</td></tr>
+        <tr><td>10</td><td><strong>Đèn nhấp nháy, không pha được</strong></td><td>Máy báo lỗi liên tục</td><td>Van nước đóng, ống nước gập, bo mạch lỗi</td><td class="num">300K–1,6tr</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Lịch bảo trì khuyến nghị</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Tần suất</th><th>Hạng mục</th><th>Ai làm</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Hàng ngày</strong></td><td>Vệ sinh portafilter, group head, cần đánh sữa (xả ngay sau dùng)</td><td>Barista</td></tr>
+          <tr><td><strong>Hàng tuần</strong></td><td>Backflush với bột vệ sinh chuyên dụng, vệ sinh khay chứa</td><td>Barista</td></tr>
+          <tr><td><strong>Hàng tháng</strong></td><td>Kiểm tra áp suất, xả cặn boiler, vệ sinh bộ lọc nước</td><td>Quản lý</td></tr>
+          <tr><td><strong>3 tháng</strong></td><td>Thay bộ lọc nước, kiểm tra gioăng, descale nhẹ</td><td>Quản lý / KTV</td></tr>
+          <tr><td><strong>6 tháng</strong></td><td>Bảo dưỡng toàn diện: descale, kiểm tra thanh nhiệt, rơ-le, bơm, calibrate áp suất & nhiệt độ</td><td>KTV chuyên nghiệp</td></tr>
+          <tr><td><strong>12 tháng</strong></td><td>Thay gioăng, kiểm tra bo mạch, thay lưỡi xay (nếu có máy xay tích hợp)</td><td>KTV chuyên nghiệp</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 4. Ý TƯỞNG CONTENT ===== -->
+<div class="sec">
+  <div class="sec-head">
+    <div class="sec-icon i-green">💡</div>
+    <h2>4. Kho ý tưởng content Facebook (50+ bài)</h2>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h3>Chiến lược 4 trụ cột</h3>
+    <p>Mỗi trụ cột phục vụ 1 mục đích trong phễu chuyển đổi: <strong>Thu hút → Giáo dục → Tin tưởng → Chuyển đổi</strong></p>
+  </div>
+
+  <!-- Trụ 1 -->
+  <div class="idea-grid">
+    <div class="idea-card">
+      <div class="pillar" style="color:var(--blue)">Trụ 1 · Tips bảo trì (2 bài/tuần)</div>
+      <h4>Mục đích: Thu hút + Giáo dục</h4>
+      <ul style="font-size:13px;color:var(--text-2);padding-left:16px">
+        <li>"3 thứ phải vệ sinh MỖI NGÀY nếu muốn máy pha sống thọ"</li>
+        <li>"Nước TP.HCM đang GIẾT máy pha của bạn — đây là cách chặn"</li>
+        <li>"Cần đánh sữa tắc hoài? Chỉ vì bạn quên 1 bước này"</li>
+        <li>"Tại sao espresso ngon tuần đầu, dở tuần sau? Lỗi không phải cà phê"</li>
+        <li>"Sai lầm #1 chủ quán mắc phải: backflush là gì? Bao lâu làm 1 lần?"</li>
+        <li>"Checklist bảo trì máy pha — in ra dán bếp luôn (FREE)"</li>
+        <li>"5 dấu hiệu máy pha đang kêu cứu mà bạn không nhận ra"</li>
+        <li>"Descale là gì? Bao lâu 1 lần? Dùng giấm được không?"</li>
+        <li>"Bộ lọc nước cho máy pha: loại nào tốt, bao lâu thay?"</li>
+        <li>"Video 60s: Cách vệ sinh portafilter đúng chuẩn barista"</li>
+      </ul>
+    </div>
+
+    <div class="idea-card">
+      <div class="pillar" style="color:var(--copper)">Trụ 2 · Before/After sửa máy (2 bài/tuần)</div>
+      <h4>Mục đích: Social proof + Tin tưởng</h4>
+      <ul style="font-size:13px;color:var(--text-2);padding-left:16px">
+        <li>"Máy Breville 870 — tắc group head, crema biến mất. 45 phút sau…"</li>
+        <li>"Chủ quán Q.1 gọi lúc 8h sáng, máy rò nước. KTV có mặt lúc 9h30"</li>
+        <li>"Bên trong boiler máy pha 2 năm KHÔNG descale — cặn vôi dày 3mm"</li>
+        <li>"DeLonghi Magnifica — bơm kêu như máy khoan. Thay bơm 45 phút, chạy êm ru"</li>
+        <li>"Saeco Lirika: đèn nhấp nháy không pha được. Lỗi bo mạch — sửa xong chạy lại bình thường"</li>
+        <li>"Tiết kiệm cho khách 3 triệu: chỉ cần thay gioăng 150K, không cần thay cả group head"</li>
+        <li>"La Marzocco Linea Mini — cần đánh sữa yếu. Tháo ra thấy… (ảnh cận cảnh)"</li>
+        <li>"Expobar — 3 năm không bảo trì. Mở ra thấy gì? (video)"</li>
+      </ul>
+    </div>
+
+    <div class="idea-card">
+      <div class="pillar" style="color:var(--green)">Trụ 3 · Kiến thức máy pha (1 bài/tuần)</div>
+      <h4>Mục đích: Giáo dục + Authority</h4>
+      <ul style="font-size:13px;color:var(--text-2);padding-left:16px">
+        <li>"So sánh máy pha cho quán nhỏ: Breville vs DeLonghi vs Saeco — nên chọn hãng nào?"</li>
+        <li>"Máy pha 1 group vs 2 group — quán bán bao nhiêu ly/ngày thì cần nâng cấp?"</li>
+        <li>"Mua máy pha cũ: 5 điểm PHẢI kiểm tra trước khi chuyển tiền"</li>
+        <li>"Giải mã áp suất: 9 bar, 15 bar, 20 bar — con số nào mới quan trọng?"</li>
+        <li>"Vì sao máy pha 50 triệu cũng pha dở nếu thiếu thứ này?" (bộ lọc nước)</li>
+        <li>"Máy pha tự động vs bán tự động — ưu nhược cho quán cà phê?"</li>
+        <li>"Tuổi thọ thực sự của máy pha espresso: bao nhiêu năm? phụ thuộc vào gì?"</li>
+        <li>"Grinder (máy xay) quan trọng hơn máy pha? Sự thật KTV không nói"</li>
+      </ul>
+    </div>
+
+    <div class="idea-card">
+      <div class="pillar" style="color:var(--red)">Trụ 4 · Upsell GU169 + Dịch vụ (1 bài/tuần)</div>
+      <h4>Mục đích: Chuyển đổi</h4>
+      <ul style="font-size:13px;color:var(--text-2);padding-left:16px">
+        <li>"Sửa máy xong — KTV pha thử GU169 tại quán. Chủ quán nói: 'Ngon hơn hạt đang dùng!'"</li>
+        <li>"Máy pha chuẩn rồi, nhưng cà phê vẫn dở? Có thể lỗi ở HẠT"</li>
+        <li>"500g cà phê GU169 miễn phí — tặng sau mỗi lần sửa máy"</li>
+        <li>"Combo sửa máy + 5kg GU169 = giảm ngay 20% — vì chuẩn máy thì phải chuẩn vị"</li>
+        <li>"Tại sao Pha Chuẩn tặng cà phê miễn phí? Vì chúng tôi tin bạn sẽ quay lại"</li>
+        <li>"Review GU169 từ 5 quán cà phê đã dùng thử sau khi sửa máy"</li>
+        <li>"Bảng giá sửa máy pha Pha Chuẩn — minh bạch, không phát sinh" (bài bán hàng)</li>
+        <li>"Gói An Tâm 800K/tháng — bảo trì định kỳ, ưu tiên sửa gấp, tặng cà phê"</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="highlight" style="margin-top:16px">
+    <p><strong>Chiến thuật nội dung "đánh đau":</strong> Mỗi bài Tips hoặc Kiến thức nên kết thúc bằng CTA nhẹ: "Máy quán bạn lâu rồi chưa bảo trì? Inbox Pha Chuẩn — kiểm tra miễn phí, chỉ từ 300K." Không bán hàng trực tiếp ở trụ 1 & 3, chỉ gợi nhớ.</p>
+  </div>
+</div>
+
+<!-- ===== 5. FORMAT CONTENT ===== -->
+<div class="sec">
+  <div class="sec-head">
+    <div class="sec-icon i-purple">🎬</div>
+    <h2>5. Format content hiệu quả nhất</h2>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Format</th><th>Trụ cột</th><th>Mô tả</th><th>Engagement dự kiến</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Video ngắn 30–60s</strong></td><td><span class="tag tag-blue">Tips</span></td><td>KTV hướng dẫn 1 thao tác bảo trì. Quay tại quán thật, góc cận tay làm.</td><td>Cao nhất — Facebook ưu tiên video</td></tr>
+        <tr><td><strong>Ảnh Before/After (carousel)</strong></td><td><span class="tag tag-copper">B/A</span></td><td>2–4 ảnh: hỏng → đang sửa → xong → pha thử. Caption kể câu chuyện ngắn.</td><td>Cao — visual impact mạnh</td></tr>
+        <tr><td><strong>Infographic</strong></td><td><span class="tag tag-green">Kiến thức</span></td><td>So sánh hãng máy, checklist bảo trì, bảng giá minh bạch. Dễ save & share.</td><td>Trung bình — nhưng share cao</td></tr>
+        <tr><td><strong>Reel / Video dọc</strong></td><td><span class="tag tag-copper">B/A</span><span class="tag tag-blue">Tips</span></td><td>Quay dọc cho Reels. "Máy pha 3 năm không bảo trì — mở ra thấy gì?" Hook mạnh.</td><td>Cao — reach organic tốt</td></tr>
+        <tr><td><strong>Text + 1 ảnh</strong></td><td><span class="tag tag-red">Upsell</span></td><td>Caption dài, kể chuyện KTV đến sửa + pha thử GU169 + reaction khách.</td><td>Trung bình</td></tr>
+        <tr><td><strong>Poll / Question</strong></td><td><span class="tag tag-blue">Tips</span></td><td>"Bao lâu bạn bảo trì máy pha 1 lần?" → 1 tháng / 6 tháng / chưa bao giờ / máy gì?</td><td>Cao — tương tác 2 chiều</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== 6. LỊCH ĐĂNG ===== -->
+<div class="sec">
+  <div class="sec-head">
+    <div class="sec-icon i-copper">📅</div>
+    <h2>6. Lịch đăng bài mẫu — Tuần 1</h2>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Thứ</th><th>Giờ</th><th>Trụ</th><th>Bài</th><th>Format</th></tr></thead>
+      <tbody>
+        <tr><td><strong>T2</strong></td><td>7:30</td><td><span class="tag tag-blue">Tips</span></td><td>"3 thứ phải vệ sinh MỖI NGÀY nếu muốn máy pha sống thọ"</td><td>Video 45s</td></tr>
+        <tr><td><strong>T3</strong></td><td>11:30</td><td><span class="tag tag-copper">B/A</span></td><td>"Breville 870 — tắc group head. 45 phút sau…" (before/after)</td><td>Carousel 4 ảnh</td></tr>
+        <tr><td><strong>T4</strong></td><td>7:30</td><td><span class="tag tag-blue">Tips</span></td><td>"Cần đánh sữa tắc hoài? Chỉ vì bạn quên 1 bước này"</td><td>Video 30s</td></tr>
+        <tr><td><strong>T5</strong></td><td>11:30</td><td><span class="tag tag-copper">B/A</span></td><td>"Bên trong boiler 2 năm KHÔNG descale — cặn vôi 3mm"</td><td>Reel dọc</td></tr>
+        <tr><td><strong>T6</strong></td><td>7:30</td><td><span class="tag tag-green">Kiến thức</span></td><td>"Breville vs DeLonghi vs Saeco — nên chọn máy nào cho quán nhỏ?"</td><td>Infographic</td></tr>
+        <tr><td><strong>T7</strong></td><td>9:00</td><td><span class="tag tag-red">Upsell</span></td><td>"KTV pha thử GU169 tại quán — chủ quán: 'Ngon hơn hạt đang dùng!'"</td><td>Text + ảnh</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Khung giờ đăng tối ưu cho chủ quán cà phê</h3>
+    <ul>
+      <li><strong>7:00–8:00 sáng:</strong> Chủ quán mở quán, check điện thoại trước khi bận → tips bảo trì, kiến thức</li>
+      <li><strong>11:00–12:00 trưa:</strong> Giờ nghỉ trưa, lướt Facebook → before/after, story, upsell</li>
+      <li><strong>20:00–21:00 tối:</strong> Đóng quán, ngồi xem Facebook → bài dài, so sánh, review</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 7. CTA & HASHTAG ===== -->
+<div class="sec">
+  <div class="sec-head">
+    <div class="sec-icon i-green">🏷️</div>
+    <h2>7. CTA & Hashtag chuẩn</h2>
+  </div>
+
+  <div class="card">
+    <h3>Bộ CTA theo mức độ</h3>
+    <ul>
+      <li><strong>CTA nhẹ (trụ 1, 3):</strong> "Máy quán bạn lâu rồi chưa bảo trì? Comment 'CHECK' — Pha Chuẩn tư vấn miễn phí."</li>
+      <li><strong>CTA vừa (trụ 2):</strong> "Máy bạn đang gặp lỗi tương tự? Inbox ngay — KTV có mặt trong 24h, chỉ từ 300K."</li>
+      <li><strong>CTA mạnh (trụ 4):</strong> "Đặt lịch sửa máy ngay: inbox hoặc gọi [SĐT]. Sửa xong tặng 500g cà phê GU169 dùng thử miễn phí!"</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Bộ Hashtag</h3>
+    <p style="font-size:13px;color:var(--text-2);line-height:2">
+      <span class="tag tag-copper">#PhaChuẩn</span>
+      <span class="tag tag-copper">#ChuẩnMáyChuẩnVị</span>
+      <span class="tag tag-green">#SửaMáyPhaCàPhê</span>
+      <span class="tag tag-green">#SửaMáyPha</span>
+      <span class="tag tag-blue">#BảoTrìMáyPha</span>
+      <span class="tag tag-blue">#MáyPhaEspresso</span>
+      <span class="tag tag-blue">#TipsBảoTrìMáyPha</span>
+      <span class="tag tag-blue">#MáyPhaCàPhê</span>
+      <span class="tag tag-copper">#VốiCoffee</span>
+      <span class="tag tag-copper">#GU169</span>
+      <span class="tag tag-green">#QuánCàPhê</span>
+      <span class="tag tag-green">#CàPhêTPHCM</span>
+      <span class="tag tag-blue">#Barista</span>
+      <span class="tag tag-blue">#EspressoMachine</span>
+    </p>
+  </div>
+</div>
+
+<div class="footer">
+  <strong>Pha Chuẩn — by Vối Coffee</strong> · Nghiên cứu nội dung Facebook · 09/2026
+</div>
+
+</div>
+</body>
+</html>

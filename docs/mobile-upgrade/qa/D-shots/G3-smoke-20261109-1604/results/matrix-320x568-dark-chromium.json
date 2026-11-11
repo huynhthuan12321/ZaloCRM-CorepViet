@@ -1,0 +1,125 @@
+{
+  "viewport": "320x568",
+  "theme": "dark",
+  "browserName": "chromium",
+  "touch": {
+    "coarse": true,
+    "hoverNone": true
+  },
+  "issues": [
+    {
+      "screen": "nhachen-editor",
+      "kind": "touch<44",
+      "detail": [
+        {
+          "sel": "button.close[Đóng (Esc)]",
+          "w": 32,
+          "h": 32
+        },
+        {
+          "sel": "button.type-chip.active[Gọi điện]",
+          "w": 141.5,
+          "h": 42
+        },
+        {
+          "sel": "button.type-chip[Nhắn tin]",
+          "w": 141.5,
+          "h": 42
+        },
+        {
+          "sel": "button.type-chip[Gặp mặt]",
+          "w": 141.5,
+          "h": 42
+        },
+        {
+          "sel": "button.type-chip[Theo dõi]",
+          "w": 141.5,
+          "h": 42
+        },
+        {
+          "sel": "input.title-input",
+          "w": 228,
+          "h": 26
+        },
+        {
+          "sel": "button.remove[Bỏ link KH]",
+          "w": 24,
+          "h": 24
+        },
+        {
+          "sel": "select.sale-select[— Chưa gán —QA Quản trị ]",
+          "w": 98.2,
+          "h": 40
+        }
+      ]
+    },
+    {
+      "screen": "nhachen-editor",
+      "kind": "input<16px",
+      "detail": [
+        {
+          "sel": "select.sale-select[— Chưa gán —QA Quản trị ]",
+          "fontSize": 13.5
+        },
+        {
+          "sel": "input.location-input",
+          "fontSize": 14
+        },
+        {
+          "sel": "textarea.notes-area",
+          "fontSize": 13.5
+        }
+      ]
+    },
+    {
+      "screen": "nhachen-editor",
+      "kind": "contrast-thấp",
+      "detail": [
+        {
+          "sel": "h2.",
+          "text": "Tạo nhắc hẹn",
+          "ratio": 2.08,
+          "fg": "rgb(11, 88, 128)",
+          "bg": "rgb(24,34,45)"
+        },
+        {
+          "sel": "span.av",
+          "text": "GA",
+          "ratio": 2.25,
+          "fg": "rgb(255, 255, 255)",
+          "bg": "rgb(217,164,65)"
+        },
+        {
+          "sel": "span.name",
+          "text": "Khách Giả A",
+          "ratio": 1.02,
+          "fg": "rgb(231, 238, 245)",
+          "bg": "rgb(228,241,248)"
+        }
+      ]
+    },
+    {
+      "screen": "tongquan-pham-vi",
+      "kind": "không-dựng-được",
+      "detail": "locator.boundingBox: Test ended."
+    },
+    {
+      "screen": "caidat-1",
+      "kind": "không-dựng-được",
+      "detail": "page.goto: Target page, context or browser has been closed"
+    },
+    {
+      "screen": "caidat-2-taikhoan",
+      "kind": "không-dựng-được",
+      "detail": "page.goto: Target page, context or browser has been closed"
+    },
+    {
+      "screen": "caidat-2-tochuc",
+      "kind": "không-dựng-được",
+      "detail": "page.goto: Target page, context or browser has been closed"
+    }
+  ],
+  "pageErrors": [
+    "console.error: TypeError: Cannot read properties of undefined (reading 'filter')\n    at un.fn (http://localhost:4176/assets/DashboardView-DnCYomK6.js:1:54392)\n    at He (http://localhost:4176/assets/runtime-core.esm-bundler-VZGyXo76.js:1:6575)\n    at get value (http://localhost:4176/assets/runtime-core.esm-bundler-VZGyXo76.js:1:18480)\n    at http://localhost:4176/assets/DashboardView-DnCYomK6.js:1:55184\n    at r (http://localhost:4176/assets/runtime-core.esm-bundler-VZGyXo76.js:1:22326)\n    at ni (http://localhost:4176/assets/runtime-core.esm-bundler-VZGyXo76.js:1:33879)\n    at http://localhost:4176/assets/MobileSheet-D87fbWiJ.js:1:1554\n    at Object.r [as default] (http://localhost:4176/assets/runtime-core.esm-bundler-VZGyXo76.js:1:22326)\n    at default (http://localhost:4176/assets/index-JMJSHqNx.js:5:85769)\n    at http://localhost:4176/assets/runtime-core.esm-bundler-VZGyXo76.js:1:45891"
+  ]
+}

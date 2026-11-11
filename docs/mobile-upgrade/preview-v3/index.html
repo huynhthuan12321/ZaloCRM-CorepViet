@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light only">
+  <meta name="theme-color" content="#f7f9fc">
+  <title>Cờ Rếp Việt · iPhone Preview V3</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body class="crm-mobile">
+<div id="app">
+  <p>Đang mở prototype… Cần Vue runtime local. Chạy node server.cjs theo README.</p>
+</div>
+<!-- All interface fixtures below are fictional. Preview-only Vue template. -->
+<script type="text/x-template" id="preview-template">
+  <div class="workbench" :class="{capture}">
+    <aside class="review-panel" aria-label="Điều khiển bản thiết kế">
+      <span class="eyebrow">CỜ RẾP VIỆT · PREVIEW V3</span>
+      <h1>Đúng khách.<br>Đúng nick.</h1>
+      <p class="meta">Bản thiết kế cho sale · dữ liệu giả hoàn toàn. Không kết nối CRM.</p>
+      <label for="screen-choice">Màn hình</label>
+      <select id="screen-choice" name="screen-choice" :value="screen" @change="go($event.target.value)"><option v-for="s in screens" :key="s[0]" :value="s[0]">{{s[2]}}</option></select>
+      <label for="state-choice">Trạng thái minh họa</label>
+      <select id="state-choice" name="state-choice" v-model="state"><option value="ready">Có dữ liệu</option><option value="loading">Đang tải · skeleton</option><option value="empty">Rỗng</option><option value="error">Lỗi + thử lại</option><option value="offline">Mất mạng</option></select>
+      <label for="theme-choice">Giao diện</label><select id="theme-choice" name="theme-choice" v-model="themeMode"><option value="light">Sáng</option><option value="dark">Tối</option><option value="system">Theo máy</option></select>
+      <label for="width-choice">Khung CSS px</label>
+      <select id="width-choice" name="width-choice" v-model="width"><option :value="320">320 × 844</option><option :value="390">390 × 844</option><option :value="430">430 × 844</option></select>
+      <button v-if="isChat" class="secondary full" style="margin-top:16px" :aria-pressed="keyboard" @click="keyboard=!keyboard">{{keyboard?'Đóng':'Mở'}} bàn phím mô phỏng</button>
+      <template v-if="isChat"><label for="ai-state-choice">Trạng thái sheet AI</label><select id="ai-state-choice" name="ai-state-choice" v-model="aiState"><option value="ready">Có gợi ý</option><option value="loading">Đang tạo</option><option value="error">Lỗi + thử lại</option></select></template>
+      <div class="review-links"><a v-for="s in screens" :key="s[0]" class="control" :href="'?screen='+s[0]" :aria-current="screen===s[0]?'page':undefined" @click.prevent="go(s[0])">{{s[2]}}</a></div>
+      <p class="meta" style="margin-top:20px">Chỉ xem trên trình duyệt desktop.<br>Chưa thử Safari iPhone / Home Screen.</p>
+    </aside>
+    <article class="phone" :class="'screen-'+screen" :style="{'--m-device-width':width+'px','--m-device-height':height+'px'}" aria-label="Khung xem trước iPhone">
+      <a class="skip" href="#main-content">Đến nội dung chính</a>
+      <div class="device-status" aria-hidden="true"><span>9:41</span><span class="notch"></span><span class="device-icons"><Icon name="signal"/><Icon name="wifi"/><Icon name="battery"/></span></div>
+      <div class="shell">
+        <header v-if="isChat" class="thread-head">
+          <a class="control" href="?screen=inbox" aria-label="Quay lại hội thoại" @click.prevent="go('inbox')"><Icon name="back"/></a>
+          <div class="thread-title"><h1>{{person.name}}</h1><p class="meta">{{person.channel}} · {{person.nick}}<br>Phụ trách: {{person.owner}}</p></div>
+          <a class="control secondary" href="?screen=profile" @click.prevent="go('profile')">Hồ sơ</a>
+        </header>
+        <header v-else-if="screen==='profile'" class="page-head"><div class="head-row"><button aria-label="Quay lại từ hồ sơ" @click="profileBack"><Icon name="back"/></button><h1 style="font-size:24px">Hồ sơ khách</h1><button aria-label="Thao tác hồ sơ" @click="openSheet('profile-actions')"><Icon name="more"/></button></div></header>
+        <header v-else class="page-head"><div class="head-row"><h1>{{title}}</h1><button v-if="screen==='agenda'" aria-label="Tạo lịch hẹn" @click="openSheet('appointment')"><Icon name="plus"/></button><span v-else class="avatar" aria-label="Nhân viên mẫu Hạ Vy">HV</span></div><p class="meta"><span class="brand-mark"></span>{{screen==='overview'?'Thứ Bảy, 07/11 · Việc của Hạ Vy':screen==='inbox'?'3 nick · Phạm vi được phân công':screen==='contacts'?'Khách trong phạm vi của bạn':screen==='agenda'?'Agenda · Giờ Việt Nam':'Hạ Vy · Nhân viên sale mẫu'}}</p></header>
+        <div v-if="state==='offline'" class="banner" role="status"><strong>Mất mạng</strong> · Đang xem dữ liệu mẫu đã có.<template v-if="isChat"> Bạn có thể soạn nháp, chưa thể gửi.</template><template v-else> Kết nối lại rồi thử tải.</template></div>
+        <div v-if="screen==='inbox'" class="tools">
+          <label class="search"><Icon name="search"/><input name="inbox-search" autocomplete="off" type="search" aria-label="Tìm hội thoại theo tên, số hoặc tin nhắn" placeholder="Tên, số hoặc tin nhắn…" v-model="search"></label>
+          <div class="chips" aria-label="Lọc hội thoại"><button class="chip" :class="{selected:unreplied}" :aria-pressed="unreplied" @click="unreplied=!unreplied">Chưa trả lời</button><button class="chip" :class="{selected:mine}" :aria-pressed="mine" @click="mine=!mine">Của tôi</button><button class="chip" :class="{selected:nick!=='all'}" @click="openSheet('inbox-filter')">{{nick==='all'?'Theo nick':nick}} ↓</button><button class="chip" :class="{selected:channel!=='all'}" @click="openSheet('inbox-filter')">{{channel==='all'?'Zalo · TikTok':channel}} ↓</button></div>
+        </div>
+        <div v-if="screen==='contacts'" class="tools"><label class="search"><Icon name="search"/><input name="contact-search" autocomplete="off" type="search" aria-label="Tìm khách hàng" placeholder="Tên hoặc số điện thoại…" v-model="contactSearch"></label><div class="head-row" style="margin-top:8px"><span class="meta">{{contacts.length}} khách mẫu</span><button class="secondary" @click="openSheet('contact-filter')"><Icon name="filter"/>Bộ lọc{{contactStatus==='all'?'':' · 1'}}</button></div></div>
+        <main v-if="!isChat" id="main-content" tabindex="-1" ref="mainScroll" class="scroll">
+          <FeedbackState v-if="['overview','inbox','contacts'].includes(screen)&&viewState!=='ready'" :state="viewState" :kind="kind" @retry="state='ready'" @clear="reset"/>
+          <template v-else-if="screen==='overview'">
+            <section class="section"><div class="section-title"><h2>Đang chờ trả lời</h2><span class="tag">3 khách</span></div><div class="priority"><div class="head-row"><strong class="priority-number">3</strong><span class="meta">Trên 3 nick<br>2 khách của bạn</span></div><p>Mai An đang chờ thông tin bố trí quầy.</p><a class="control primary full" href="?screen=inbox" @click.prevent="go('inbox');unreplied=true">Mở hàng chờ trả lời <Icon name="arrow"/></a></div><ConversationRows :items="waiting.slice(0,1)" @select="go('thread',$event)"/></section>
+            <section class="section"><div class="section-title"><h2>Lịch hẹn hôm nay</h2><a class="control" href="?screen=agenda" @click.prevent="go('agenda')">Xem lịch</a></div><div class="card"><div class="appointment"><time>14:00</time><div class="agenda-body"><h3>Tư vấn bố trí quầy</h3><p>Mai An · Gọi điện · 30 phút</p><span class="tag">Đã lên lịch</span></div></div></div></section>
+            <section><h2>Nhịp chăm sóc</h2><div class="kpi-line"><p class="meta"><strong>24</strong>Khách của tôi</p><p class="meta"><strong>4</strong>Đang theo dõi</p><p class="meta"><strong>2</strong>Chốt tháng</p></div></section>
+          </template>
+          <template v-else-if="screen==='inbox'"><div class="section-title"><h2>{{unreplied?'Chờ phản hồi':'Tất cả hội thoại'}}</h2><span class="meta">{{filtered.length}} kết quả</span></div><ConversationRows v-if="filtered.length" :items="filtered" @select="go('thread',$event)"/><FeedbackState v-else state="empty" kind="hội thoại" @clear="reset"/></template>
+          <template v-else-if="screen==='contacts'"><div v-if="contacts.length" class="customer-stack"><a v-for="p in contacts" :key="p.id" class="control contact-card" :href="'?screen=profile&conv='+p.id" @click.prevent="go('profile',p.id)"><div class="contact-top"><span class="avatar">{{p.initials}}</span><span><h2>{{p.name}}</h2><p>{{p.phone}} · Số giả</p></span></div><span class="tag" :class="{warn:p.status==='Quan tâm'}">{{p.status}}</span><p>{{p.channel}} · {{p.nick}}<br>Phụ trách: {{p.owner}}</p><span class="meta">{{p.notes}}</span></a></div><FeedbackState v-else state="empty" kind="khách hàng" @clear="reset"/></template>
+          <template v-else-if="screen==='profile'">
+            <section class="section"><div class="profile-identity"><span class="avatar">{{person.initials}}</span><div><h1 style="font-size:24px">{{person.name}}</h1><p class="meta">{{person.channel}} · {{person.nick}}<br>Phụ trách: {{person.owner}}</p></div></div><span class="tag warn">{{person.status}}</span> <span class="tag">Quầy nhỏ</span><div class="actions"><a class="control primary" :href="'?screen=thread&conv='+person.id" @click.prevent="profileChat"><Icon name="chat"/>Nhắn tin</a><button class="secondary" @click="appointmentForm.contactId=person.contactId;openSheet('appointment')"><Icon name="calendar"/>Đặt lịch</button></div></section>
+            <section class="section"><h2 style="margin-bottom:12px">Thông tin</h2><ProfileInfo :person="person"/></section>
+            <section class="section"><div class="section-title"><h2>Ghi chú</h2><button class="secondary" @click="openSheet('note')">Sửa</button></div><div class="card">{{person.notes}}</div></section>
+            <section><h2 style="margin-bottom:12px">Timeline</h2><div class="timeline"><p><strong>Nhận tin nhắn từ {{person.name}}</strong><span class="meta">10:42 · {{person.nick}} · {{person.owner}}</span></p><p>Gửi tài liệu bố trí quầy<span class="meta">10:41 · {{person.nick}} · {{person.owner}}</span></p><p>Thêm ghi chú nhu cầu<span class="meta">09:20 · {{person.owner}}</span></p></div></section>
+          </template>
+          <template v-else-if="screen==='agenda'">
+            <div class="head-row section"><button aria-label="Ngày trước" @click="dayOffset--"><Icon name="back"/></button><div style="text-align:center"><h2>{{dayOffset===0?'Hôm nay':dayOffset===1?'Ngày mai':dayOffset===-1?'Hôm qua':'Lịch theo ngày'}}</h2><p class="meta">{{dayLabel}}</p></div><button aria-label="Ngày sau" @click="dayOffset++"><Icon name="arrow"/></button></div>
+            <div class="section-title"><h2>{{dailyAppointments.length}} lịch hẹn</h2><button class="secondary" @click="dayOffset=0">Hôm nay</button></div>
+            <div v-if="dailyAppointments.length" class="card"><div v-for="a in dailyAppointments" :key="a.id" class="appointment"><time>{{a.time}}</time><div class="agenda-body"><h3>{{a.title}}</h3><p>{{appointmentPerson(a).name}} · {{types[a.type]}}<br>{{a.duration}} phút · {{a.owner}}</p><span class="tag">{{a.status}}</span><div class="actions"><a class="control" :href="'?screen=profile&conv='+appointmentPerson(a).id" @click.prevent="go('profile',appointmentPerson(a).id)">Hồ sơ</a><button @click="a.status=a.status==='Hoàn thành'?'Đã lên lịch':'Hoàn thành';inform('Đã đổi trạng thái mô phỏng')">{{a.status==='Hoàn thành'?'Mở lại':'Hoàn thành'}}</button></div></div></div></div><div v-else class="state"><Icon name="calendar"/><h2>Chưa có lịch hẹn</h2><p>Chọn ngày khác hoặc tạo lịch cho khách.</p><button class="primary" @click="openSheet('appointment')">Tạo lịch hẹn</button></div>
+          </template>
+          <template v-else-if="screen==='more'">
+            <div class="profile-identity section"><span class="avatar">HV</span><div><h2>Hạ Vy</h2><p class="meta">Nhân viên sale · Cờ Rếp Việt · dữ liệu mẫu</p></div></div>
+            <section class="section"><h2 class="group-title">Giao diện</h2><div class="theme-switch" role="radiogroup" aria-label="Chọn giao diện"><button v-for="m in [['light','sun','Sáng'],['dark','moon','Tối'],['system','phone','Theo máy']]" :key="m[0]" role="radio" :aria-checked="themeMode===m[0]" :class="{on:themeMode===m[0]}" @click="themeMode=m[0]"><Icon :name="m[1]"/><span>{{m[2]}}</span></button></div><p class="meta" style="margin-top:8px">Theo máy: tự đổi theo chế độ Sáng/Tối của iPhone.</p></section>
+            <section class="section"><h2 class="group-title">Tài khoản</h2><div class="row-list"><button v-for="item in [['user','Thông tin cá nhân'],['settings','Đổi mật khẩu'],['info','Thông báo']]" :key="item[1]" class="menu" @click="inform(item[1]+' · Điểm điều hướng minh họa')"><Icon :name="item[0]"/><span>{{item[1]}}</span><Icon name="arrow"/></button></div></section>
+            <section class="section"><h2 class="group-title">Công việc</h2><div class="row-list"><button v-for="item in [['chat','Nick Zalo / TikTok'],['file','Kho media'],['calendar','Báo cáo'],['settings','Cài đặt tổ chức']]" :key="item[1]" class="menu" @click="inform(item[1]+' · Điểm điều hướng minh họa')"><Icon :name="item[0]"/><span>{{item[1]}}</span><Icon name="arrow"/></button></div><p class="meta" style="margin-top:8px">Báo cáo, Cài đặt tổ chức chỉ hiện khi có quyền.</p></section>
+            <button class="secondary full" @click="openSheet('logout')"><Icon name="logout"/>Đăng xuất</button>
+          </template>
+        </main>
+        <template v-else>
+          <div v-if="person.channel==='TikTok'" class="banner">TikTok · Thử nghiệm. Thao tác phụ thuộc capability của nick.</div>
+          <main id="main-content" tabindex="-1" class="scroll thread-messages" ref="threadScroll"><FeedbackState v-if="viewState!=='ready'" :state="viewState" kind="tin nhắn" @retry="state='ready'" @clear="state='ready'"/><template v-else><ChatBubbles :person="person" :extra="extra" @media="openSheet($event==='photo'?'media-photo':'media-file')"/><div v-if="newMessages" class="new-messages"><button @click="scrollBottom">Tin mới ↓</button></div></template></main>
+          <Composer v-model="draft" :person="person" :offline="state==='offline'" @send="send" @ai="openSheet('ai')" @attach="openSheet('attachment')"/>
+          <div v-if="keyboard" class="keyboard" aria-label="Bàn phím mô phỏng, không phải bàn phím iOS thật"><p>Bàn phím mô phỏng · Tiếng Việt</p><div v-for="(row,i) in ['QWERTYUIOP','ASDFGHJKL','ZXCVBNM']" :key="i" class="key-row" aria-hidden="true"><span v-for="k in row" :key="k" class="key">{{k}}</span></div><div class="key-row" aria-hidden="true"><span class="key wide">123</span><span class="key space">dấu cách</span><span class="key wide">xong</span></div><div class="home-zone" aria-hidden="true"></div></div>
+        </template>
+        <nav v-if="!isChat&&screen!=='profile'" class="tabbar" aria-label="Điều hướng chính"><a v-for="t in tabs" :key="t[0]" class="control" :class="{'tab-center':t[0]==='inbox'}" :href="'?screen='+t[0]" :aria-current="activeTab===t[0]?'page':undefined" @click.prevent="go(t[0])"><span v-if="t[0]==='inbox'" class="tab-fab"><Icon :name="t[1]"/><span v-if="waiting.length" class="tab-badge" :aria-label="waiting.length+' khách chờ trả lời'">{{waiting.length}}</span></span><Icon v-else :name="t[1]"/><span>{{t[2]}}</span></a></nav>
+      </div>
+      <div v-if="!keyboard" class="home-zone" aria-hidden="true"></div>
+      <p v-if="toast" class="toast" role="status" aria-live="polite">{{toast}}</p>
+      <dialog ref="dialog" aria-labelledby="sheet-title" @cancel.prevent="closeSheet">
+        <div class="sheet-head"><h2 id="sheet-title">{{({'ai':'AI gợi ý trả lời','attachment':'Gửi ảnh, video, tài liệu','inbox-filter':'Lọc hội thoại','contact-filter':'Lọc khách hàng','appointment':'Tạo lịch hẹn','logout':'Đăng xuất phiên mẫu','note':'Ghi chú khách','profile-actions':'Thao tác hồ sơ','media-photo':'Ảnh bố trí quầy mẫu','media-file':'Tài liệu minh họa'})[sheet]}}</h2><button aria-label="Đóng bảng" @click="closeSheet"><Icon name="close"/></button></div>
+        <div class="sheet-body">
+          <template v-if="sheet==='ai'">
+            <p class="meta" style="margin-bottom:20px">{{person.channel}} · {{person.nick}} · {{person.owner}}</p>
+            <p v-if="aiState==='ready'">{{suggestion}}</p><FeedbackState v-else :state="aiState" kind="gợi ý" @retry="aiState='ready'"/>
+            <div class="source"><h3>Nguồn tham khảo</h3><p class="meta">Tài liệu mẫu: Bố trí quầy nhỏ · mục 2<br>Tin nhắn nhu cầu lúc 10:42</p><button @click="inform('Nguồn bịa để minh họa; không mở tài liệu thật')">Xem nguồn mẫu <Icon name="arrow"/></button></div><p class="meta">Kiểm tra lại trước khi dùng. Áp vào nháp không gửi tin cho khách.</p>
+          </template>
+          <template v-else-if="sheet==='contact-filter'"><label class="field">Trạng thái<select name="contact-status" v-model="pendingStatus"><option value="all">Tất cả</option><option>Khách mới</option><option>Đã liên hệ</option><option>Quan tâm</option></select></label><p class="meta">Chỉ lọc khách trong phạm vi quyền hiện có.</p></template>
+          <template v-else-if="sheet==='inbox-filter'"><label class="field">Kênh<select name="channel" v-model="pendingChannel"><option value="all">Zalo & TikTok</option><option>Zalo</option><option>TikTok</option></select></label><label class="field">Nick<select name="nick" v-model="pendingNick"><option value="all">Tất cả nick được phép</option><option>CRV Tư vấn 01</option><option>CRV Cửa hàng</option><option>CRV Khám phá</option></select></label><p class="meta">TikTok là fixture thiết kế; khả dụng thực tế cần xác nhận.</p></template>
+          <form v-else-if="sheet==='appointment'" id="appointment-form" @submit.prevent="createAppointment"><label class="field">Khách hàng<select name="appointment-contact" v-model="appointmentForm.contactId"><option v-for="p in people" :key="p.contactId" :value="p.contactId">{{p.name}}</option></select></label><label class="field">Tiêu đề<input name="appointment-title" autocomplete="off" v-model="appointmentForm.title" required placeholder="Ví dụ: Trao đổi bố trí quầy…"></label><div class="actions"><label class="field">Ngày<input type="date" name="appointment-date" autocomplete="off" v-model="appointmentForm.date" required></label><label class="field">Giờ Việt Nam<input type="time" name="appointment-time" autocomplete="off" v-model="appointmentForm.time" required></label></div><div class="actions"><label class="field">Loại<select name="appointment-type" v-model="appointmentForm.type"><option v-for="(v,k) in types" :key="k" :value="k">{{v}}</option></select></label><label class="field">Phút<input name="duration" autocomplete="off" type="number" min="5" max="480" step="5" v-model="appointmentForm.duration" required></label></div><label class="field">Ghi chú<textarea name="appointment-note" autocomplete="off" v-model="appointmentForm.notes" placeholder="Nội dung cần chuẩn bị…"></textarea></label><p class="meta">Ngày đã chọn: {{formDateLabel}} · {{appointmentForm.time}} (giờ Việt Nam)<br>Phụ trách: Hạ Vy · Chỉ lưu vào bộ nhớ prototype.</p></form>
+          <template v-else-if="sheet==='attachment'"><p class="meta attach-to">Gửi tới <strong>{{person.name}}</strong> qua <strong>{{person.nick}}</strong></p><div class="attach-grid"><label class="attach-tile"><span class="attach-icon attach-photo"><Icon name="photo"/></span><span class="attach-label">Ảnh</span><span class="attach-hint">Từ thư viện · nhiều ảnh</span><input class="visually-hidden" type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" multiple @change="inform('Đã chọn ảnh · bản mẫu không tải lên');closeSheet()"></label><label class="attach-tile"><span class="attach-icon attach-camera"><Icon name="camera"/></span><span class="attach-label">Chụp ảnh</span><span class="attach-hint">Mở camera</span><input class="visually-hidden" type="file" name="camera" accept="image/*" capture="environment" @change="inform('Đã chọn chụp ảnh · bản mẫu không tải lên');closeSheet()"></label><label class="attach-tile"><span class="attach-icon attach-video"><Icon name="video"/></span><span class="attach-label">Video</span><span class="attach-hint">MP4, MOV · tối đa 500MB</span><input class="visually-hidden" type="file" name="video" accept="video/mp4,video/quicktime,video/webm" multiple @change="inform('Đã chọn video · bản mẫu không tải lên');closeSheet()"></label><label class="attach-tile"><span class="attach-icon attach-file"><Icon name="file"/></span><span class="attach-label">Tài liệu</span><span class="attach-hint">PDF, Word, Excel, PPT, ZIP</span><input class="visually-hidden" type="file" name="document" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.zip,.rar" multiple @change="inform('Đã chọn tài liệu · bản mẫu không tải lên');closeSheet()"></label><button type="button" class="attach-tile" @click="inform('Mở Kho media của dự án · bản mẫu');closeSheet()"><span class="attach-icon attach-library"><Icon name="library"/></span><span class="attach-label">Kho media</span><span class="attach-hint">Ảnh dự án, báo giá có sẵn</span></button></div><p class="meta">Ảnh và video gửi kèm chú thích là nội dung đang soạn. Prototype không đọc hay tải tệp lên.</p></template>
+          <template v-else-if="sheet==='media-photo'"><div class="sample-photo" style="height:240px"><Icon name="photo"/>Ảnh bố trí quầy mẫu</div><p class="meta">Khối minh họa media · không phải ảnh khách thật.</p></template>
+          <template v-else-if="sheet==='media-file'"><Icon name="file"/><h3>Bố trí quầy mẫu.pdf</h3><p class="meta">Tệp giả 240 KB. Không có nội dung để tải.</p></template>
+          <template v-else-if="sheet==='logout'"><p>Thoát giao diện mô phỏng? Tài khoản CRM thật không bị ảnh hưởng.</p></template>
+          <template v-else-if="sheet==='note'"><p>{{person.notes}}</p><p class="meta" style="margin-top:12px">Vị trí form sửa ghi chú. Luồng lưu và quyền sửa sẽ dùng lại form CRM khi triển khai.</p></template>
+          <template v-else-if="sheet==='profile-actions'"><p class="meta">Sửa hồ sơ, phân công và lịch sử đầy đủ đặt tại đây, theo quyền. Các form nâng cao chưa dựng trong vòng preview này.</p></template>
+        </div>
+        <div class="sheet-footer"><template v-if="sheet==='ai'"><button class="secondary" @click="closeSheet">Để sau</button><button class="primary" :disabled="aiState!=='ready'" @click="applyAI">Áp vào nháp</button></template><template v-else-if="sheet==='inbox-filter'||sheet==='contact-filter'"><button class="secondary" @click="pendingStatus='all';pendingChannel='all';pendingNick='all'">Xóa bộ lọc</button><button class="primary" @click="applyFilters">Áp dụng</button></template><button v-else-if="sheet==='appointment'" class="primary" type="submit" form="appointment-form">Tạo lịch mẫu</button><button v-else-if="sheet==='logout'" class="primary" @click="closeSheet();go('overview');inform('Đã kết thúc thao tác đăng xuất mẫu')">Xác nhận thoát mẫu</button><button v-else class="secondary" @click="closeSheet">Đóng</button></div>
+      </dialog>
+    </article>
+  </div>
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
+

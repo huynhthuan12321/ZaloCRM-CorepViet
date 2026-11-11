@@ -1,0 +1,33 @@
+{
+  "id": "/",
+  "scope": "/",
+  "name": "Cờ Rếp Việt CRM",
+  "short_name": "CRM Việt",
+  "description": "Quản lý khách hàng và công việc",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f9fc",
+  "theme_color": "#f7f9fc",
+  "orientation": "any",
+  "lang": "vi",
+  "icons": [
+    {
+      "src": "/pwa/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
