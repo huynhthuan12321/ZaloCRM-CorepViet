@@ -16,10 +16,13 @@ export function decideAutoReplySendPolicy(args: {
   draftText: string;
   sources: string[];
   sensitiveRe: RegExp;
+  fullAuto?: boolean;
 }): AiSendPolicyDecision {
-  const { customerText, draftText, sources, sensitiveRe } = args;
-  if (sensitiveRe.test(customerText)) return { action: 'needs_review', reason: 'giá/chốt đơn' };
-  if (sensitiveRe.test(draftText) || MONEY_LIKE_RE.test(draftText)) return { action: 'needs_review', reason: 'giá/chốt đơn' };
+  const { customerText, draftText, sources, sensitiveRe, fullAuto } = args;
+  if (fullAuto !== true) {
+    if (sensitiveRe.test(customerText)) return { action: 'needs_review', reason: 'giá/chốt đơn' };
+    if (sensitiveRe.test(draftText) || MONEY_LIKE_RE.test(draftText)) return { action: 'needs_review', reason: 'giá/chốt đơn' };
+  }
   if (sources.length === 0) return { action: 'needs_review', reason: 'thiếu nguồn tài liệu' };
   return { action: 'allow' };
 }

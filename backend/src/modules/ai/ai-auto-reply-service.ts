@@ -193,6 +193,7 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
       draftText,
       sources,
       sensitiveRe: buildSensitiveRegex(aiCfg.aiAutoReplySensitivePattern),
+      fullAuto: aiCfg.aiAutoReplyFullAuto,
     });
     endSpan(policySpan);
     if (policy.action === 'needs_review') {
@@ -255,6 +256,7 @@ async function runAutoReply(input: TriggerAutoReplyInput, io: Server | null): Pr
       draftText,
       sources,
       sensitiveRe: buildSensitiveRegex(latestAiCfg.aiAutoReplySensitivePattern),
+      fullAuto: latestAiCfg.aiAutoReplyFullAuto,
     });
     endSpan(latestPolicySpan);
     if (latestPolicy.action === 'needs_review') {
